@@ -4,20 +4,20 @@ other programs.
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 8/29/2022
-Python Version 3.9
+Last Updated: 8/30/2022
 """
 
 import tess_data_search
 import AIJ_Night_Filters
 import TESS_Night_Filters
 import APASS_AIJ_comparison_selector
+import OConnell
 
 
 def main():
     print()
     print("Which program do you want to run?")
-    print("TESS database search, AIJ/TESS Night Filters, or AIJ Comp Selector")
+    print("TESS database search, AIJ/TESS Night Filters, AIJ Comp Selector, or O'Connel Effect")
     print("")
 
     while True:
@@ -37,6 +37,9 @@ def main():
                 print("You did not enter AIJ or TESS please go back through the prompts again and enter AIJ or TESS.")
         elif prompt.lower() == "aij comp selector":
             APASS_AIJ_comparison_selector.main()
+            break
+        elif prompt.lower() == "o'connel effect":
+            OConnell.main()
             break
         else:
             print("You have not entered any of the allowed entries, please try again.")

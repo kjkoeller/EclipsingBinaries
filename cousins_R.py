@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 4/13/2022
-Last Updated: 7/5/2022
+Last Updated: 8/29/2022
 Based on this paper: https://arxiv.org/pdf/astro-ph/0609736.pdf
 
 This program calculates a Cousins R (R_c) filter band value from a given Johnson V and B, and g' and r'.
@@ -25,20 +25,7 @@ def main():
     beta = 1.321
     e_beta = 0.03
     gamma = 0.219
-
-    """
-    # import file from Catalog Finder or Catalog Comparison
-    input_file = input("Enter the text file name from Catalog Finder or Catalog Comparison: ")
-    try:
-        # checks whether the file/path is real or not
-        with open(input_file) as f:
-            print("File loaded.")
-            print()
-    except IOError:
-        # prints off the reason for closing the program
-        print("File not accessible. Please restart program and enter a valid file name/path.")
-        exit()
-    """
+    
     input_file = apass.main()
     df = pd.read_csv(input_file, header=None, skiprows=[0], sep=",")
 

@@ -3,7 +3,7 @@ Look up the TESS data and download that data onto a local drive.
 
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 8/28/2022
+Last Updated: 8/29/2022
 Version: Python 3.9
 """
 
@@ -33,7 +33,7 @@ def main():
     print(sector_table)
     for i in sector_table["sector"]:
         # downloads the pixel file data that can then be analyzed with AIJ
-        manifest = Tesscut.download_cutouts(objectname=system_name, size=[40, 40] * u.arcmin, sector=i)
+        Tesscut.download_cutouts(objectname=system_name, size=[20, 20] * u.arcmin, sector=i)
     print("Finished downloading all sector data related to " + system_name)
     print("All files were downloaded to wherever this program is placed.")
 

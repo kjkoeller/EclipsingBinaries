@@ -18,7 +18,7 @@ close on them (hopefully)
 Same thing as AIJ filters but finds the appropriate values given TESS data rather than SARA or BSUO data.
 
 ### APASS_AIJ_comparison_selector.py
-The main program that runs this main folder. With this program you call upon the cousins_r.py and APASS_catalog_finder.py programs to compile a list of stars that are close to what AIJ found off Simbad and output a file that gives RA, DEC, B, V, R_c, and the respective band pass errors.
+With this program you call upon the cousins_r.py and APASS_catalog_finder.py programs to compile a list of stars that are close to what AIJ found off Simbad and output a file that gives RA, DEC, B, V, R_c, and the respective band pass errors.
 
 ### cousins_r.py
 From the paper listed in the program (https://arxiv.org/pdf/astro-ph/0609736.pdf) this program finds the Cousins R value from the band passes found in the APASS_catalog_finder and gives this output file to the APASS_AIJ_comparison_selector program.

@@ -1,7 +1,7 @@
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/9cd9a15e47ab4ed7b78071d096ea099d)](https://www.codacy.com/gh/kjkoeller/Variable_Star_Research_Package/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=kjkoeller/Variable_Star_Research_Package&amp;utm_campaign=Badge_Grade)
 
 # Variable_Research_Package
-A Python package for Ball State University's Variable Star Research Group
+A Python project for Ball State University's Variable Star Research Group
 
 ## main.py
 The main program that can call all the other programs given a user's prompts. When using this package, always run the main.py first as this will connect to all the following programs.

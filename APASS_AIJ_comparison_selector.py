@@ -125,12 +125,11 @@ def angle_dist(df, dh):
 
     # removes all duplicate rows from the dataframe
     duplicate_df = comp.drop_duplicates()
-
-    try:
-        ra_final = list(duplicate_df[0])
-    except KeyError:
-        print("There were no comparison stars found between the two text files.")
-        exit()
+	
+	if list(duplicate_df[0]):
+        pass
+    else:
+        print("There were not comparison stars found between the two text files.")
 
     return duplicate_df
 

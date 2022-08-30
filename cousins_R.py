@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 4/13/2022
-Last Updated: 8/29/2022
+Last Updated: 8/30/2022
 Based on this paper: https://arxiv.org/pdf/astro-ph/0609736.pdf
 
 This program calculates a Cousins R (R_c) filter band value from a given Johnson V and B, and g' and r'.

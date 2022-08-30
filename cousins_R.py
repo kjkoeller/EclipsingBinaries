@@ -25,8 +25,8 @@ def main():
     beta = 1.321
     e_beta = 0.03
     gamma = 0.219
-	
-	input_file = apass.main()
+    
+    input_file = apass.main()
     df = pd.read_csv(input_file, header=None, skiprows=[0], sep=",")
 
     # writes the columns from the input file

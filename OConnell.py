@@ -134,13 +134,13 @@ def Half_Comp(filter_files, Epoch, period,
         flux.plot(FTphase1, FTflux1, linestyle=styles[band], color=colors[band])
         flux.plot(FTphase2, FTflux2, '-', color=colors[band])
         # flux.annotate('B',xy=(-0.1,min(FTflux1)))
-        if filter_names != None:
+        if filter_names is not None:
             if len(filter_names) == bands:
                 flux.text(-0.12, FTflux1[0], filter_names[band], fontsize=18, rotation=0)
         dI.plot(FTphase1, dIlist, linestyle=styles[band], color=colors[band])
 
     plt.xlim(-0.025, 0.525)
-    if filter_names == None:
+    if filter_names is None:
         flux.set_ylabel('Flux', fontsize=16)
 
     # mpl.rcParams['mathtext.fontset'] = 'dejavusans'
@@ -208,8 +208,8 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     nc_sec_phases = nc_MB[5][0]
     c_sec_index = c_MB[5][3]
     nc_sec_index = nc_MB[5][3]
-    norm_f = c_MB[4]
-    ob_magerr = c_MB[3][2]
+    # norm_f = c_MB[4]
+    # ob_magerr = c_MB[3][2]
     a = PB[0][0]
     b = PB[0][1]  # Fourier coefficients
     # ==========================================================================

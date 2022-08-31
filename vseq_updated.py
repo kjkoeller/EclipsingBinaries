@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sat Feb 22 16:09:28 2020
-@author: Alec Neal
+Last Edited: 8/30/2022
+
+Original Author: Alec Neal
+Last Edits Done By: Kyle Koeller
 
 Collection of functions, coefficients and equations commonly used
 with short-period variable stars, but many can be used more
@@ -44,8 +47,10 @@ class io:
                 for row in range(len(rowlist)):
                     print(rowlist[row], file=output)
 
-    def PaS_lists(masterlist, outName, rowlist=[], save=False, _print=True,
+    def PaS_lists(masterlist, outName, rowlist=None, save=False, _print=True,
                   write='w', sep='\t', index=False):
+        if rowlist is None:
+            rowlist = []
         for row in range(len(masterlist[0])):
             if index:
                 rowstring = str(row) + sep
@@ -418,7 +423,9 @@ class plot:
             residlist.append(obslist[n] - modellist[n])
         return residlist
 
-    def multiplot(figsize=(8, 8), dpi=256, height_ratios=[3, 1], hspace=0, sharex=True, sharey=False, fig=None):
+    def multiplot(figsize=(8, 8), dpi=256, height_ratios=None, hspace=0, sharex=True, sharey=False, fig=None):
+        if height_ratios is None:
+            height_ratios = [3, 1]
         if fig == None:
             fig = plt.figure(1, figsize=figsize, dpi=dpi)
         axs = fig.subplots(len(height_ratios), sharex=sharex, sharey=sharey,
@@ -427,7 +434,7 @@ class plot:
 
     def value_resid_plot(ob_phase, ob_mag, synth_phase, synth_mag, resid, figsize=(8, 8), dpi=512,
                          X=0.25, x=0.05, Y1=0.1, y1=0.025, Y2=0.025, y2=0.005, tickwidth=None,
-                         filterName='', h_ratios=[4, 1], synth_color='red', obs_color='black',
+                         filterName='', h_ratios=None, synth_color='red', obs_color='black',
                          obs_size=3.5, Y2label='', save=False, outputName='modelfit.png',
                          usetex=False, synth_width=None, fontS=12, labelScale=1.2, tickScale=1,
                          tickRatio=0.5):  # X=major ticks, x=minor
@@ -458,6 +465,8 @@ class plot:
         y1: minor y-axis ticks for top plot
 
         """
+        if h_ratios is None:
+            h_ratios = [4, 1]
         fig = plt.figure(1, figsize, dpi=dpi)
         axs = fig.subplots(2, sharex=True, sharey=False, gridspec_kw={'hspace': 0, 'height_ratios': h_ratios})
         value = axs[0]
@@ -528,9 +537,11 @@ class plot:
         return min(valuelist) + plot.amp(valuelist) * location
 
     def BVR_comphalves(aB, bB, aV, bV, aR, bR, order, resolution, fluxoff=0.2, save=False, outputName='noname.png',
-                       figsize=(6, 10), dpi=512, height_ratio=[7, 3], tickwidth=1.1, BRorder=-1,
+                       figsize=(6, 10), dpi=512, height_ratio=None, tickwidth=1.1, BRorder=-1,
                        numbersize=12, str_scale=1.2, X=0.125, x=0.025, Y1=0.1,
                        y1=0.02, Y2=0.01, y2=0.002):
+        if height_ratio is None:
+            height_ratio = [7, 3]
         Bft = FT.FT_plotlist(aB, bB, order, resolution)
         FTphaselist = Bft[0]
         B_FTlist = np.array(Bft[1])
@@ -958,8 +969,10 @@ class binning:
         return section_polyphase, section_polyflux
 
     def polybinner(input_file, Epoch, period, sections=4, norm_factor='alt',
-                   section_order=8, FT_order=12, section_res=None, HJD_mag_magerr=[],
+                   section_order=8, FT_order=12, section_res=None, HJD_mag_magerr=None,
                    mag_coef=False, pdot=0):
+        if HJD_mag_magerr is None:
+            HJD_mag_magerr = []
         if section_res == None:
             section_res = int(128 / sections)
         # section_res=84

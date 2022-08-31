@@ -17,15 +17,15 @@ import OConnell
 def main():
     print()
     print("Which program do you want to run?")
-    print("TESS database search, AIJ/TESS Night Filters, AIJ Comp Selector, or O'Connel Effect")
+    print("TESS database search(1), AIJ/TESS Night Filters(2), AIJ Comp Selector(3), or O'Connel Effect(4)")
     print("")
 
     while True:
-        prompt = input("Please type out exactly the option you want as stated above: ")
-        if prompt.lower() == "tess database search":
+        prompt = input("Please type out the number corresponding to the corresponding action: ")
+        if prompt == 1:
             tess_data_search.main()
             break
-        elif prompt.lower() == "aij/tess night filters":
+        elif prompt == 2:
             aij = input("AIJ or TESS: ")
             if aij.lower() == "aij":
                 AIJ_Night_Filters.main(0)
@@ -35,10 +35,10 @@ def main():
                 break
             else:
                 print("You did not enter AIJ or TESS please go back through the prompts again and enter AIJ or TESS.")
-        elif prompt.lower() == "aij comp selector":
+        elif prompt == 3:
             APASS_AIJ_comparison_selector.main()
             break
-        elif prompt.lower() == "o'connel effect":
+        elif prompt == 4:
             OConnell.main()
             break
         else:

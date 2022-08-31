@@ -16,8 +16,8 @@ import vseq_updated as vseq
 from tqdm import tqdm
 import numpy as np
 import statistics as st
-import pandas as pd
-import matplotlib as mpl
+# import pandas as pd
+# import matplotlib as mpl
 from os import path
 
 sig_f = lambda f, x, sig_x: abs(f(x + sig_x) - f(x - sig_x)) / 2

@@ -1,6 +1,6 @@
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/9cd9a15e47ab4ed7b78071d096ea099d)](https://www.codacy.com/gh/kjkoeller/Variable_Star_Research_Package/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=kjkoeller/Variable_Star_Research_Package&amp;utm_campaign=Badge_Grade)
 
-# Variable_Research_Package
+# Variable_Star_Research_Package
 A Python project for Ball State University's Variable Star Research Group
 
 ## main.py

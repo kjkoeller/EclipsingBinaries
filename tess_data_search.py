@@ -3,7 +3,7 @@ Look up the TESS data and download that data onto a local drive.
 
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 8/29/2022
+Last Updated: 9/07/2022
 Version: Python 3.9
 """
 
@@ -11,6 +11,7 @@ Version: Python 3.9
 import astroquery.exceptions
 from astroquery.mast import Tesscut
 import astropy.units as u
+import tesscut as tCut
 
 
 def main():
@@ -20,6 +21,7 @@ def main():
 
     :return: Downloaded pixel data in the form of .fits files to be extracted later
     """
+
     # While loops checks to make sure that the user has entered a valid TIC number that can be found.
     while True:
         try:
@@ -33,9 +35,12 @@ def main():
     print(sector_table)
     for i in sector_table["sector"]:
         # downloads the pixel file data that can then be analyzed with AIJ
-        Tesscut.download_cutouts(objectname=system_name, size=[20, 20] * u.arcmin, sector=i)
+        print()
+        print("Starting download of Sector " + str(i))
+        manifest = Tesscut.download_cutouts(objectname=system_name, size=[15, 15] * u.arcmin, sector=i)
+        tCut.main(manifest)
+        print("Finished downloading Sector " + str(i))
     print("Finished downloading all sector data related to " + system_name)
-    print("All files were downloaded to wherever this program is placed.")
 
 
 if __name__ == '__main__':

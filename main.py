@@ -4,7 +4,7 @@ other programs.
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 8/30/2022
+Last Updated: 9/07/2022
 """
 
 import tess_data_search
@@ -12,12 +12,13 @@ import AIJ_Night_Filters
 import TESS_Night_Filters
 import APASS_AIJ_comparison_selector
 import OConnell
+import tess_data_search
 
 
 def main():
     print()
     print("Which program do you want to run?")
-    print("TESS database search(1), AIJ/TESS Night Filters(2), AIJ Comp Selector(3), or O'Connel Effect(4)")
+    print("TESS database search(1), AIJ/TESS Night Filters(2), AIJ Comp Selector(3), O'Connel Effect(4), TESS Data Download(5)")
     print("")
 
     while True:
@@ -41,6 +42,8 @@ def main():
         elif prompt == 4:
             OConnell.main()
             break
+        elif prompt == 5:
+            tess_data_search.main()
         else:
             print("You have not entered any of the allowed entries, please try again.")
             print()

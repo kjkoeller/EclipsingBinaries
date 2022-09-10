@@ -28,3 +28,6 @@ Given an RA and DEC from simbad, finds stars 40 arc min box around those qoordin
 
 ### tess_data_search.py
 Look up the TESS data via TIC ID number and output the sector and camera number. Then download all the sector data for that TIC ID number to obtain pixel data that can then be used in Astro ImageJ to get flux data.
+
+###OConnel.py
+Applies analysis of the O'Connel effect presented by this paper: https://app.aavso.org/jaavso/article/3511/

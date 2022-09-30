@@ -101,7 +101,7 @@ def Half_Comp(filter_files, Epoch, period,
               FT_order=10, sections=4, section_order=8,
               resolution=512, offset=0.25, save=False, outName='noname_halfcomp.png',
               title=None, filter_names=None, sans_font=False):
-    if sans_font == False:
+    if not sans_font:
         plt.rcParams['font.family'] = 'serif'
         plt.rcParams['mathtext.fontset'] = 'dejavuserif'
     bands = len(filter_files)
@@ -415,11 +415,11 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
         parameters in corresponding value, value_err lists. E.g. once this completes,
         OERs will contain the OER values for filter 1,2,... and OERs_err contains the errors.
         """
-        for band in range(len(filter_files)):
-            oc = OConnell_total(filter_files[band], Epoch, period, order, sims=sims,
+        for count, band in enumerate(filter_files):
+            oc = OConnell_total(band, Epoch, period, order, sims=sims,
                                 sections=sections, section_order=section_order,
                                 norm_factor=norm_factor, FT_order=order, FTres=FTres,
-                                filterName='Filter ' + str(band + 1))
+                                filterName='Filter ' + str(count))
             a_all.append(oc[0][0])
             a_err_all.append(oc[0][1])
             b_all.append(oc[1][0])

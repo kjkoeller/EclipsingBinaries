@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sat Feb 22 16:09:28 2020
-Last Edited: 8/30/2022
+Last Edited: 9/29/2022
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -72,12 +72,12 @@ class calc:  # assortment of functions
     def Newton(f, x0, e=1e-8, fprime=None, max_iter=None, dx=1e-8, central_diff=True, print_iters=False):
         x = x0
         iters = 0
-        if fprime == None:
+        if fprime is None:
             if not central_diff:
                 fprime = lambda x, dx=dx: (f(x + dx) / dx)
             else:
                 fprime = lambda x, dx=dx: (f(x + dx) - f(x - dx)) / (2 * dx)
-        if max_iter == None:
+        if max_iter is None:
             while abs(f(x)) > e:
                 x -= f(x) / fprime(x)
                 iters += 1
@@ -176,7 +176,7 @@ class calc:  # assortment of functions
             # b=np.transpose(np.matmul(H,np.transpose(U)))
             # print(b)
             # print()
-            if sig_y == None:
+            if sig_y is None:
                 ogmodel = sm.OLS(y, Xstack)
             else:
                 ogmodel = sm.WLS(y, Xstack, weights=1 / np.array(sig_y) ** 2)
@@ -426,7 +426,7 @@ class plot:
     def multiplot(figsize=(8, 8), dpi=256, height_ratios=None, hspace=0, sharex=True, sharey=False, fig=None):
         if height_ratios is None:
             height_ratios = [3, 1]
-        if fig == None:
+        if fig is None:
             fig = plt.figure(1, figsize=figsize, dpi=dpi)
         axs = fig.subplots(len(height_ratios), sharex=sharex, sharey=sharey,
                            gridspec_kw={'hspace': hspace, 'height_ratios': height_ratios})
@@ -664,19 +664,19 @@ class plot:
             ax.spines['top'].set_visible(topspine)
             ax.spines['right'].set_visible(rightspine)
             ax.spines['left'].set_visible(leftspine)
-        if X == None:
+        if X is None:
             ax.xaxis.set_major_locator(AutoLocator())
         else:
             ax.xaxis.set_major_locator(MultipleLocator(X))
-        if x == None:
+        if x is None:
             ax.xaxis.set_minor_locator(AutoMinorLocator())
         else:
             ax.xaxis.set_minor_locator(MultipleLocator(x))
-        if Y == None:
+        if Y is None:
             ax.yaxis.set_major_locator(AutoLocator())
         else:
             ax.yaxis.set_major_locator(MultipleLocator(Y))
-        if y == None:
+        if y is None:
             ax.yaxis.set_minor_locator(AutoMinorLocator())
         else:
             ax.yaxis.set_minor_locator(MultipleLocator(y))
@@ -914,7 +914,7 @@ class binning:
         # nc_master_phases=nc_MB[5][0] ; nc_master_fluxes=nc_MB[5][1]
         # ob_phaselist=c_MB[0][1] ; ob_fluxlist=c_MB[1][1] ; ob_fluxerr=c_MB[1][2]
         sections = len(c_master_phases)
-        if section_res == None:
+        if section_res is None:
             section_res = int(128 / sections)
 
         section_polyphase = []
@@ -973,7 +973,7 @@ class binning:
                    mag_coef=False, pdot=0):
         if HJD_mag_magerr is None:
             HJD_mag_magerr = []
-        if section_res == None:
+        if section_res is None:
             section_res = int(128 / sections)
         # section_res=84
         # if is_power_of_two(sections) == False:

@@ -16,10 +16,12 @@ import astropy.io.fits as pyfits
 from time import gmtime, strftime  # for utc
 
 """
-Extract all images from a TESS pixel BINTABLE file
-Removes extended headers
-Selects only the image data
-Detects and does not convert low quality
+
+  Extract all images from a TESS pixel BINTABLE file
+  Removes extended headers
+  Selects only the image data
+  Detects and does not convert low quality
+
 """
 
 # if len(sys.argv) != 3:

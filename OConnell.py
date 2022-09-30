@@ -3,7 +3,7 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 8/30/2022
+Last Edited: 9/29/2022
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -154,7 +154,7 @@ def Half_Comp(filter_files, Epoch, period,
     # dI.set_ylabel(r'$\Delta I(\Phi)_{\rm FT}$',fontsize=14.4)
     if title != '':
         flux.set_title(title, fontsize=14.4, loc='left')
-    """
+    '''
     print(flux.get_ylim())
     data_int=flux.yaxis.get_data_interval()
     print(data_int)
@@ -164,7 +164,7 @@ def Half_Comp(filter_files, Epoch, period,
     print(allticks)
     print(tick_spacing)
     flux.set_ylim(top=max(allticks[1:-1])+tick_spacing)#-tick_spacing)
-    """
+    '''
     # print(flux.yaxis.get_ticks())
     if save:
         plt.savefig(outName, bbox_inches='tight')
@@ -224,8 +224,10 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     c_master_simflux = []
     nc_master_simflux = []
     master_polyflux = []
-    """^List of the resampled polynomial fluxes. Each embedded list is different 
-    because the generating data has been Monte Carloed."""
+    """
+    ^List of the resampled polynomial fluxes. Each embedded list is different 
+    because the generating data has been Monte Carloed.
+    """
     master_FTflux = []  # FT fluxes resulting from the simulations
     master_a = []
     master_b = []  # Lists of the a and b FT coefficients for each sim
@@ -233,9 +235,11 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
 
     # = begin sim loop =
     for sim in tqdm(range(sims), desc='Simulation processing', position=0):
-        """Generating empty lists so that stuff can be inserted into the
+        """
+        Generating empty lists so that stuff can be inserted into the
         specified [sim] index. Otherwise when trying to append list[sim],
-        it would throw an error (there'd be nothing to append to)."""
+        it would throw an error (there'd be nothing to append to).
+        """
         c_master_simflux.append([])
         nc_master_simflux.append([])
 
@@ -244,22 +248,24 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
             c_master_simflux[sim].append([])  # same as before
             nc_master_simflux[sim].append([])
 
-            """ 'Replacing' the observational fluxes with the Monte Carlo fluxes
+            """
+            'Replacing' the observational fluxes with the Monte Carlo fluxes
             based on the index of each data point when it was in ob_fluxlist
-            (the MC fluxes are ordered the same as ob_fluxlist)."""
+            (the MC fluxes are ordered the same as ob_fluxlist).
+            """
             for i in range(len(c_sec_phases[section])):
                 c_master_simflux[sim][section].append(master_simflux[sim][c_sec_index[section][i]])
             for i in range(len(nc_sec_phases[section])):
                 nc_master_simflux[sim][section].append(master_simflux[sim][nc_sec_index[section][i]])
         # == end section loop == ; resume sim loop
 
-        """Generating polynomial resampled fluxes for each simulation."""
+        # Generating polynomial resampled fluxes for each simulation.
         minipoly = vseq.binning.minipolybinner(c_sec_phases, c_master_simflux[sim],
                                                nc_sec_phases, nc_master_simflux[sim],
                                                section_order)
         master_polyflux.append(minipoly[1])
 
-        """Calculating various parameters for each simulation."""
+        # Calculating various parameters for each simulation.
         FTcoef = vseq.FT.coefficients(master_polyflux[sim])
         master_a.append(FTcoef[1])
         master_b.append(FTcoef[2])
@@ -464,12 +470,12 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
             LCA_line += '& $' + strr(LCAs[band]) + '\pm ' + strr(LCAs_err[band]) + '$ '
 
         lines = [a1_line, a2_line, a4_line, a22_line, b1_line, dIFT_line, dIave_line, OER_line, LCA_line]
-        for line in range(len(lines)):
-            lines[line] += '\\\ \n'
+        for count, line in enumerate(lines):
+            line += '\\\ \n'
 
         output = table_header
-        for line in range(len(lines)):
-            output += lines[line]
+        for count, line in enumerate(lines):
+            output += line
         output += '\\hline\n' + '\\end{tabular}\n' + '\\caption{Fourier and O\'Connell stuff (' + str(
             sims) + ' sims)}\n' + '\\label{tbl:OConnell}\n' + '\\end{center}\n' + '\\end{table}\n'
         """

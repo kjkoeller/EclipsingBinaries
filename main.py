@@ -4,7 +4,7 @@ other programs.
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 9/07/2022
+Last Updated: 9/29/2022
 """
 
 import tess_data_search
@@ -12,7 +12,6 @@ import AIJ_Night_Filters
 import TESS_Night_Filters
 import APASS_AIJ_comparison_selector
 import OConnell
-import tess_data_search
 
 
 def main():

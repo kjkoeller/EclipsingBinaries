@@ -16,7 +16,7 @@ import numpy as np
 # import scipy.stats as sci
 # import scipy
 import matplotlib.pyplot as plt
-# from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, AutoLocator, Locator)
+from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, AutoLocator, Locator)
 import pandas as pd
 
 

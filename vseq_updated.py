@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sat Feb 22 16:09:28 2020
-Last Edited: 9/29/2022
+Last Edited: 9/30/2022
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -16,7 +16,7 @@ import numpy as np
 # import scipy.stats as sci
 # import scipy
 import matplotlib.pyplot as plt
-from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, AutoLocator, Locator)
+# from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, AutoLocator, Locator)
 import pandas as pd
 
 
@@ -39,9 +39,9 @@ class io:
 
     def print_and_save(rowlist, outName, save=False, _print=True, write='w', precision=8):
         if _print:
-            for row in range(len(rowlist)):
+            for count, row in enumerate(rowlist):
                 # if rowlist[row][0] == float:
-                print(rowlist[row])
+                print(row)
         if save:
             with open(outName, write) as output:
                 for row in range(len(rowlist)):
@@ -221,8 +221,8 @@ class calc:  # assortment of functions
 
         def sig_sum(errorlist):
             SS = 0
-            for n in range(len(errorlist)):
-                SS += errorlist[n] ** 2
+            for count, n in enumerate(errorlist):
+                SS += n ** 2
             return np.sqrt(SS)
 
         def weighted_average(valuelist, errorlist):
@@ -335,8 +335,8 @@ class calc:  # assortment of functions
                 return (daydiff / (period + Pdot * daydiff)) - np.floor(daydiff / (period + Pdot * daydiff))
 
             def JD_to_Greg(JD):
-                months = ['none', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
-                          'October', 'November', 'December', ]
+                # months = ['none', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
+                #           'October', 'November', 'December', ]
                 f = JD + 1401 + int((int((4 * JD + 274277) / 146097) * 3) / 4) - 38
                 e = 4 * f + 3
                 g = int((e % 1461) / 4)
@@ -376,15 +376,15 @@ class plot:
         a_phaselist = []
         a_maglist = []
         a_errorlist = []
-        for n in range(len(phaselist)):
-            if phaselist[n] < alias:
-                a_phaselist.append(phaselist[n])
-                a_maglist.append(maglist[n])
-                a_errorlist.append(errorlist[n])
-            if phaselist_minus[n] > -alias:
-                a_phaselist.append(phaselist_minus[n])
-                a_maglist.append(maglist[n])
-                a_errorlist.append(errorlist[n])
+        for count, n in enumerate(phaselist):
+            if n < alias:
+                a_phaselist.append(n)
+                a_maglist.append(maglist[count])
+                a_errorlist.append(errorlist[count])
+            if phaselist_minus[count] > -alias:
+                a_phaselist.append(phaselist_minus[count])
+                a_maglist.append(maglist[count])
+                a_errorlist.append(errorlist[count])
         return a_phaselist, a_maglist, a_errorlist
 
     def aliasing2(phaselist, maglist, errorlist, alias=0.6):
@@ -748,9 +748,9 @@ class binning:
             norm_binned.append(binnedflux / normf)
         norm_ob = []
         norm_err = []
-        for n in range(len(ob_fluxlist)):
-            norm_ob.append(ob_fluxlist[n] / normf)
-            norm_err.append(ob_fluxerr[n] / normf)
+        for count, n in enumerate(ob_fluxlist):
+            norm_ob.append(n / normf)
+            norm_err.append(ob_fluxerr[count] / normf)
         return norm_binned, norm_ob, norm_err
 
     def minibinner(phaselist, fluxlist, bins):
@@ -867,11 +867,11 @@ class binning:
             offset = 0.025
             quad1 = []
             quad2 = []
-            for n in range(len(ob_phaselist)):
-                if 0.25 - offset < ob_phaselist[n] < 0.25 + offset:
-                    quad1.append(ob_fluxlist[n])
-                elif 0.75 - offset < ob_phaselist[n] < 0.75 + offset:
-                    quad2.append(ob_fluxlist[n])
+            for count, n in enumerate(ob_phaselist):
+                if 0.25 - offset < n < 0.25 + offset:
+                    quad1.append(ob_fluxlist[count])
+                elif 0.75 - offset < n < 0.75 + offset:
+                    quad2.append(ob_fluxlist[count])
             norm_f = max([np.mean(quad1), np.mean(quad2)])
 
         def normlist(valuelist, norm_f):
@@ -881,9 +881,9 @@ class binning:
         n_ob_fluxlist = normlist(ob_fluxlist, norm_f)
         n_ob_fluxerr = normlist(ob_fluxerr, norm_f)
         n_binnederrorlist = normlist(binnederrorlist, norm_f)
-        for n in range(len(master_fluxes_in_bin)):
-            master_fluxes_in_bin[n] /= norm_f
-            master_errors_in_bin[n] /= norm_f
+        for count, n in enumerate(master_fluxes_in_bin):
+            n /= norm_f
+            n /= norm_f
 
         # ----------------------0----------------1-------------2--------------3------------
         master_time = [binnedphaselist, ob_phaselist, avgphaselist, HJD]  # 0
@@ -936,13 +936,13 @@ class binning:
                 c_polylist = calc.poly.polylist(c_coef, -halfsec, halfsec, section_res)
                 c_polyphase = c_polylist[0][bound1:bound2:]
                 c_polyflux = c_polylist[1][bound1:bound2:]
-                for n in range(len(c_polyphase)):
-                    if c_polyphase[n] < 0:
-                        lastphase.append(c_polyphase[n] + 1)
-                        lastflux.append(c_polyflux[n])
+                for count, n in enumerate(c_polyphase):
+                    if n < 0:
+                        lastphase.append(n + 1)
+                        lastflux.append(c_polyflux[count])
                     else:
-                        section_polyphase.append(c_polyphase[n])
-                        section_polyflux.append(c_polyflux[n])
+                        section_polyphase.append(n)
+                        section_polyflux.append(c_polyflux[count])
                 nc_coef = calc.poly.regr_polyfit(nc_master_phases[0], nc_master_fluxes[0], section_order)[0]
                 # nc_coef=calc.poly.polyfit(nc_master_phases[0],nc_master_fluxes[0],section_order)
                 nc_polylist = calc.poly.polylist(nc_coef, 0, dphase, section_res)
@@ -997,8 +997,8 @@ class binning:
         nc_master_phases = nc_MB[5][0]
         nc_master_fluxes = nc_MB[5][1]
 
-        ob_phaselist = c_MB[0][1]
-        ob_fluxlist = c_MB[1][1]
+        # ob_phaselist = c_MB[0][1]
+        # ob_fluxlist = c_MB[1][1]
 
         section_polyphase = []
         section_polyflux = []
@@ -1379,8 +1379,8 @@ class OConnell:  # O'Connell effect
             dL_dak.append(dL_da0 * np.cos(2 * np.pi * k * phase))
             dL_dbk.append(2 * np.sin(2 * np.pi * k * phase) * (2 * J / I ** 2 - J ** 2 / I ** 3))
         L_err = (dL_da0 * a_unc[0]) ** 2
-        for n in range(len(dL_dak)):
-            L_err += (dL_dak[n] * a_unc[n + 1]) ** 2 + (dL_dbk[n] * b_unc[n + 1]) ** 2
+        for count, n in enumerate(dL_dak):
+            L_err += (n * a_unc[count]) ** 2 + (n * b_unc[count]) ** 2
         L_err = np.sqrt(L_err)
         return L, L_err
 

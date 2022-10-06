@@ -4,7 +4,7 @@ other programs.
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 9/29/2022
+Last Updated: 10/06/2022
 """
 
 import tess_data_search
@@ -21,7 +21,7 @@ def main():
     print("")
 
     while True:
-        prompt = input("Please type out the number corresponding to the corresponding action: ")
+        prompt = int(input("Please type out the number corresponding to the corresponding action: "))
         if prompt == 1:
             tess_data_search.main()
             break

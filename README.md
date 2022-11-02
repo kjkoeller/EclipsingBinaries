@@ -33,5 +33,4 @@ Look up the TESS data via TIC ID number and output the sector and camera number.
 Applies analysis of the O'Connel effect presented by this paper: https://app.aavso.org/jaavso/article/3511/
 
 ### color_light_curve.py
-Allows the user to create a color light curve for both B-V and V-R bands and gather the values automatically by way of a GUI.
-
+Allows the user to create a color light curve for both B-V and V-R bands and gather the values automatically by way of a GUI. The R file is optional and not required but B and V band-pass files are.

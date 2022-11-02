@@ -13,7 +13,7 @@ import numpy as np
 import statistics as st
 from tkinter import *
 from matplotlib.backends.backend_tkagg import (
-    FigureCanvasTkAgg, NavigationToolbar2Tk)
+    FigureCanvasTkAgg)
 from matplotlib.figure import Figure
 import textwrap
 
@@ -421,9 +421,12 @@ def color_gui(developer=False):
                        relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
             show_color = False
             if show_color == True:
-                # vr.annotate(r'$V-R_{\rm C}='+str(round(VRc,4))+'\pm'+str(round(VRerr,4))+'$',xy=(0.25,vr.get_ylim()[-1]),ha='center')
+                # vr.annotate(r'$V-R_{\rm C}='+str(round(VRc,4))+'\pm'+str(round(VRerr,4))+'$',
+                # xy=(0.25,vr.get_ylim()[-1]),ha='center')
+                
                 # vr.plot([''])
-                # vr.annotate(r'$V-R_{\rm C}='+str(round(VRc,4))+'\pm'+str(round(VRerr,4))+'$',xy=(0.25,VRc),ha='center',va='center',bbox=dict(facecolor='white', edgecolor='gray',boxstyle='round',pad=0.1),fontsize=11)
+                # vr.annotate(r'$V-R_{\rm C}='+str(round(VRc,4))+'\pm'+str(round(VRerr,4))+'$',xy=(0.25,VRc),ha='center'
+                # ,va='center',bbox=dict(facecolor='white', edgecolor='gray',boxstyle='round',pad=0.1),fontsize=11)
 
                 vr.annotate(r'$V-R_{\rm C}=' + str(round(VRc, 4)) + '\pm' + str(round(VRerr, 4)) + '$',
                             xytext=(0.25, vr.get_ylim()[-1]), xy=(0, VRc), ha='center', va='center',

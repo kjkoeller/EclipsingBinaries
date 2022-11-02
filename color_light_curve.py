@@ -8,8 +8,7 @@ Last Edited: 10/26/2022
 Editor: Kyle Koeller
 """
 
-# import vseq_updated as vseq
-import vseq
+import vseq_updated as vseq
 import numpy as np
 import matplotlib.pyplot as plt
 import statistics as st

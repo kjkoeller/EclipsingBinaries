@@ -10,13 +10,10 @@ Editor: Kyle Koeller
 
 import vseq_updated as vseq
 import numpy as np
-import matplotlib.pyplot as plt
 import statistics as st
 from tkinter import *
 from matplotlib.backends.backend_tkagg import (
     FigureCanvasTkAgg, NavigationToolbar2Tk)
-# Implement the default Matplotlib key bindings.
-from matplotlib.backend_bases import key_press_handler
 from matplotlib.figure import Figure
 import textwrap
 
@@ -116,10 +113,10 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     BVquadphase = []
     BVquadmag = []
     # Vquad=[]
-    for n in range(len(Vphase)):
-        if 0.25 - quad_range < Vphase[n] < 0.25 + quad_range or 0.75 - quad_range < Vphase[n] < 0.75 + quad_range:
-            BVquadphase.append(Vphase[n])
-            BVquadmag.append(B_interp_mag[n] - V_mag[n])
+    for count, value in enumerate(Vphase):
+        if 0.25 - quad_range < value < 0.25 + quad_range or 0.75 - quad_range < value < 0.75 + quad_range:
+            BVquadphase.append(value)
+            BVquadmag.append(B_interp_mag[count] - V_mag[count])
     quadcolor = mean_mag(BVquadmag)
     colorerr = st.stdev(BVquadmag, xbar=quadcolor)
     print(quadcolor, '+/-', colorerr)
@@ -229,18 +226,6 @@ def color_gui(developer=False):
 
     Label(root, text=autowrap('Program to determine light curve colors. Mouse over the fields for more information.',
                               width=50) + '\n').grid(row=1, column=0, columnspan=2)
-    """
-    rowset=2
-    B = gui.Field(root,'Bfile',rowset,0)
-    V = gui.Field(root,'Vfile',rowset+1,0)
-    R = gui.Field(root,'R (optional)',rowset+2,0,'')
-    Epoch = gui.Field(root,'Epoch',rowset+3,0,ftype='float',def_val=2458308.730074)
-    Period = gui.Field(root,'Period',rowset+4,0,ftype='float',def_val=0.290374)
-    MaxT = gui.Field(root,'Max tolerance',rowset+5,0,def_val=0.03,ftype='float')
-    LL = gui.Field(root,'Lower limit',rowset+6,0,def_val=0.05,ftype='float')
-    Save = gui.Field(root,'Save? (True/False)',rowset+7,0,def_val='False',ftype='bool')
-    Out = gui.Field(root,'Output file',rowset+8,0,def_val='color_light_plot.pdf')
-    """
 
     entries = [['B file'],
                ['V file'],
@@ -252,21 +237,22 @@ def color_gui(developer=False):
                ['Save? (True/False)'],
                ['Output file']]
 
-    for parameter in range(len(entries)):
+    # for parameter in range(len(entries)):
+    for count, value in enumerate(entries):
         # if parameter < 3:
         # wid=30
         # else: 
         # wid=15
-        if entries[parameter][0] == 'Save? (True/False)':
+        if value[0] == 'Save? (True/False)':
             var = IntVar()
             c = Checkbutton(root, text='', variable=var)
-            c.grid(row=parameter + 2, column=1, sticky='w')
-            entries[parameter].append(var)
-            Label(root, text='Save').grid(row=parameter + 2, column=0)
+            c.grid(row=count + 2, column=1, sticky='w')
+            value.append(var)
+            Label(root, text='Save').grid(row=count + 2, column=0)
         else:
-            entries[parameter].append(Entry(root, width=30))
-            Label(root, text=entries[parameter][0]).grid(row=parameter + 2, column=0)
-            entries[parameter][1].grid(row=parameter + 2, column=1)
+            value.append(Entry(root, width=30))
+            Label(root, text=value[0]).grid(row=count + 2, column=0)
+            value[1].grid(row=count + 2, column=1)
 
     # B=['B file',Entry(root,width),Label(root,text=B[0])]
 
@@ -335,31 +321,6 @@ def color_gui(developer=False):
     VRL = Label(root, text='')
     VRL.grid(row=len(entries) + 5, column=0, columnspan=2)
     # B2=gui.Field(root,'B file',2,0)
-    """
-    
-    def call_colorplot():
-        quad,err=color_plot(Bfile=getit(B),Vfile=getit(V),Epoch=float(getit(Epoch)),period=float(getit(Period)),
-                   max_tol=float(getit(MaxT)),lower_lim=float(getit(LL)),Rfile=getit(R),
-                   save=bool(getit(Save)=='True'),outName=getit(Out))
-        BVL.config(text='\n(B-V) = '+str(round(quad,6))+' +/- '+str(round(err,6)))
-        fig = Figure(figsize=(7.5, 9), dpi=100)
-        t = np.arange(0, 3, .01)
-        p1,p2=vseq.plot.multiplot(fig=fig)
-        p1.plot(t,np.sin(np.pi*2*t))
-        p2.plot(t,np.sin(np.pi*2*t))
-        p2.set_xlabel(r'$\Phi$',fontsize=14.4)
-        p1.set_ylabel('Magnitudes',fontsize=14.4)
-        
-        
-        #==================
-        # vseq.plot.sm_format(p1,bottomspine=False,xbottom=False,numbersize=12,tickwidth=1)
-        # vseq.plot.sm_format(p2,topspine=False,xtop=False,numbersize=12,tickwidth=1)
-        # fig.tight_layout()
-        canvas = FigureCanvasTkAgg(fig, master=root)  # A tk.DrawingArea.
-        canvas.draw()
-        # canvas.get_tk_widget().pack(side=TOP, fill=tkinter.BOTH, expand=1)
-        canvas.get_tk_widget().grid(row=0,column=3,rowspan=100,padx=5)
-    """
     fs = 14
 
     def call_colorplot2():

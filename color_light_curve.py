@@ -4,7 +4,7 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 11/01/2022
+Last Edited: 11/02/2022
 Editor: Kyle Koeller
 """
 
@@ -138,99 +138,6 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     V = [aVphase, aV_mag]
 
     return B_V, B, V, quadcolor, colorerr
-
-
-# use this function below
-def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile='', FTinterp=True,
-               save=False, outName='noname_color.png', fs=12):
-    """
-    This is a function version of the GUI and produces the same values but without the plotting aspect
-
-    :param Bfile: input B text file
-    :param Vfile: input V text file
-    :param Epoch: epoch number
-    :param period: period of the system
-    :param max_tol: maximum tolerance
-    :param lower_lim: lower limit
-    :param Rfile: input R text file
-    :param FTinterp: interpolate number
-    :param save: save the output image
-    :param outName: output image name
-    :param fs:
-    :return: assorted values
-    """
-    B_V = subtract_LC(Bfile, Vfile, Epoch, period, max_tol=max_tol, lower_lim=lower_lim, FTinterp=FTinterp)
-    Bphase, Bmag, B_interp_mag = B_V[1][:3:]
-    Vphase, Vmag = B_V[2][:2:]
-    aB_minus_V = B_V[0][3]
-    quadcolor, colorerr = B_V[3:5:]
-    if Rfile == '':
-        axs = vseq.plot.multiplot((7, 7.5), height_ratios=[8, 4.5])
-        mag = axs[0]
-        bv = axs[1]
-        mag.plot(Vphase, Vmag, 'og', ms=2)
-        mag.plot(Bphase, Bmag, 'ob', ms=2)
-        bv.plot(Vphase, aB_minus_V, 'ok', ms=2)
-        bv.margins(y=0.1, x=1 / 24)
-        mag.set_ylim(mag.get_ylim()[::-1])
-        bv.set_ylim(bv.get_ylim()[::-1])
-        vseq.plot.sm_format(mag, X=0.25, x=0.05, Y=None, numbersize=fs, xbottom=False, bottomspine=False, tickwidth=1,
-                            Xsize=7, xsize=3.5)
-        vseq.plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, tickwidth=1, Xsize=7,
-                            xsize=3.5)
-
-        maxtick = max(list(map(len, (list(map(str, np.array(mag.get_yticks()).round(8)))))))
-        if maxtick == 5:
-            ytickpad = -0.835
-        else:
-            ytickpad = -0.81
-        mag.text(ytickpad, (max(Bmag) + min(Bmag)) / 2, 'B', rotation=90, fontsize=fs * 1.2)
-        mag.text(ytickpad, (max(Vmag) + min(Vmag)) / 2, 'V', rotation=90, fontsize=fs * 1.2)
-        # bv.set_xlabel('$\Phi$',fontsize=fs*1.2)
-        bv.set_xlabel('$\Phi$', fontsize=fs * 1.5, usetex=False)
-        bv.set_ylabel(r'$\rm B-V$', fontsize=fs * 1.2)
-        # quadcolor,colorerr=B_V[3:5:]
-        bv.axhline(quadcolor, color='gray', linewidth=None)
-    else:
-        V_R = subtract_LC(Vfile, Rfile, Epoch, period, max_tol, lower_lim=lower_lim)
-        Rphase, Rmag = V_R[2][:2:]
-        V_interp_mag = V_R[1][2]
-        aV_minus_R = V_R[0][3]
-        axs = vseq.plot.multiplot((7, 9), height_ratios=[8, 3, 3])
-        mag = axs[0]
-        bv = axs[2]
-        vr = axs[1]
-        mag.plot(Vphase, Vmag, 'og', ms=2)
-        mag.plot(Bphase, Bmag, 'ob', ms=2)
-        mag.plot(Rphase, Rmag, 'or', ms=2)
-
-        bv.plot(Vphase, aB_minus_V, 'ok', ms=3)
-        vr.plot(Rphase, aV_minus_R, 'ok', ms=3)
-        bv.margins(y=0.07, x=1 / 24)
-        vr.margins(y=0.07)
-        # mag.margins(y=0.09)
-        mag.set_ylim(mag.get_ylim()[::-1])
-        bv.set_ylim(bv.get_ylim()[::-1])
-        vr.set_ylim(vr.get_ylim()[::-1])
-        vseq.plot.sm_format(mag, X=0.25, x=0.05, numbersize=fs, xbottom=False, bottomspine=False)
-        vseq.plot.sm_format(vr, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, xbottom=False,
-                            bottomspine=False)
-        vseq.plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False)
-        maxtick = max(list(map(len, (list(map(str, np.array(mag.get_yticks()).round(8)))))))
-        if maxtick == 5:
-            ytickpad = -0.835
-        else:
-            ytickpad = -0.81
-        mag.text(ytickpad, (max(Bmag) + min(Bmag)) / 2, r'$\rm B$', rotation=90, fontsize=fs * 1.2)
-        mag.text(ytickpad, (max(Vmag) + min(Vmag)) / 2, r'$\rm V$', rotation=90, fontsize=fs * 1.2)
-        mag.text(ytickpad, (max(Rmag) + min(Rmag)) / 2, r'$\rm R_C$', rotation=90, fontsize=fs * 1.2)
-        bv.set_ylabel(r'$\rm B-V$', fontsize=fs * 1.2)
-        vr.set_ylabel(r'$\rm V-R_C$', fontsize=fs * 1.2)
-        bv.set_xlabel(r'$\Phi$', fontsize=fs * 1.2)
-    if save == True:
-        plt.savefig(outName, bbox_inches='tight')
-    plt.show()
-    return quadcolor, colorerr
 
 
 # ==

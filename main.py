@@ -18,19 +18,22 @@ import color_light_curve
 def main():
     print()
     print("Which program do you want to run?")
-    print("TESS database search(1), AIJ/TESS Night Filters(2), AIJ Comp Selector(3), O'Connel Effect(4), TESS Data Download(5), Color Light Curve(6), Close program(7)")
-    print("")
 
     while True:
+        print("TESS database search(1), AIJ/TESS Night Filters(2), AIJ Comp Selector(3), O'Connel Effect(4), "
+              "TESS Data Download(5), Color Light Curve(6), Close program(7)")
+        print("")
         prompt = int(input("Please type out the number corresponding to the corresponding action: "))
         if prompt == 1:
             tess_data_search.main()
         elif prompt == 2:
-            aij = input("AIJ or TESS: ")
+            aij = input("AIJ or TESS or 'Go Back': ")
             if aij.lower() == "aij":
                 AIJ_Night_Filters.main(0)
             elif aij.lower() == "tess":
                 TESS_Night_Filters.main(0)
+            elif aij.lower() == "go back":
+                pass
             else:
                 print("You did not enter AIJ or TESS please go back through the prompts again and enter AIJ or TESS.")
         elif prompt == 3:

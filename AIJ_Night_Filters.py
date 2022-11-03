@@ -1,8 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/11/2020
-Last Updated: 8/19/2022
-Python Version 3.9
+Last Updated: 11/03/2022
 
 This program is meant to make the process of collecting the different filters from AIJ excel spreadsheets faster.
 The user enters however many nights they have and the program goes through and checks those text files for the
@@ -24,7 +23,7 @@ def main(c):
         # warning prompts for the user to read to make sure this program works correctly
         print()
         print("From each night, yous should have a file that is sort of like this: 2018.09.18.APASS.B_datasubset.dat."
-              "This file has 5 columns and you will only need 3 of them.")
+              "This file has 7 columns and you will only need 6 of them.")
         print()
     else:
         print()
@@ -52,7 +51,10 @@ def get_filters(n):
     """
     total_hjd = []
     total_amag = []
-    total_error = []
+    total_amag_error = []
+    total_flux = []
+    total_flux_err = []
+    
     # checks for either the b or v filter as either upper or lowercase will work
     # an example pathway for the files
     # E:\Research\Data\NSVS_254037\2018.10.12-reduced\Check\V\2018.09.18.APASS.B_datasubset.dat
@@ -76,12 +78,16 @@ def get_filters(n):
 
         # set parameters to lists from the file by the column header
         hjd = []
+        amag = []
+        amag_err = []
         flux = []
-        flux_error = []
+        flux_err = []
         try:
             hjd = list(df["HJD"])
+            amag = list(df["Source_AMag_T1"])
+            amg_err = list(df["Source_AMag_Err_T1"])
             flux = list(df["rel_flux_T1"])
-            flux_error = list(df["rel_flux_err_T1"])
+            flux_err = list(df["rel_flux_err_T1"])
         except KeyError:
             print("The file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
                   "Please re-enter the file path and make sure its the correct file.")
@@ -89,24 +95,36 @@ def get_filters(n):
             main(c)
 
         total_hjd.append(hjd)
-        total_amag.append(flux)
-        total_error.append(flux_error)
+        total_amag.append(amag)
+        total_amag_err.append(amag_err)
+        total_flux.append(flux)
+        total_flux_err.append(flux_err)
 
     # converts the Dataframe embedded lists into a normal flat list
     new_hjd = [item for elem in total_hjd for item in elem]
-    new_flux = [item for elem in total_amag for item in elem]
-    new_flux_error = [item for elem in total_error for item in elem]
+    new_amag = [item for elem in total_amag for item in elem]
+    new_amag_err = [item for elem in total_amag_err for item in elem]
+    new_flux = [item for elem in total_flux for item in elem]
+    new_flux_err = [item for elem in total_flux_err for item in elem]
 
     # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
-    data = pd.DataFrame({
+    data1 = pd.DataFrame({
         "HJD": new_hjd,
         "rel flux": new_flux,
-        "rel flux error": new_flux_error
+        "rel flux error": new_flux_err
     })
+    
+    data2 = pd.DataFrame({
+        "HJD":new_hjd,
+        "AMag": new_amag,
+        "AMag Error": new_amag_err
+    })
+    
     print("")
-    output = input("What is the file output name (with file extension .txt): ")
+    output = input("What is the file output name (WITHOUT any file extension): ")
 
-    data.to_csv(output, index=False, header=False, sep='\t')
+    data1.to_csv(output+"_magnitudes.txt", index=False, header=False, sep="\t")
+    data2.to_csv(output+"_flux.txt", index=False, header=False, sep="\t")
     print("")
     print("Fished saving the file to the same location as this program.")
 

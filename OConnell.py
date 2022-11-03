@@ -3,21 +3,17 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 9/29/2022
+Last Edited: 11/03/2022
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
 """
-
-# There's a trick in mathematics called not worrying about it - Matt Parker
 
 import matplotlib.pyplot as plt
 import vseq_updated as vseq
 from tqdm import tqdm
 import numpy as np
 import statistics as st
-# import pandas as pd
-# import matplotlib as mpl
 from os import path
 
 sig_f = lambda f, x, sig_x: abs(f(x + sig_x) - f(x - sig_x)) / 2
@@ -26,12 +22,16 @@ sig_f = lambda f, x, sig_x: abs(f(x + sig_x) - f(x - sig_x)) / 2
 def main():
     print("How many filters are you going to use?")
     while True:
-        try:
-            prompt = int(input("Enter 3 if you are going to use BVR or less than 3 for a combination of them: "))
-            break
-        except ValueError:
-            print("You have entered an incorrect value. Please enter a number between 1-3.")
-            print("")
+        prompt = input("Enter 3 if you are going to use BVR or less than 3 for a combination of them: ")
+        if prompt.isnumeric():
+            if 0 < prompt < 4:
+                break
+            else:
+                print("You have entered in a wrong number not between 1-3. Please try again.")
+        elif prompt.lower() == "close":
+            exit()
+        else:
+            print("You have entered a wrong value. Please try entering a number or the word 'Close'.")
     print("")
     # If statement checks which value was entered for the 'prompt' and corresponds the correct number of files to enter
     # for the O'Connel calculations
@@ -52,7 +52,7 @@ def main():
         outputile = input("What is the output file name (do not add extensions): ")
         multi_OConnell_total([infile1, infile2, infile3], hjd, period, order=10, sims=1000,
                              sections=4, section_order=7, plot_only=False, save=True, outName=outputile+".pdf")
-    elif prompt==2:
+    elif prompt == 2:
         print("Please have all files in the same directory as this python program.")
         while True:
             infile1 = input("File 1 name: ")
@@ -101,7 +101,7 @@ def Half_Comp(filter_files, Epoch, period,
               FT_order=10, sections=4, section_order=8,
               resolution=512, offset=0.25, save=False, outName='noname_halfcomp.png',
               title=None, filter_names=None, sans_font=False):
-    if not sans_font:
+    if sans_font == False:
         plt.rcParams['font.family'] = 'serif'
         plt.rcParams['mathtext.fontset'] = 'dejavuserif'
     bands = len(filter_files)
@@ -415,11 +415,11 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
         parameters in corresponding value, value_err lists. E.g. once this completes,
         OERs will contain the OER values for filter 1,2,... and OERs_err contains the errors.
         """
-        for count, band in enumerate(filter_files):
-            oc = OConnell_total(band, Epoch, period, order, sims=sims,
+        for band in range(len(filter_files)):
+            oc = OConnell_total(filter_files[band], Epoch, period, order, sims=sims,
                                 sections=sections, section_order=section_order,
                                 norm_factor=norm_factor, FT_order=order, FTres=FTres,
-                                filterName='Filter ' + str(count))
+                                filterName='Filter ' + str(band + 1))
             a_all.append(oc[0][0])
             a_err_all.append(oc[0][1])
             b_all.append(oc[1][0])

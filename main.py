@@ -20,8 +20,8 @@ def main():
     print("Which program do you want to run?")
 
     while True:
-        print("TESS database search(1), AIJ/TESS Night Filters(2), AIJ Comp Selector(3), O'Connel Effect(4), "
-              "TESS Data Download(5), Color Light Curve(6), Close program(7)")
+        print("TESS Database Search/Download(1), AIJ/TESS Night Filters(2), AIJ Comparison Star Selector(3), O'Connel Effect(4), "
+              "Color Light Curve(5), Close Program(6)")
         print("")
         prompt = int(input("Please type out the number corresponding to the corresponding action: "))
         if prompt == 1:
@@ -41,10 +41,8 @@ def main():
         elif prompt == 4:
             OConnell.main()
         elif prompt == 5:
-            tess_data_search.main()
-        elif prompt == 6:
             color_light_curve.color_gui(False)
-        elif prompt ==  7:
+        elif prompt ==  6:
             break
         else:
             print("You have not entered any of the allowed entries, please try again.")

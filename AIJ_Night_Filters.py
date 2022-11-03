@@ -122,7 +122,8 @@ def get_filters(n):
     
     print("")
     output = input("What is the file output name (WITHOUT any file extension): ")
-
+    
+    # output both text files with a designation of magnitude or flux
     data1.to_csv(output+"_magnitudes.txt", index=False, header=False, sep="\t")
     data2.to_csv(output+"_flux.txt", index=False, header=False, sep="\t")
     print("")

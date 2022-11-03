@@ -1,15 +1,11 @@
 """
 Created: 2/28/2022
-Last Updated: 8/29/2022
+Last Updated: 11/03/2022
 Author: Kyle Koeller
-Python Version 3.9
 
-This program is meant to make the process of collecting the BJD, rel flux, and the rel flux error from AIJ excel
+This program is meant to make the process of collecting the BJD, rel flux, and the rel flux error from AIJ Excel
 spreadsheets faster. The user enters however many nights they have and the program goes through and checks those text
 files for the different columns for: BJD, rel flux, rel flux error from TESS.
-
-There are error catching statements within the program so if the user mistypes, the program will not crash and
-close on them (hopefully).
 """
 
 import pandas as pd
@@ -24,28 +20,31 @@ def main(c):
     :param c: Counter to check if this is starting the program or iteration from within the program.
     :return: none
     """
+    # warning prompts for the user to read to make sure this program works correctly
     if c == 0:
         # warning prompts for the user to read to make sure this program works correctly
         print()
-        print("Make sure you have turned the output xls files from AIJ into tab delimited text files. "
-              "Since these xls files are corrupt for reading directly from.")
-        print("You will also need to go into each night and filter and "
-              "make the HJD column 6 decimals instead of the output of 3 within Excel.")
+        print("From each night, yous should have a file that is sort of like this: 2018.09.18.APASS.B_datasubset.dat."
+              "This file has 7 columns and you will only need 6 of them.")
+        print(
+            "You may also type the word 'Close' in the next prompt to leave this program and return to the main menu.")
         print()
     else:
         print()
 
-    num = 0
-    test = True
-    while test:
-        try:
-            num = int(input("Number of nights you have: "))
-            test = False
-        except ValueError:
-            print("Please enter a number.")
+    while True:
+        num = input("Number of nights you have: ")
+        if num.isnumeric():
+            if num > 0:
+                break
+            else:
+                print("You have entered an invalid number. Please try again.")
+                print()
+        elif num.lower() == "close":
+            exit()
+        else:
+            print("You have not entered a number or the word 'Close', please try again.")
             print()
-
-    print()
     get_filters(num)
 
 

@@ -51,7 +51,7 @@ def get_filters(n):
     """
     total_hjd = []
     total_amag = []
-    total_amag_error = []
+    total_amag_err = []
     total_flux = []
     total_flux_err = []
     

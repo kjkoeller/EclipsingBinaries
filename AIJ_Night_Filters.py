@@ -54,7 +54,7 @@ def get_filters(n):
     total_amag_err = []
     total_flux = []
     total_flux_err = []
-    
+
     # checks for either the b or v filter as either upper or lowercase will work
     # an example pathway for the files
     # E:\Research\Data\NSVS_254037\2018.10.12-reduced\Check\V\2018.09.18.APASS.B_datasubset.dat
@@ -85,7 +85,7 @@ def get_filters(n):
         try:
             hjd = list(df["HJD"])
             amag = list(df["Source_AMag_T1"])
-            amg_err = list(df["Source_AMag_Err_T1"])
+            amag_err = list(df["Source_AMag_Err_T1"])
             flux = list(df["rel_flux_T1"])
             flux_err = list(df["rel_flux_err_T1"])
         except KeyError:
@@ -113,16 +113,16 @@ def get_filters(n):
         "rel flux": new_flux,
         "rel flux error": new_flux_err
     })
-    
+
     data2 = pd.DataFrame({
         "HJD":new_hjd,
         "AMag": new_amag,
         "AMag Error": new_amag_err
     })
-    
+
     print("")
     output = input("What is the file output name (WITHOUT any file extension): ")
-    
+
     # output both text files with a designation of magnitude or flux
     data1.to_csv(output+"_magnitudes.txt", index=False, header=False, sep="\t")
     data2.to_csv(output+"_flux.txt", index=False, header=False, sep="\t")

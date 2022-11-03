@@ -4,16 +4,18 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 11/02/2022
+Last Edited: 11/03/2022
 Editor: Kyle Koeller
 """
 
 import vseq_updated as vseq
 import numpy as np
+import matplotlib.pyplot as plt
 import statistics as st
 from tkinter import *
 from matplotlib.backends.backend_tkagg import (
-    FigureCanvasTkAgg)
+    FigureCanvasTkAgg, NavigationToolbar2Tk)
+from matplotlib.backend_bases import key_press_handler
 from matplotlib.figure import Figure
 import textwrap
 
@@ -113,10 +115,10 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     BVquadphase = []
     BVquadmag = []
     # Vquad=[]
-    for count, value in enumerate(Vphase):
-        if 0.25 - quad_range < value < 0.25 + quad_range or 0.75 - quad_range < value < 0.75 + quad_range:
-            BVquadphase.append(value)
-            BVquadmag.append(B_interp_mag[count] - V_mag[count])
+    for n in range(len(Vphase)):
+        if 0.25 - quad_range < Vphase[n] < 0.25 + quad_range or 0.75 - quad_range < Vphase[n] < 0.75 + quad_range:
+            BVquadphase.append(Vphase[n])
+            BVquadmag.append(B_interp_mag[n] - V_mag[n])
     quadcolor = mean_mag(BVquadmag)
     colorerr = st.stdev(BVquadmag, xbar=quadcolor)
     print(quadcolor, '+/-', colorerr)
@@ -135,6 +137,99 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     V = [aVphase, aV_mag]
 
     return B_V, B, V, quadcolor, colorerr
+
+
+# use this function below
+def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile='', FTinterp=True,
+               save=False, outName='noname_color.png', fs=12):
+    """
+    This is a function version of the GUI and produces the same values but without the plotting aspect
+
+    :param Bfile: input B text file
+    :param Vfile: input V text file
+    :param Epoch: epoch number
+    :param period: period of the system
+    :param max_tol: maximum tolerance
+    :param lower_lim: lower limit
+    :param Rfile: input R text file
+    :param FTinterp: interpolate number
+    :param save: save the output image
+    :param outName: output image name
+    :param fs:
+    :return: assorted values
+    """
+    B_V = subtract_LC(Bfile, Vfile, Epoch, period, max_tol=max_tol, lower_lim=lower_lim, FTinterp=FTinterp)
+    Bphase, Bmag, B_interp_mag = B_V[1][:3:]
+    Vphase, Vmag = B_V[2][:2:]
+    aB_minus_V = B_V[0][3]
+    quadcolor, colorerr = B_V[3:5:]
+    if Rfile == '':
+        axs = vseq.plot.multiplot((7, 7.5), height_ratios=[8, 4.5])
+        mag = axs[0]
+        bv = axs[1]
+        mag.plot(Vphase, Vmag, 'og', ms=2)
+        mag.plot(Bphase, Bmag, 'ob', ms=2)
+        bv.plot(Vphase, aB_minus_V, 'ok', ms=2)
+        bv.margins(y=0.1, x=1 / 24)
+        mag.set_ylim(mag.get_ylim()[::-1])
+        bv.set_ylim(bv.get_ylim()[::-1])
+        vseq.plot.sm_format(mag, X=0.25, x=0.05, Y=None, numbersize=fs, xbottom=False, bottomspine=False, tickwidth=1,
+                            Xsize=7, xsize=3.5)
+        vseq.plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, tickwidth=1, Xsize=7,
+                            xsize=3.5)
+
+        maxtick = max(list(map(len, (list(map(str, np.array(mag.get_yticks()).round(8)))))))
+        if maxtick == 5:
+            ytickpad = -0.835
+        else:
+            ytickpad = -0.81
+        mag.text(ytickpad, (max(Bmag) + min(Bmag)) / 2, 'B', rotation=90, fontsize=fs * 1.2)
+        mag.text(ytickpad, (max(Vmag) + min(Vmag)) / 2, 'V', rotation=90, fontsize=fs * 1.2)
+        # bv.set_xlabel('$\Phi$',fontsize=fs*1.2)
+        bv.set_xlabel('$\Phi$', fontsize=fs * 1.5, usetex=False)
+        bv.set_ylabel(r'$\rm B-V$', fontsize=fs * 1.2)
+        # quadcolor,colorerr=B_V[3:5:]
+        bv.axhline(quadcolor, color='gray', linewidth=None)
+    else:
+        V_R = subtract_LC(Vfile, Rfile, Epoch, period, max_tol, lower_lim=lower_lim)
+        Rphase, Rmag = V_R[2][:2:]
+        V_interp_mag = V_R[1][2]
+        aV_minus_R = V_R[0][3]
+        axs = vseq.plot.multiplot((7, 9), height_ratios=[8, 3, 3])
+        mag = axs[0]
+        bv = axs[2]
+        vr = axs[1]
+        mag.plot(Vphase, Vmag, 'og', ms=2)
+        mag.plot(Bphase, Bmag, 'ob', ms=2)
+        mag.plot(Rphase, Rmag, 'or', ms=2)
+
+        bv.plot(Vphase, aB_minus_V, 'ok', ms=3)
+        vr.plot(Rphase, aV_minus_R, 'ok', ms=3)
+        bv.margins(y=0.07, x=1 / 24)
+        vr.margins(y=0.07)
+        # mag.margins(y=0.09)
+        mag.set_ylim(mag.get_ylim()[::-1])
+        bv.set_ylim(bv.get_ylim()[::-1])
+        vr.set_ylim(vr.get_ylim()[::-1])
+        vseq.plot.sm_format(mag, X=0.25, x=0.05, numbersize=fs, xbottom=False, bottomspine=False)
+        vseq.plot.sm_format(vr, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, xbottom=False,
+                            bottomspine=False)
+        vseq.plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False)
+        maxtick = max(list(map(len, (list(map(str, np.array(mag.get_yticks()).round(8)))))))
+        if maxtick == 5:
+            ytickpad = -0.835
+        else:
+            ytickpad = -0.81
+        mag.text(ytickpad, (max(Bmag) + min(Bmag)) / 2, r'$\rm B$', rotation=90, fontsize=fs * 1.2)
+        mag.text(ytickpad, (max(Vmag) + min(Vmag)) / 2, r'$\rm V$', rotation=90, fontsize=fs * 1.2)
+        mag.text(ytickpad, (max(Rmag) + min(Rmag)) / 2, r'$\rm R_C$', rotation=90, fontsize=fs * 1.2)
+        bv.set_ylabel(r'$\rm B-V$', fontsize=fs * 1.2)
+        vr.set_ylabel(r'$\rm V-R_C$', fontsize=fs * 1.2)
+        bv.set_xlabel(r'$\Phi$', fontsize=fs * 1.2)
+    if save:
+        plt.savefig(outName, bbox_inches='tight')
+    plt.show()
+    return quadcolor, colorerr
 
 
 # ==
@@ -188,7 +283,7 @@ class gui:
         Flab.grid(row=row, column=column, columnspan=colspan)
         Fent = Entry(root, width=width)
         Fent.grid(row=row, column=column + 1, columnspan=colspan)
-        if def_val != None:
+        if def_val is not None:
             Fent.insert(0, def_val)
         if ftype == 'float':
             got = float(Fent.get())
@@ -219,14 +314,13 @@ def color_gui(developer=False):
     # disp=3
     # T=Text(root,height=disp,width=25)
     # T.grid(row=0,column=1)
-    Intro = Label(root, text='Color Light Curve - gui\nversion 0.2 (2/19/21)\nby Alec Neal\n')
+    Intro = Label(root, text='Color Light Curve - gui\nversion 0.2.1 (2/19/21)\nby Alec Neal\n')
     Intro.grid(row=0, column=0, columnspan=2)
     # Intro.config(font=('Arial',12))
     # T.insert(END,'Hello world!')
 
     Label(root, text=autowrap('Program to determine light curve colors. Mouse over the fields for more information.',
                               width=50) + '\n').grid(row=1, column=0, columnspan=2)
-
     entries = [['B file'],
                ['V file'],
                ['R (optional)'],
@@ -237,22 +331,21 @@ def color_gui(developer=False):
                ['Save? (True/False)'],
                ['Output file']]
 
-    # for parameter in range(len(entries)):
-    for count, value in enumerate(entries):
+    for parameter in range(len(entries)):
         # if parameter < 3:
         # wid=30
         # else: 
         # wid=15
-        if value[0] == 'Save? (True/False)':
+        if entries[parameter][0] == 'Save? (True/False)':
             var = IntVar()
             c = Checkbutton(root, text='', variable=var)
-            c.grid(row=count + 2, column=1, sticky='w')
-            value.append(var)
-            Label(root, text='Save').grid(row=count + 2, column=0)
+            c.grid(row=parameter + 2, column=1, sticky='w')
+            entries[parameter].append(var)
+            Label(root, text='Save').grid(row=parameter + 2, column=0)
         else:
-            value.append(Entry(root, width=30))
-            Label(root, text=value[0]).grid(row=count + 2, column=0)
-            value[1].grid(row=count + 2, column=1)
+            entries[parameter].append(Entry(root, width=30))
+            Label(root, text=entries[parameter][0]).grid(row=parameter + 2, column=0)
+            entries[parameter][1].grid(row=parameter + 2, column=1)
 
     # B=['B file',Entry(root,width),Label(root,text=B[0])]
 
@@ -270,17 +363,20 @@ def color_gui(developer=False):
         defaults(Epoch, 2458308.729976)
         defaults(Period, 0.290374)
     # === tool tips! =====
+    """
+    Creates tool tips that users look at when hovering certain aspects of the GUI
+    """
     CreateToolTip(MaxT[1],
                   text=autowrap('The largest fraction of the period to find adjacent points for linear interpolation.'
                                 ' We don\'t want to use the next observation if that observation is days or weeks away!'
-                                ' If the next interp. point is beyond this, the program interplates using a Fourier transform of the light curve.',
+                                ' If the next interp. point is beyond this, the program interpolates using a Fourier transform of the light curve.',
                                 width=70))
     CreateToolTip(Intro, text=autowrap('Program to determine the color index of a light curve, given up to 3 filters.'
                                        ' Because we can\'t take filter images at the same time, interpolation '
-                                       'is required in order to get the instntaneous color index at each observation. '
+                                       'is required in order to get the instantaneous color index at each observation. '
                                        'This program calculates B-V, and V-R if R is given. The bluer color is the color that '
                                        'is interpolated from the redder filter\'s times of observation (B in B-V and V in V-R).'
-                                       ' In the case of B, it takes B observations lying between two V times and linear interplates to the time.'
+                                       ' In the case of B, it takes B observations lying between two V times and linear interpolates to the time.'
                                        ' However, when the bordering magnitudes are too far apart, it interpolates using a Fourier transform'
                                        ' of the B light curve.', width=70))
 
@@ -289,13 +385,13 @@ def color_gui(developer=False):
                                 'this percentage (default 5%) of the light curve is FT interpolated. So for densely '
                                 'sampled data, expect 5% of the B mags to be FT interpolated, but > 5% for sparsely sampled'
                                 ', since it won\'t go over MaxT. This is somewhat unnecessary (and potentially harmful), but '
-                                'works if the given MaxT is not desireable and is only last ditch. You can set it to 0, which will'
+                                'works if the given MaxT is not desirable and is only last ditch. You can set it to 0, which will'
                                 ' essentially set the tolerance to the MaxT.'
                                 , width=70))
     # CreateToolTip(Save[1],text=autowrap('Type True here if you want your image saved to the specified output name (below).',width=70))
     CreateToolTip(Out[1], text=autowrap(
-        'Enter your desired output name. The extention indicates the type of file it will be saved as.'
-        ' Go to the matplotlib website to see the full list, but recomnded formats'
+        'Enter your desired output name. The extension indicates the type of file it will be saved as.'
+        ' Go to the matplotlib website to see the full list, but recommended formats'
         ' are vector graphic types like .pdf, .svg (.eps can be iffy). For raster'
         ' images use .png (I don\'t think jpegs (.jpg) are supported).', width=70))
     CreateToolTip(Epoch[1], text=autowrap('Phase zero for the light curve. This is arbitrary with respect to'
@@ -338,6 +434,9 @@ def color_gui(developer=False):
         aB_minus_V = B_V[0][3]
         quadcolor, colorerr = B_V[3:5:]
         if getit(R) == '':
+            """
+            Checks whether the user has entered a R band text file
+            """
             fig = Figure(figsize=(7, 7.8), dpi=90, tight_layout=True)
             # canvas = FigureCanvasTkAgg(fig, master=root)
             # canvas.destroy()
@@ -420,13 +519,10 @@ def color_gui(developer=False):
             VRL.config(text='(V-R) = ' + str(round(VRc, 6)) + ' +/- ' + str(round(VRerr, 6)), bg='white',
                        relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
             show_color = False
-            if show_color == True:
-                # vr.annotate(r'$V-R_{\rm C}='+str(round(VRc,4))+'\pm'+str(round(VRerr,4))+'$',
-                # xy=(0.25,vr.get_ylim()[-1]),ha='center')
-                
+            if show_color:
+                # vr.annotate(r'$V-R_{\rm C}='+str(round(VRc,4))+'\pm'+str(round(VRerr,4))+'$',xy=(0.25,vr.get_ylim()[-1]),ha='center')
                 # vr.plot([''])
-                # vr.annotate(r'$V-R_{\rm C}='+str(round(VRc,4))+'\pm'+str(round(VRerr,4))+'$',xy=(0.25,VRc),ha='center'
-                # ,va='center',bbox=dict(facecolor='white', edgecolor='gray',boxstyle='round',pad=0.1),fontsize=11)
+                # vr.annotate(r'$V-R_{\rm C}='+str(round(VRc,4))+'\pm'+str(round(VRerr,4))+'$',xy=(0.25,VRc),ha='center',va='center',bbox=dict(facecolor='white', edgecolor='gray',boxstyle='round',pad=0.1),fontsize=11)
 
                 vr.annotate(r'$V-R_{\rm C}=' + str(round(VRc, 4)) + '\pm' + str(round(VRerr, 4)) + '$',
                             xytext=(0.25, vr.get_ylim()[-1]), xy=(0, VRc), ha='center', va='center',

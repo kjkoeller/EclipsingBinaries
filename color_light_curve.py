@@ -14,8 +14,7 @@ import matplotlib.pyplot as plt
 import statistics as st
 from tkinter import *
 from matplotlib.backends.backend_tkagg import (
-    FigureCanvasTkAgg, NavigationToolbar2Tk)
-from matplotlib.backend_bases import key_press_handler
+    FigureCanvasTkAgg)
 from matplotlib.figure import Figure
 import textwrap
 

@@ -51,7 +51,10 @@ def get_filters(n):
     """
     total_hjd = []
     total_amag = []
-    total_error = []
+    total_amag_error = []
+    total_flux = []
+    total_flux_err = []
+    
     # checks for either the b or v filter as either upper or lowercase will work
     # an example pathway for the files
     # E:\Research\Data\NSVS_254037\2018.10.12-reduced\Check\V\2018.09.18.APASS.B_datasubset.dat

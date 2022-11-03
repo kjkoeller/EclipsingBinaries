@@ -1,8 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 2/8/2022
-Last Updated: 8/3/2022
-Python Version 3.9
+Last Updated: 11/03/2022
 
 APASS Star comparison finding for the most accurate magnitudes from the list of stars made in AIJ
 """
@@ -26,7 +25,9 @@ def main():
     # reads the text files to be analyzed for comparison star matches between APASS and Simbad
     # apass_file = input("Enter the text file name for the generated APASS stars: ")
     apass_file = cousins.main()
-    radec_file = input("Enter the text file name for the RADEC file from AIJ: ")
+    radec_file = input("Enter the text file name for the RADEC file from AIJ or type 'Close' to exit the program: ")
+    if radec_file.lower() == "close":
+        exit()
     while True:
         test = 0
         try:

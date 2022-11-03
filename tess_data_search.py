@@ -3,8 +3,7 @@ Look up the TESS data and download that data onto a local drive.
 
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 9/07/2022
-Version: Python 3.9
+Last Updated: 11/03/2022
 """
 
 # import required packages
@@ -23,6 +22,8 @@ def main():
     """
 
     # While loops checks to make sure that the user has entered a valid TIC number that can be found.
+    print("If you want to close this program type 'Close' in the following prompt.")
+    print()
     while True:
         try:
             system_name = input("Enter in the TIC-ID given in SIMBAD (TIC 468293391): ")
@@ -30,6 +31,9 @@ def main():
             break
         except astroquery.exceptions.ResolverError:
             print("The TIC number you entered is invalid or there is no data for this given system.")
+
+    if system_name.lower() == "close":
+        exit()
 
     # prints off the sector table to let the user know what sectors TESS has observed the object
     print(sector_table)

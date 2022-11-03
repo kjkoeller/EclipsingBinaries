@@ -3,11 +3,9 @@ Author: Kyle Koeller
 Created: 11/11/2020
 Last Updated: 11/03/2022
 
-This program is meant to make the process of collecting the different filters from AIJ excel spreadsheets faster.
+This program is meant to make the process of collecting the different filters from AIJ Excel spreadsheets faster.
 The user enters however many nights they have and the program goes through and checks those text files for the
 different columns for,HJD, Amag, and Amag error for the B and V filters.
-
-The program will also calculate the R magnitude from the rel flux of T1.
 
 There are error catching statements within the program so if the user mistypes, the program will not crash and
 close on them (hopefully)
@@ -24,20 +22,24 @@ def main(c):
         print()
         print("From each night, yous should have a file that is sort of like this: 2018.09.18.APASS.B_datasubset.dat."
               "This file has 7 columns and you will only need 6 of them.")
+        print("You may also type the word 'Close' in the next prompt to leave this program and return to the main menu.")
         print()
     else:
         print()
 
     while True:
-        # checks to see whether you have entered a number and a correct filter letter
-        try:
-            num = int(input("Number of nights you have: "))
+        num = input("Number of nights you have: ")
+        if num.isnumeric():
+            if num > 0:
+                break
+            else:
+                print("You have entered an invalid number. Please try again.")
+                print()
+        elif num.lower() == "close":
+            exit()
+        else:
+            print("You have not entered a number or the word 'Close', please try again.")
             print()
-            break
-        except ValueError:
-            print("You have entered an invalid number for your number of nights. Please enter a number.")
-            print()
-
     get_filters(num)
 
 

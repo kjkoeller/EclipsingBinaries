@@ -73,6 +73,10 @@ def main():
     print("This program is not 100% accurate, so the recommendation is to compare what you found in AIJ to what this "
           "code has found and make sure that the two lists are the same and enter in the filter values manually into"
           "the RADEC file for AIJ to use in the photometry.")
+    print()
+    print("The output file you have entered has RA and DEC for stars and their B, V, and Cousins R magnitudes with "
+          "their respective errors.")
+    print()
 
 
 def new_list(a):

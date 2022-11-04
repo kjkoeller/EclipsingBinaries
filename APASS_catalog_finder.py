@@ -3,8 +3,7 @@ Search the APASS catalog by searching a region of the sky for comparison stars a
 
 Author: Kyle Koeller
 Created: 2/8/2021
-Last Updated: 8/3/2022
-Python Version 3.9
+Last Updated: 11/04/2022
 """
 
 from astroquery.vizier import Vizier
@@ -36,6 +35,7 @@ def main():
     # 78:57:42.657327180
     ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
     dec_input = input("Enter the DEC of your system (DD:MM:SS.SS or -DD:MM:SS.SSSS): ")
+    print()
 
     ra_input2 = splitter([ra_input])
     dec_input2 = splitter([dec_input])

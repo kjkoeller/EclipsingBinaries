@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 2/8/2022
-Last Updated: 11/03/2022
+Last Updated: 11/04/2022
 
 APASS Star comparison finding for the most accurate magnitudes from the list of stars made in AIJ
 """
@@ -24,23 +24,23 @@ def main():
     """
     # reads the text files to be analyzed for comparison star matches between APASS and Simbad
     # apass_file = input("Enter the text file name for the generated APASS stars: ")
-    apass_file = cousins.main()
+    print("Must have all files in the same folder as the Python code OR type out the full file pathway to the file.")
     radec_file = input("Enter the text file name for the RADEC file from AIJ or type 'Close' to exit the program: ")
     if radec_file.lower() == "close":
         exit()
+    apass_file = cousins.main()
     while True:
         test = 0
         try:
             df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
             dh = pd.read_csv(radec_file, header=None, skiprows=7)
         except FileNotFoundError:
-            print("Files were not found, please enter them again.")
+            print("File was not found, please enter them again.")
             print()
             test = -1
         if test == 0:
             break
         else:
-            apass_file = input("Enter the text file name for the generated APASS stars: ")
             radec_file = input("Enter the text file name for the RADEC file from AIJ: ")
     # noinspection PyUnboundLocalVariable
     duplicate_df = angle_dist(df, dh)

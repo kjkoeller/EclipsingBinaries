@@ -114,6 +114,9 @@ def main():
 
     # saves the dataframe to a text file and prints that dataframe out to easily see what was copied to the text file
     print()
+    print("This output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and "
+          "should not be used for anything else other than calculation confirmation if needed later on.")
+    print()
     text_file = input("Enter a text file name for the output comparisons (ex: APASS_3350218.txt): ")
     df.to_csv(text_file, index=None)
     print("Completed save")

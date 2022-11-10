@@ -30,7 +30,9 @@ def main():
     """
 
     # allows the user to input where the raw images are and where the calibrated images go to
-    path = input("Please enter a file path or folder name (if this code is in the same main folder): ")
+    path = input("Please enter a file path or folder name (if this code is in the same main folder) or type the word 'Close' to leave: ")
+    if path.lower() == "close":
+        exit()
     calibrated = input("Please enter a name for a new calibrated folder to not overwrite the original images: ")
 
     # checks whether the file paths from above are real

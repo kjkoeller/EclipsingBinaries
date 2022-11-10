@@ -4,7 +4,7 @@ other programs.
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 11/02/2022
+Last Updated: 11/10/2022
 """
 
 import tess_data_search
@@ -13,6 +13,7 @@ import TESS_Night_Filters
 import APASS_AIJ_comparison_selector
 import OConnell
 import color_light_curve
+import IRAF_Reduction
 
 
 def main():
@@ -21,7 +22,7 @@ def main():
 
     while True:
         print("TESS Database Search/Download(1), AIJ/TESS Night Filters(2), AIJ Comparison Star Selector(3), O'Connel Effect(4), "
-              "Color Light Curve(5), Close Program(6)")
+              "Color Light Curve(5), IRAF Reduction(6), Close Program(7)")
         print("")
         prompt = int(input("Please type out the number corresponding to the corresponding action: "))
         if prompt == 1:
@@ -42,7 +43,9 @@ def main():
             OConnell.main()
         elif prompt == 5:
             color_light_curve.color_gui(False)
-        elif prompt ==  6:
+		elif prompt == 6:
+			IRAF_Reduction.main()
+        elif prompt ==  7:
             break
         else:
             print("You have not entered any of the allowed entries, please try again.")

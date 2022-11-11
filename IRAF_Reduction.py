@@ -16,6 +16,15 @@ import ccdproc as ccdp
 import numpy as np
 
 
+# global variables for combining, to either play with or set depending on the run
+minmax_clip_min = 0
+minmax_clip_max = 1
+sigma_clip_low_thresh = 3
+sigma_clip_high_thresh = 3
+rdnoise = 10.83  # gathered from fits headers manually
+gain = 1.43  # gathered from fits headers manually
+
+
 def main():
     """
     This function calls all other functions in order of the calibration.
@@ -24,8 +33,8 @@ def main():
     """
 
     # allows the user to input where the raw images are and where the calibrated images go to
-    path = input(
-        "Please enter a file path or folder name (if this code is in the same main folder) or type the word 'Close' to leave: ")
+    path = input("Please enter a file path or folder name (if this code is in the same main folder) or type the word "
+                 "'Close' to leave: ")
     if path.lower() == "close":
         exit()
     calibrated = input("Please enter a name for a new calibrated folder to not overwrite the original images: ")
@@ -47,13 +56,11 @@ def main():
             calibrated = input("Please enter a name for a new calibrated folder to not overwrite the original images: ")
 
     calibrated_data.mkdir(exist_ok=True)
-    rdnoise = 10.83  # gathered from fits headers manually
-    gain = 1.43  # gathered from fits headers manually
     files = ccdp.ImageFileCollection(images_path)
 
     zero = bias(files, calibrated_data)
-    master_dark = dark(files, zero, calibrated_data, rdnoise, gain)
-    flat(files, zero, master_dark, calibrated_data, rdnoise, gain)
+    master_dark = dark(files, zero, calibrated_data)
+    flat(files, zero, master_dark, calibrated_data)
 
 
 def bias(files, calibrated_data):
@@ -64,10 +71,11 @@ def bias(files, calibrated_data):
     :param calibrated_data: file location where the new images go
     :return: the combined bias image
     """
+    print("Starting overscan on bias.")
     # raw_biases = files.files_filtered(include_path=True, imagetyp='BIAS')
     for ccd, file_name in files.ccds(imagetyp='BIAS', ccd_kwargs={'unit': 'adu'}, return_fname=True):
         # Just get the bias frames
-        # CCDData requires a unit for the image if 
+        # CCDData requires a unit for the image if
         # it is not in the header # Provide the file name too.
 
         # Subtract the overscan
@@ -77,7 +85,7 @@ def bias(files, calibrated_data):
         ccd = ccdp.trim_image(ccd[20:2065, 13:2057])
         list_of_words = file_name.split("-")
 
-        new_fname = "bias_osc_{}.fits".format(list_of_words[3])
+        new_fname = "bias_o_{}.fits".format(list_of_words[3])
         # Save the result
         ccd.write(calibrated_data / new_fname, overwrite=True)
 
@@ -89,9 +97,9 @@ def bias(files, calibrated_data):
 
     combined_bias = ccdp.combine(calibrated_biases,
                                  method='average',
-                                 minmax_clip=True, minmax_clip_min=0, minmax_clip_max=1,
-                                 sigma_clip=True, sigma_clip_low_thresh=3, sigma_clip_high_thresh=3,
-                                 sigma_clip_func=np.ma.median, signma_clip_dev_func=mad_std, mem_limit=450e6
+                                 minmax_clip=True, minmax_clip_min=minmax_clip_min, minmax_clip_max=minmax_clip_max,
+                                 sigma_clip=True, sigma_clip_low_thresh=sigma_clip_low_thresh,
+                                 sigma_clip_high_thresh=sigma_clip_high_thresh, mem_limit=450e6
                                  )
 
     combined_bias.meta['combined'] = True
@@ -102,15 +110,13 @@ def bias(files, calibrated_data):
     return combined_bias
 
 
-def dark(files, combined_bias, calibrated_path, rdnoise, gain):
+def dark(files, combined_bias, calibrated_path):
     """
     Calibrates the dark frames.
 
     :param files: file location of raw images
     :param combined_bias: master bias image
     :param calibrated_path: file location for the new images
-    :param rdnoise: readout noise for BSUO
-    :param gain: gain for BSUO
     :return:
     """
     # reduced_images = ccdp.ImageFileCollection(calibrated_path)
@@ -120,7 +126,7 @@ def dark(files, combined_bias, calibrated_path, rdnoise, gain):
     # calibrating a combining the dark frames
     for ccd, file_name in files.ccds(imagetyp='DARK', ccd_kwargs={'unit': 'adu'}, return_fname=True):
         # Just get the dark frames
-        # CCDData requires a unit for the image if 
+        # CCDData requires a unit for the image if
         # it is not in the header # Provide the file name too.):
 
         # Subtract the overscan
@@ -133,7 +139,7 @@ def dark(files, combined_bias, calibrated_path, rdnoise, gain):
         ccd = ccdp.subtract_bias(ccd, combined_bias)
         list_of_words = file_name.split("-")
 
-        new_fname = "dark_osc_bs_{}.fits".format(list_of_words[3])
+        new_fname = "dark_o_b_{}.fits".format(list_of_words[3])
         # Save the result
         ccd.write(calibrated_path / new_fname, overwrite=True)
 
@@ -147,8 +153,9 @@ def dark(files, combined_bias, calibrated_path, rdnoise, gain):
 
     combined_darks = ccdp.combine(calibrated_darks,
                                   method='average',
-                                  minmax_clip=True, minmax_clip_min=0, minmax_clip_max=1,
-                                  sigma_clip=True, sigma_clip_low_thresh=3, sigma_clip_high_thresh=3,
+                                  minmax_clip=True, minmax_clip_min=minmax_clip_min, minmax_clip_max=minmax_clip_max,
+                                  sigma_clip=True, sigma_clip_low_thresh=sigma_clip_low_thresh,
+                                  sigma_clip_high_thresh=sigma_clip_high_thresh,
                                   sigma_clip_func=np.ma.median, signma_clip_dev_func=mad_std,
                                   rdnoise=rdnoise, gain=gain, mem_limit=450e6
                                   )
@@ -161,7 +168,7 @@ def dark(files, combined_bias, calibrated_path, rdnoise, gain):
     return combined_darks
 
 
-def flat(files, combined_bias, combined_darks, calibrated_path, rdnoise, gain):
+def flat(files, combined_bias, combined_darks, calibrated_path):
     """
     Calibrate flat images.
 
@@ -169,13 +176,11 @@ def flat(files, combined_bias, combined_darks, calibrated_path, rdnoise, gain):
     :param combined_bias: combined bias image
     :param combined_darks: combined bias image
     :param calibrated_path: file location for new images
-    :param rdnoise: readout noise for BSUO
-    :param gain: gain for BSUO
-    :return:
+    :return: master flat files in each filter
     """
     print("Starting flat calibration.")
     print()
-    
+
     # calibrating and combining the flat frames
     for ccd, file_name in files.ccds(imagetyp='FLAT', return_fname=True, ccd_kwargs={'unit': 'adu'}):
         # Just get the bias frames
@@ -194,7 +199,7 @@ def flat(files, combined_bias, combined_darks, calibrated_path, rdnoise, gain):
         ccd = ccdp.subtract_dark(ccd, combined_darks, exposure_time='exptime', exposure_unit=u.second, scale=True)
         list_of_words = file_name.split("-")
 
-        new_fname = "flat_osc_bs_ds_{}_{}.fits".format(list_of_words[2], list_of_words[4])
+        new_fname = "flat_o_b_d_{}_{}.fits".format(list_of_words[2], list_of_words[4])
         # Save the result
         ccd.write(calibrated_path / new_fname, overwrite=True)
 
@@ -210,16 +215,17 @@ def flat(files, combined_bias, combined_darks, calibrated_path, rdnoise, gain):
         to_combine = ifc.files_filtered(imagetyp="flat", filter=filt, include_path=True)
         combined_flat = ccdp.combine(to_combine,
                                      method='average',
-                                     minmax_clip=True, minmax_clip_min=0, minmax_clip_max=1,
-                                     sigma_clip=True, sigma_clip_low_thresh=3, sigma_clip_high_thresh=3,
+                                     minmax_clip=True, minmax_clip_min=minmax_clip_min, minmax_clip_max=minmax_clip_max,
+                                     sigma_clip=True, sigma_clip_low_thresh=sigma_clip_low_thresh,
+                                     sigma_clip_high_thresh=sigma_clip_high_thresh,
                                      sigma_clip_func=np.ma.median, signma_clip_dev_func=mad_std,
                                      rdnoise=rdnoise, gain=gain, mem_limit=450e6
                                      )
 
         combined_flat.meta['combined'] = True
-        dark_file_name = 'master_flat_{}.fit'.format(filt.replace("Empty/", ""))
+        flat_file_name = 'master_flat_{}.fits'.format(filt.replace("Empty/", ""))
 
-        combined_flat.write(calibrated_path / dark_file_name, overwrite=True)
+        combined_flat.write(calibrated_path / flat_file_name, overwrite=True)
 
     print("Finished creating the master flats by filter.")
     print()

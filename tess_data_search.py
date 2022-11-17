@@ -41,7 +41,7 @@ def main():
         # downloads the pixel file data that can then be analyzed with AIJ
         print()
         print("Starting download of Sector " + str(i))
-        manifest = Tesscut.download_cutouts(objectname=system_name, size=[15, 15] * u.arcmin, sector=i)
+        manifest = Tesscut.download_cutouts(objectname=system_name, size=[40, 40] * u.arcmin, sector=i)
         tCut.main(manifest)
         print("Finished downloading Sector " + str(i))
     print("Finished downloading all sector data related to " + system_name)

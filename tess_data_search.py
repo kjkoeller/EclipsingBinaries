@@ -1,9 +1,8 @@
 """
 Look up the TESS data and download that data onto a local drive.
-
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 11/03/2022
+Last Updated: 11/17/2022
 """
 
 # import required packages
@@ -17,7 +16,6 @@ def main():
     """
     This function allows the user to enter a TIC ID to be entered, and it also makes sure that number is valid or exists.
     This program will also list off the sector data to be downloaded for cross-referencing if needed.
-
     :return: Downloaded pixel data in the form of .fits files to be extracted later
     """
 
@@ -41,7 +39,7 @@ def main():
         # downloads the pixel file data that can then be analyzed with AIJ
         print()
         print("Starting download of Sector " + str(i))
-        manifest = Tesscut.download_cutouts(objectname=system_name, size=[40, 40] * u.arcmin, sector=i)
+        manifest = Tesscut.download_cutouts(objectname=system_name, size=[30, 30] * u.arcmin, sector=i)
         tCut.main(manifest)
         print("Finished downloading Sector " + str(i))
     print("Finished downloading all sector data related to " + system_name)

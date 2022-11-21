@@ -8,6 +8,7 @@ A Python project for Ball State University's Variable Star Research Group
 --------------------------
 
 ## Dependencies
+https://github.com/kjkoeller/Variable_Star_Research_Package/wiki/Installation
 * astropy>=5.1.1
 * astroquery>=0.4.6
 * ccdproc>=2.4.0
@@ -21,10 +22,7 @@ A Python project for Ball State University's Variable Star Research Group
 
 --------------------------
 
-## Descriptions ![](https://github.com/kjkoeller/Variable_Star_Research_Package/releases)
-
-### requirements.txt
-Text file that displays what the minimum required python packages are for using these programs. To install directly off this file, please refer to the wiki https://github.com/kjkoeller/Variable_Star_Research_Package/wiki/Installation
+## Descriptions (v0.6.1-alpha)
 
 ### main.py
 The main program that can call all the other programs given a user's prompts. When using this package, always run the main.py first as this will connect to all the following programs.

@@ -1,4 +1,4 @@
-[![GitHub release](https://img.shields.io/github/release/Naereen/StrapDown.js.svg)](https://github.com/kjkoeller/Variable_Star_Research_Package/releases/)
+[![GitHub release](https://img.shields.io/github/v/release/kjkoeller/Variable_Star_Research_Package)](https://github.com/kjkoeller/Variable_Star_Research_Package/releases/)
 ![GitHub](https://img.shields.io/github/license/kjkoeller/Variable_Star_Research_Package)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/9cd9a15e47ab4ed7b78071d096ea099d)](https://www.codacy.com/gh/kjkoeller/Variable_Star_Research_Package/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=kjkoeller/Variable_Star_Research_Package&amp;utm_campaign=Badge_Grade)
 

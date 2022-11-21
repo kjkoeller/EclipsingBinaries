@@ -2,9 +2,6 @@
 
 """Setup script for the package."""
 
-import os
-import sys
-
 import setuptools
 
 

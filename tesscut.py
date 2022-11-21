@@ -4,7 +4,7 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 11/17/2022
+Last Edited: 11/21/2022
 
 Spyder Editor
 This is a temporary script file.
@@ -20,7 +20,6 @@ import astropy.io.fits as pyfits
 from time import gmtime, strftime  # for utc
 from astropy.time import Time
 import astropy.units as u
-from astropy.coordinates import (SkyCoord, EarthLocation)
 from PyAstronomy import pyasl
 
 """

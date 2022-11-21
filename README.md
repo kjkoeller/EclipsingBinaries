@@ -1,3 +1,5 @@
+![GitHub tag (latest SemVer pre-release)](https://img.shields.io/github/v/tag/kjkoeller/Variable_Star_Research_Package?include_prereleases)
+![GitHub](https://img.shields.io/github/license/kjkoeller/Variable_Star_Research_Package)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/9cd9a15e47ab4ed7b78071d096ea099d)](https://www.codacy.com/gh/kjkoeller/Variable_Star_Research_Package/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=kjkoeller/Variable_Star_Research_Package&amp;utm_campaign=Badge_Grade)
 
 # Variable_Star_Research_Package

@@ -5,10 +5,28 @@
 # Variable_Star_Research_Package
 A Python project for Ball State University's Variable Star Research Group
 
-## requirements.txt
+--------------------------
+
+## Dependencies
+* astropy>=5.1.1
+* astroquery>=0.4.6
+* ccdproc>=2.4.0
+* matplotlib>=3.3.1
+* numpy>=1.19.1
+* pandas>=1.1.0
+* PyAstronomy>=0.18.0
+* scipy>=1.5.2
+* statsmodels>=0.13.5
+* tqdm>=4.64.1
+
+--------------------------
+
+## Descriptions ![](https://github.com/kjkoeller/Variable_Star_Research_Package/releases)
+
+### requirements.txt
 Text file that displays what the minimum required python packages are for using these programs. To install directly off this file, please refer to the wiki https://github.com/kjkoeller/Variable_Star_Research_Package/wiki/Installation
 
-## main.py
+### main.py
 The main program that can call all the other programs given a user's prompts. When using this package, always run the main.py first as this will connect to all the following programs.
 
 ### AIJ_Night_Filters.py

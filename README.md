@@ -65,3 +65,6 @@ Allows the user to create a color light curve for both B-V and V-R bands and gat
 
 ### IRAF_Reduction.py
 This program automatiaclly reduces calibration images without the need for the user to do any sort of input except where the images are and where they will go. This program so far does NOT reduce the actual science images, but is currently being worked on.
+
+### Overlay_Comparison.py
+This program overlays both APASS and AIJ comparison stars onto a real science image. This allows for the best comparison of comparison stars between AIJ and APASS.

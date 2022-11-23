@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 2/8/2022
-Last Updated: 11/04/2022
+Last Updated: 11/22/2022
 
 APASS Star comparison finding for the most accurate magnitudes from the list of stars made in AIJ
 """
@@ -10,6 +10,7 @@ import pandas as pd
 from PyAstronomy import pyasl
 import APASS_catalog_finder as APASS_catalog
 import cousins_R as cousins
+import Overlay_Comparison as overlay
 
 
 def main():
@@ -67,7 +68,7 @@ def main():
 
     # prints the output and saves the dataframe to the text file with "tab" spacing
     output_file = input("Enter an output file name (i.e. 'APASS_254037_Catalog.txt): ")
-    final.to_csv(output_file, index=None, sep="\t")
+    final.to_csv(output_file, index=True, sep="\t")
     print("Finished Saving")
     print()
     print("This program is not 100% accurate, so the recommendation is to compare what you found in AIJ to what this "
@@ -77,6 +78,8 @@ def main():
     print("The output file you have entered has RA and DEC for stars and their B, V, and Cousins R magnitudes with "
           "their respective errors.")
     print()
+
+    overlay.main(output_file, radec_file)
 
 
 def new_list(a):
@@ -119,6 +122,7 @@ def angle_dist(df, dh):
     for i in simbad_split_dec:
         apass_count = 0
         for k in apass_split_dec:
+            # noinspection PyUnresolvedReferences
             radial = pyasl.getAngDist(float(apass_split_ra[apass_count]), float(k),
                                       float(simbad_split_ra[simbad_count]),
                                       float(i))

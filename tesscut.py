@@ -4,7 +4,7 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 11/21/2022
+Last Edited: 11/22/2022
 
 Spyder Editor
 This is a temporary script file.
@@ -20,6 +20,7 @@ import astropy.io.fits as pyfits
 from time import gmtime, strftime  # for utc
 from astropy.time import Time
 import astropy.units as u
+from astropy.coordinates import SkyCoord
 from PyAstronomy import pyasl
 
 """
@@ -154,34 +155,3 @@ def main(search_file):
 
         # Close the input  and exit
     inlist.close()
-
-
-def getLightTravelTimes(ra, dec, time_to_correct):
-    """
-    Get the light travel times to the helio- and
-    barycentres
-    Parameters
-    ----------
-    ra : str
-        The Right Ascension of the target in hourangle
-        e.g. 16:00:00
-    dec : str
-        The Declination of the target in degrees
-        e.g. +20:00:00
-    time_to_correct : astropy.Time object
-        The time of observation to correct. The astropy.Time
-        object must have been initialised with an EarthLocation
-    Returns
-    -------
-    ltt_bary : float
-        The light travel time to the barycentre
-    ltt_helio : float
-        The light travel time to the heliocentre
-    Raises
-    ------
-    None
-    """
-    target = SkyCoord(ra, dec, unit=(u.hourangle, u.deg), frame='icrs')
-    ltt_bary = time_to_correct.light_travel_time(target)
-    ltt_helio = time_to_correct.light_travel_time(target, 'heliocentric')
-    return ltt_bary, ltt_helio

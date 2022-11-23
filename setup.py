@@ -3,6 +3,7 @@
 """Setup script for the package."""
 
 import setuptools
+import sys
 
 
 MINIMUM_PYTHON_VERSION = 3, 5

@@ -3,7 +3,7 @@ Search the APASS catalog by searching a region of the sky for comparison stars a
 
 Author: Kyle Koeller
 Created: 2/8/2021
-Last Updated: 11/04/2022
+Last Updated: 11/22/2022
 """
 
 from astroquery.vizier import Vizier
@@ -28,13 +28,13 @@ def main():
     couple of hundred to like 50-60
     "ra"/"dec"- must be in decimal notation
     "width"- set to the notation that is currently set as, but you may change the number being used
-            40m = 40 arc-minutes
+            30m = 30 arc-minutes
     """
     # catalog is II/336/apass9
     # 00:28:27.9684836736
     # 78:57:42.657327180
     ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
-    dec_input = input("Enter the DEC of your system (DD:MM:SS.SS or -DD:MM:SS.SSSS): ")
+    dec_input = input("Enter the DEC of your system (DD:MM:SS.SSSS or -DD:MM:SS.SSSS): ")
     print()
 
     ra_input2 = splitter([ra_input])
@@ -44,7 +44,7 @@ def main():
         columns=['_RAJ2000', '_DEJ2000', 'Vmag', "e_Vmag", 'Bmag', "e_Bmag", "g'mag", "e_g'mag", "r'mag", "e_r'mag"],
         row_limit=-1,
         column_filters=({"Vmag": "<14", "Bmag": "<14"})).query_region(
-        coord.SkyCoord(ra=ra_input2[0], dec=dec_input2[0], unit=(u.h, u.deg), frame="icrs"), width="40m", catalog="APASS")
+        coord.SkyCoord(ra=ra_input2[0], dec=dec_input2[0], unit=(u.h, u.deg), frame="icrs"), width="30m", catalog="APASS")
 
     tb = result['II/336/apass9']
 
@@ -117,7 +117,7 @@ def main():
     print("This output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and "
           "should not be used for anything else other than calculation confirmation if needed later on.")
     print()
-    text_file = input("Enter a text file name for the output comparisons (ex: APASS_3350218.txt): ")
+    text_file = input("Enter a text file name for the output comparisons (ex: APASS_254037.txt): ")
     df.to_csv(text_file, index=None)
     print("Completed save")
     print()

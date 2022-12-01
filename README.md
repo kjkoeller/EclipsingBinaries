@@ -29,7 +29,7 @@ python setup.py install
 
 --------------------------
 
-## Descriptions (v0.6.2-alpha)
+## Descriptions (v0.6.3-alpha)
 
 ### main.py
 The main program that can call all the other programs given a user's prompts. When using this package, always run the main.py first as this will connect to all the following programs.

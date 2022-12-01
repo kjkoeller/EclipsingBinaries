@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 2/8/2022
-Last Updated: 11/22/2022
+Last Updated: 12/01/2022
 
 APASS Star comparison finding for the most accurate magnitudes from the list of stars made in AIJ
 """
@@ -134,11 +134,12 @@ def angle_dist(df, dh):
 
     # removes all duplicate rows from the dataframe
     duplicate_df = comp.drop_duplicates()
-
-    if list(duplicate_df[0]):
+    try:
+        list(duplicate_df[0])
         pass
-    else:
-        print("There were not comparison stars found between the two text files.")
+    except KeyError:
+        print("There were not comparison stars found between APASS and the RADEC file.")
+        exit()
 
     return duplicate_df
 

@@ -1,6 +1,6 @@
 """
 Created: 2/28/2022
-Last Updated: 11/03/2022
+Last Updated: 12/01/2022
 Author: Kyle Koeller
 
 This program is meant to make the process of collecting the BJD, rel flux, and the rel flux error from AIJ Excel
@@ -35,7 +35,7 @@ def main(c):
     while True:
         num = input("Number of nights you have: ")
         if num.isnumeric():
-            if num > 0:
+            if int(num) > 0:
                 break
             else:
                 print("You have entered an invalid number. Please try again.")
@@ -45,7 +45,7 @@ def main(c):
         else:
             print("You have not entered a number or the word 'Close', please try again.")
             print()
-    get_filters(num)
+    get_filters(int(num))
 
 
 def get_filters(n):

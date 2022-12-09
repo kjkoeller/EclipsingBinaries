@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/11/2020
-Last Updated: 12/01/2022
+Last Updated: 12/09/2022
 
 This program is meant to make the process of collecting the different filters from AIJ Excel spreadsheets faster.
 The user enters however many nights they have and the program goes through and checks those text files for the
@@ -56,7 +56,7 @@ def get_filters(n):
     error for mag or flux. Determines if the user has entered a file that contains 4 or 7 columns and correctly parses
     the data based on that.
 
-    :param n: NUmber of nights
+    :param n: Number of nights
     :return: the output text files for each night in a given filter
     """
 
@@ -142,7 +142,7 @@ def get_filters(n):
             data1.to_csv(output + "_magnitudes.txt", index=False, header=False, sep="\t")
             data2.to_csv(output + "_flux.txt", index=False, header=False, sep="\t")
             print("")
-        elif df.columns == 4:
+        elif len(df.columns == 4):
             # set parameters to lists from the file by the column header
             hjd = []
             amag = []
@@ -165,23 +165,21 @@ def get_filters(n):
             new_hjd = [item for elem in total_hjd for item in elem]
             new_amag = [item for elem in total_amag for item in elem]
             new_amag_err = [item for elem in total_amag_err for item in elem]
-
-            # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
-            data2 = pd.DataFrame({
-                "HJD": new_hjd,
-                "AMag": new_amag,
-                "AMag Error": new_amag_err
-            })
-
-            print("")
-            output = input("What is the file output name (WITHOUT any file extension): ")
-
-            # output both text files with a designation of magnitude or flux
-            data2.to_csv(output + "_magnitudes.txt", index=False, header=False, sep="\t")
-            print("")
         else:
             print("The file you entered does not have the correct amount of columns.")
+            # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
+    data2 = pd.DataFrame({
+        "HJD": new_hjd,
+        "AMag": new_amag,
+        "AMag Error": new_amag_err
+    })
 
+    print("")
+    output = input("What is the file output name (WITHOUT any file extension): ")
+
+    # output both text files with a designation of magnitude or flux
+    data2.to_csv(output + "_magnitudes.txt", index=False, header=False, sep="\t")
+    print("")
     print("Fished saving the file to the same location as this program.")
 
 

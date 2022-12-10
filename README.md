@@ -11,7 +11,7 @@ A Python project for Ball State University's Variable Star Research Group
 ## Dependencies
 https://github.com/kjkoeller/Variable_Star_Research_Package/wiki/Installation
 
-Once inside the main directory type the following to autpmatically install the required packages below and check for a minimum python version.
+Once inside the main directory type the following to automatically install the required packages below and check for a minimum python version.
 
 ```
 python setup.py install
@@ -53,12 +53,12 @@ With this program you call upon the cousins_r.py and APASS_catalog_finder.py pro
 From the paper listed in the program (https://arxiv.org/pdf/astro-ph/0609736.pdf) this program finds the Cousins R value from the band passes found in the APASS_catalog_finder and gives this output file to the APASS_AIJ_comparison_selector program.
 
 ### APASS_catalog_finder.py
-Given an RA and DEC from simbad, finds stars 40 arc min box around those qoordinates from the APASS catalog. This program then outputs these stars and numerous band passes to a text file that will be saved and used by the cousins_r.py program.
+Given an RA and DEC from simbad, finds stars 40 arc min box around those coordinates from the APASS catalog. This program then outputs these stars and numerous band passes to a text file that will be saved and used by the cousins_r.py program.
 
 ### tess_data_search.py
 Look up the TESS data via TIC ID number and output the sector and camera number. Then download all the sector data for that TIC ID number to obtain pixel data that can then be used in Astro ImageJ to get flux data.
 
-### OConnel.py
+### OConnell.py
 Applies analysis of the O'Connel effect presented by this paper: https://app.aavso.org/jaavso/article/3511/
 
 ### color_light_curve.py

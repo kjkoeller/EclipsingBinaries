@@ -14,6 +14,7 @@ import APASS_AIJ_comparison_selector
 import OConnell
 import color_light_curve
 import IRAF_Reduction
+import OC_plot
 
 
 def main():
@@ -48,6 +49,8 @@ def main():
             IRAF_Reduction.main()
         elif prompt == 7:
             break
+        elif prompt == 8:
+            OC_plot.data_fit()
         else:
             print("You have not entered any of the allowed entries, please try again.")
             print()

@@ -69,3 +69,6 @@ This program automatiaclly reduces calibration images without the need for the u
 
 ### Overlay_Comparison.py
 This program overlays both APASS and AIJ comparison stars onto a real science image. This allows for the best comparison of comparison stars between AIJ and APASS.
+
+### OC_plot.py
+Creates a plot of O-C data that differentiates between primary and secondary eclipses. This program also creates a residual plot from a given fit that the user enters.

@@ -1,45 +1,98 @@
 """
 Author: Kyle Koeller
-Date Created: 03/04/2022
-Last Updated: 12/19/2022
+Created: 12/19/2022
+Last Edited: 12/22/2022
 
-This program fits O-C data with any number of polynomial degree fits.
+This calculates O-C values and produces an O-C plot.
 """
 
+from math import sqrt
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.polynomial import Polynomial
 import statsmodels.formula.api as smf
-import os
 import seaborn as sns
-from scipy.optimize import leastsq
 
 
-def data_fit():
+def main():
+    file = TESS_OC()
+    data_fit(file)
+
+
+def TESS_OC():
+    while True:
+        infile = input("Please enter your times of minimum file pathway: ")
+        try:
+            df = pd.read_csv(infile, header=None, delim_whitespace=True)
+            break
+        except FileNotFoundError:
+            print("You have entered in an incorrect file or file pathway. Please try again.\n")
+    while True:
+        try:
+            T0 = float(input("Please enter your T0 (ex. '2457143.761819') : "))  # First ToM
+            To_err = float(input("Please enter the T0 error (ex. 0.0002803). : "))  # error associated with the T0
+            period = float(input("Please enter the period of your system (ex. 0.31297): "))  # period of a system
+            break
+        except ValueError:
+            print("You have entered an invalid value. Please only enter float values and please try again.\n")
+
+    # strict Kwee van Woerden method ToM
+    min_strict = list(df[0])
+    min_strict_err = list(df[2])
+
+    # modified Kwee van Woerdan method ToM for potential use later
+    min_mod = list(df[3])
+    min_mod_err = list(df[4])
+
+    # create the lists that will be used
+    E_est = []
+    O_C = []
+    O_C_err = []
+
+    # this for loop loops through the min_strict list and calculates a variety of values
+    for count, val in enumerate(min_strict):
+        # get the exact E value
+        E_act = (val-T0)/period
+        # estimate for the primary or secondary eclipse by rounding to the nearest 0.5
+        e = round(E_act*2)/2
+        E_est.append(e)
+
+        # caluclate the calculated ToM and find the O-C value
+        T_calc = T0+(e*period)
+        O_C.append(format(val - T_calc, ".6f"))
+
+        # determine the error of the O-C
+        O_C_err.append(format(sqrt(To_err**2 + min_strict_err[count]**2), ".6f"))
+
+    # create a dataframe for all outputs to be places in for easy output
+    dp = pd.DataFrame({
+        "Minimums": min_strict,
+        "Eclipse #": E_est,
+        "O-C": O_C,
+        "O-C Error": O_C_err
+    })
+
+    # output file name to place the above dataframe into for saving
+    outfile = input("Please enter the output file name with extension (i.e. test.txt): ")
+    dp.to_csv(outfile, index=None, sep="\t")
+    print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
+
+    return outfile
+
+
+def data_fit(input_file):
     """
     Create a linear fit by hand and then use scipy to create a polynomial fit given an equation along with their
     respective residual plots.
     """
     # read in the text file
-    isFile = None
-    while not isFile:
-        # make sure the input_file is a real file
-        input_file = input("Either enter the file name if the file is in the same folder as the program or the file "
-                           "path: ")
-        isFile = os.path.isfile(input_file)
-        if isFile:
-            break
-        else:
-            print("The file/file-path does not exist, please try again.")
-            print()
-
-    df = pd.read_csv(input_file, header=None, delim_whitespace=True)
+    df = pd.read_csv(input_file, header=0, delimiter="\t")
 
     # append values to their respective lists for further and future potential use
-    x = df[1]
-    y = df[2]
-    y_err = df[3]
+    x = df["Eclipse #"]
+    y = df["O-C"]
+    y_err = df["O-C Error"]
 
     # these next parts are mainly for O-C data as I just want to plot primary minima's and not both primary/secondary
     x1_prim = []
@@ -50,18 +103,17 @@ def data_fit():
     y1_sec = []
     y_err_new_sec = []
 
-    count = 0
     # collects primary and secondary times of minima separately and its corresponding O-C and O-C error
-    for i in x:
-        if i.is_integer():
-            x1_prim.append(i)
-            y1_prim.append(y[count])
-            y_err_new_prim.append(y_err[count])
+    for count, val in enumerate(x):
+        # noinspection PyUnresolvedReferences
+        if val % 1 == 0:  # checks to see if the eclipse number is primary or secondary
+            x1_prim.append(float(val))
+            y1_prim.append(float(y[count]))
+            y_err_new_prim.append(float(y_err[count]))
         else:
-            x1_sec.append(i)
-            y1_sec.append(y[count])
-            y_err_new_sec.append(y_err[count])
-        count += 1
+            x1_sec.append(float(val))
+            y1_sec.append(float(y[count]))
+            y_err_new_sec.append(float(y_err[count]))
 
     # converts the lists to numpy arrays
     x1_prim = np.array(x1_prim)
@@ -117,7 +169,7 @@ def data_fit():
         """
         Inside the model variable:
         'np.polynomial.polynomial.polyfit(x, y, i)' gathers the coefficients of the line fit
-        
+
         'Polynomial' then finds an array of y values given a set of x data
         """
         model = Polynomial(np.polynomial.polynomial.polyfit(x1_prim, y1_prim, i))
@@ -228,3 +280,6 @@ def residuals(x, y, x_label, y_label, degree, model, xs):
     ax2.axhline(y=0, color="red")
 
     plt.show()
+
+
+main()

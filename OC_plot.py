@@ -16,11 +16,33 @@ import seaborn as sns
 
 
 def main():
-    file = TESS_OC()
-    data_fit(file)
+    print("Enter the corresponding number to what you would like to do.\n")
+    while True:
+        try:
+            num = int(input("Would you like to use TESS data(1), BSUO data(2), or Both(3): "))
+            if num == 1:
+                tess = TESS_OC()
+                data_fit(tess)
+                break
+            elif num == 2:
+                bsuo = BSUO()
+                data_fit(bsuo)
+                break
+            elif num == 3:
+                print("This feature will be added in future updates.")
+                break
+            else:
+                print("Please enter either 1, 2, or 3.\n")
+        except ValueError:
+            print("Please enter either 1, 2, or 3.\n")
 
 
 def TESS_OC():
+    """
+    This function takes ToM data pre-gathered from TESS data and finds corresponding O-C values.
+
+    :return: output file that will be used to plot the O-C data
+    """
     while True:
         infile = input("Please enter your times of minimum file pathway: ")
         try:
@@ -28,42 +50,30 @@ def TESS_OC():
             break
         except FileNotFoundError:
             print("You have entered in an incorrect file or file pathway. Please try again.\n")
-    while True:
-        try:
-            T0 = float(input("Please enter your T0 (ex. '2457143.761819') : "))  # First ToM
-            To_err = float(input("Please enter the T0 error (ex. 0.0002803). : "))  # error associated with the T0
-            period = float(input("Please enter the period of your system (ex. 0.31297): "))  # period of a system
-            break
-        except ValueError:
-            print("You have entered an invalid value. Please only enter float values and please try again.\n")
+
+    T0, To_err, period = arguments()
 
     # strict Kwee van Woerden method ToM
     min_strict = list(df[0])
     min_strict_err = list(df[2])
 
     # modified Kwee van Woerdan method ToM for potential use later
-    min_mod = list(df[3])
-    min_mod_err = list(df[4])
+    # min_mod = list(df[3])
+    # min_mod_err = list(df[4])
 
     # create the lists that will be used
     E_est = []
     O_C = []
     O_C_err = []
 
-    # this for loop loops through the min_strict list and calculates a variety of values
+    # this for loop, loops through the min_strict list and calculates a variety of values
     for count, val in enumerate(min_strict):
-        # get the exact E value
-        E_act = (val-T0)/period
-        # estimate for the primary or secondary eclipse by rounding to the nearest 0.5
-        e = round(E_act*2)/2
+        # call the function to calculate the O-C values
+        e, OC, OC_err = calcualte_oc(val, min_strict_err[count], T0, To_err, period)
+
         E_est.append(e)
-
-        # caluclate the calculated ToM and find the O-C value
-        T_calc = T0+(e*period)
-        O_C.append(format(val - T_calc, ".6f"))
-
-        # determine the error of the O-C
-        O_C_err.append(format(sqrt(To_err**2 + min_strict_err[count]**2), ".6f"))
+        O_C.append(OC)
+        O_C_err.append(OC_err)
 
     # create a dataframe for all outputs to be places in for easy output
     dp = pd.DataFrame({
@@ -81,10 +91,123 @@ def TESS_OC():
     return outfile
 
 
+def BSUO():
+    """
+    This function uses BSUO filter ToM's to calculate and averaged ToM from the 3 filters used. Then calculates
+    O-C values to be plotted later.
+
+    :return: output file that will be used to plot the O-C data
+    """
+    while True:
+        inB = input("Please enter your times of minimum file pathway for the Johnson B filter: ")
+        inV = input("Please enter your times of minimum file pathway for the Johnson V filter: ")
+        inR = input("Please enter your times of minimum file pathway for the Johnson R filter: ")
+        try:
+            db = pd.read_csv(inB, header=None, delim_whitespace=True)
+            dv = pd.read_csv(inV, header=None, delim_whitespace=True)
+            dr = pd.read_csv(inR, header=None, delim_whitespace=True)
+            break
+        except FileNotFoundError:
+            print("You have entered in an incorrect file or file pathway. Please try again.\n")
+
+    T0, To_err, period = arguments()
+
+    # strict Kwee van Woerden method ToM for all 3 filters
+    strict_B = list(db[0])
+    strict_B_err = list(db[2])
+    strict_V = list(dv[0])
+    strict_V_err = list(dv[2])
+    strict_R = list(dr[0])
+    strict_R_err = list(dr[2])
+
+    # create the lists that will be used
+    E_est = []
+    O_C = []
+    O_C_err = []
+    average_min = []
+    average_err = []
+
+    # calculates the minimum by averaging the three filters together and getting the total error for that averaged ToM
+    for count, val in enumerate(strict_B):
+        # calculate ToM and its error
+        minimum = (val + strict_V[count] + strict_R[count])/3
+        err = sqrt(strict_B_err[count]**2 + strict_V_err[count]**2 + strict_R_err[count]**2)/3
+
+        average_min.append(minimum)
+        average_err.append(err)
+
+        # call the function to calculate the O-C values
+        e, OC, OC_err = calcualte_oc(minimum, err, T0, To_err, period)
+        E_est.append(e)
+        O_C.append(OC)
+        O_C_err.append(OC_err)
+
+    # create a dataframe for all outputs to be places in for easy output
+    dp = pd.DataFrame({
+        "Minimums": average_min,
+        "Eclipse #": E_est,
+        "O-C": O_C,
+        "O-C Error": O_C_err
+    })
+
+    # output file name to place the above dataframe into for saving
+    outfile = input("Please enter the output file name with extension (i.e. test.txt): ")
+    dp.to_csv(outfile, index=None, sep="\t")
+    print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
+
+    return outfile
+
+
+def arguments():
+    """
+    This function asks the user for the T0
+
+    :return: T0, To_err, and period float values
+    """
+    while True:
+        try:
+            T0 = float(input("Please enter your T0 (ex. '2457143.761819') : "))  # First ToM
+            To_err = float(input("Please enter the T0 error (ex. 0.0002803). : "))  # error associated with the T0
+            period = float(input("Please enter the period of your system (ex. 0.31297): "))  # period of a system
+            break
+        except ValueError:
+            print("You have entered an invalid value. Please only enter float values and please try again.\n")
+
+    return T0, To_err, period
+
+
+def calcualte_oc(m, err, T0, T0_err, p):
+    """
+    Calculates O-C values and errors and find the eclipse number for primary and secondary eclipses
+    :param m: ToM
+    :param err: ToM error
+    :param T0: first ToM
+    :param T0_err: error for the T0
+    :param p: period of the system
+
+    :return: e (eclipse number), OC (O-C value), OC_err (corresponding O-C error)
+    """
+    # get the exact E value
+    E_act = (m - T0) / p
+    # estimate for the primary or secondary eclipse by rounding to the nearest 0.5
+    e = round(E_act * 2) / 2
+    # caluclate the calculated ToM and find the O-C value
+    T_calc = T0 + (e * p)
+    OC = format(m - T_calc, ".6f")
+
+    # determine the error of the O-C
+    OC_err = format(sqrt(T0_err**2 + err**2), ".6f")
+
+    return e, OC, OC_err
+
+
 def data_fit(input_file):
     """
     Create a linear fit by hand and then use scipy to create a polynomial fit given an equation along with their
-    respective residual plots.
+    respective residual plots
+    :param input_file: input file from either TESS or BSUO
+
+    :return: None
     """
     # read in the text file
     df = pd.read_csv(input_file, header=0, delimiter="\t")

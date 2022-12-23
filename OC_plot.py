@@ -16,6 +16,8 @@ import seaborn as sns
 
 
 def main():
+    print("The format of these input files should be the of the raw form given from Dr. Robert Berrginton's"
+          " 'find_minimum' C program.")
     print("Enter the corresponding number to what you would like to do.\n")
     while True:
         try:

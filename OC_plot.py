@@ -405,4 +405,4 @@ def residuals(x, y, x_label, y_label, degree, model, xs):
     plt.show()
 
 
-main()
+# main()

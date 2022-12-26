@@ -30,7 +30,7 @@ python setup.py install
 
 --------------------------
 
-## Descriptions (v0.7.1)
+## Descriptions (v0.7.2)
 
 ### main.py
 The main program that can call all the other programs given a user's prompts. When using this package, always run the main.py first as this will connect to all the following programs.
@@ -65,7 +65,7 @@ Applies analysis of the O'Connel effect presented by this paper: https://app.aav
 Allows the user to create a color light curve for both B-V and V-R bands and gather the values automatically by way of a GUI. The R file is optional and not required but B and V band-pass files are.
 
 ### IRAF_Reduction.py
-This program automatiaclly reduces calibration images without the need for the user to do any sort of input except where the images are and where they will go. This program so far does NOT reduce the actual science images, but is currently being worked on.
+This program automatiaclly reduces calibration images without the need for the user to do any sort of input except where the images are and where they will go. This program, at the moment, does technically reduce science images all the way with bias, dark, and flats, BUT is not fully tested to make sure it is comparable to IRAF legacy.
 
 ### Overlay_Comparison.py
 This program overlays both APASS and AIJ comparison stars onto a real science image. This allows for the best comparison of comparison stars between AIJ and APASS.

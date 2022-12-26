@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 4/13/2022
-Last Updated: 10/06/2022
+Last Updated: 12/26/2022
 Based on this paper: https://arxiv.org/pdf/astro-ph/0609736.pdf
 
 This program calculates a Cousins R (R_c) filter band value from a given Johnson V and B, and g' and r'.
@@ -10,6 +10,7 @@ This program calculates a Cousins R (R_c) filter band value from a given Johnson
 import pandas as pd
 import numpy as np
 import APASS_catalog_finder as apass
+from numba import jit
 
 
 # noinspection PyUnboundLocalVariable
@@ -60,19 +61,7 @@ def main():
 
     # loop that goes through each value in B to get the total amount of values to be calculated
     for i in B:
-        # separates the equation out into more easily readable sections
-        numerator = alpha * (float(i) - float(V[count])) - gamma - float(g[count]) + float(r[count])
-        div = numerator / beta
-        val = float(V[count]) + div
-
-        b_v_err = np.sqrt(float(e_B[count])**2 + float(e_V[count])**2)
-        b_v_alpha_err = np.abs(alpha*(float(i)-float(V[count])))*np.sqrt((e_alpha/alpha)**2 + (b_v_err/(float(i)-float(V[count])))**2)
-
-        numerator_err = np.sqrt(b_v_alpha_err**2 + float(e_g[count])**2 + float(e_r[count])**2)
-        div_e = np.abs(div)*np.sqrt((numerator_err/numerator)**2 + (e_beta/beta)**2)
-
-        root = np.sqrt(div_e**2 + float(e_V[count])**2)
-        
+        root, val = calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
         if isNaN(val) is True:
             # if the value is nan then append 99.999 to the R_c value and its error to make it obvious that there is
             # no given value
@@ -105,6 +94,25 @@ def main():
     print()
 
     return output_file
+
+
+@jit(forceobj=True)
+def calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count):
+    # separates the equation out into more easily readable sections
+    numerator = alpha * (float(i) - float(V[count])) - gamma - float(g[count]) + float(r[count])
+    div = numerator / beta
+    val = float(V[count]) + div
+
+    b_v_err = np.sqrt(float(e_B[count]) ** 2 + float(e_V[count]) ** 2)
+    b_v_alpha_err = np.abs(alpha * (float(i) - float(V[count]))) * np.sqrt(
+        (e_alpha / alpha) ** 2 + (b_v_err / (float(i) - float(V[count]))) ** 2)
+
+    numerator_err = np.sqrt(b_v_alpha_err ** 2 + float(e_g[count]) ** 2 + float(e_r[count]) ** 2)
+    div_e = np.abs(div) * np.sqrt((numerator_err / numerator) ** 2 + (e_beta / beta) ** 2)
+
+    root = np.sqrt(div_e ** 2 + float(e_V[count]) ** 2)
+
+    return root, val
 
 
 def isNaN(num):

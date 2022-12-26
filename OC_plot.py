@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 12/22/2022
+Last Edited: 12/26/2022
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -13,6 +13,8 @@ import numpy as np
 from numpy.polynomial import Polynomial
 import statsmodels.formula.api as smf
 import seaborn as sns
+from numba import jit
+from timeit import timeit
 
 
 def main():
@@ -22,12 +24,31 @@ def main():
     while True:
         try:
             num = int(input("Would you like to use TESS data(1), BSUO data(2), or Both(3): "))
+            T0, To_err, period = arguments()
             if num == 1:
-                tess = TESS_OC()
+                while True:
+                    infile = input("Please enter your combined times of minimum file pathway: ")
+                    try:
+                        df = pd.read_csv(infile, header=None, delim_whitespace=True)
+                        break
+                    except FileNotFoundError:
+                        print("You have entered in an incorrect file or file pathway. Please try again.\n")
+                tess = TESS_OC(T0, To_err, period, df)
                 data_fit(tess)
                 break
             elif num == 2:
-                bsuo = BSUO()
+                while True:
+                    inB = input("Please enter your times of minimum file pathway for the Johnson B filter: ")
+                    inV = input("Please enter your times of minimum file pathway for the Johnson V filter: ")
+                    inR = input("Please enter your times of minimum file pathway for the Johnson R filter: ")
+                    try:
+                        db = pd.read_csv(inB, header=None, delim_whitespace=True)
+                        dv = pd.read_csv(inV, header=None, delim_whitespace=True)
+                        dr = pd.read_csv(inR, header=None, delim_whitespace=True)
+                        break
+                    except FileNotFoundError:
+                        print("You have entered in an incorrect file or file pathway. Please try again.\n")
+                bsuo = BSUO(T0, To_err, period, db, dv, dr)
                 data_fit(bsuo)
                 break
             elif num == 3:
@@ -39,22 +60,12 @@ def main():
             print("Please enter either 1, 2, or 3.\n")
 
 
-def TESS_OC():
+def TESS_OC(T0, To_err, period, df):
     """
     This function takes ToM data pre-gathered from TESS data and finds corresponding O-C values.
 
     :return: output file that will be used to plot the O-C data
     """
-    while True:
-        infile = input("Please enter your times of minimum file pathway: ")
-        try:
-            df = pd.read_csv(infile, header=None, delim_whitespace=True)
-            break
-        except FileNotFoundError:
-            print("You have entered in an incorrect file or file pathway. Please try again.\n")
-
-    T0, To_err, period = arguments()
-
     # strict Kwee van Woerden method ToM
     min_strict = list(df[0])
     min_strict_err = list(df[2])
@@ -93,27 +104,13 @@ def TESS_OC():
     return outfile
 
 
-def BSUO():
+def BSUO(T0, To_err, period, db, dv, dr):
     """
     This function uses BSUO filter ToM's to calculate and averaged ToM from the 3 filters used. Then calculates
     O-C values to be plotted later.
 
     :return: output file that will be used to plot the O-C data
     """
-    while True:
-        inB = input("Please enter your times of minimum file pathway for the Johnson B filter: ")
-        inV = input("Please enter your times of minimum file pathway for the Johnson V filter: ")
-        inR = input("Please enter your times of minimum file pathway for the Johnson R filter: ")
-        try:
-            db = pd.read_csv(inB, header=None, delim_whitespace=True)
-            dv = pd.read_csv(inV, header=None, delim_whitespace=True)
-            dr = pd.read_csv(inR, header=None, delim_whitespace=True)
-            break
-        except FileNotFoundError:
-            print("You have entered in an incorrect file or file pathway. Please try again.\n")
-
-    T0, To_err, period = arguments()
-
     # strict Kwee van Woerden method ToM for all 3 filters
     strict_B = list(db[0])
     strict_B_err = list(db[2])
@@ -132,8 +129,8 @@ def BSUO():
     # calculates the minimum by averaging the three filters together and getting the total error for that averaged ToM
     for count, val in enumerate(strict_B):
         # calculate ToM and its error
-        minimum = (val + strict_V[count] + strict_R[count])/3
-        err = sqrt(strict_B_err[count]**2 + strict_V_err[count]**2 + strict_R_err[count]**2)/3
+        minimum = (val + strict_V[count] + strict_R[count]) / 3
+        err = sqrt(strict_B_err[count] ** 2 + strict_V_err[count] ** 2 + strict_R_err[count] ** 2) / 3
 
         average_min.append(minimum)
         average_err.append(err)
@@ -178,6 +175,7 @@ def arguments():
     return T0, To_err, period
 
 
+@jit(forceobj=True)
 def calcualte_oc(m, err, T0, T0_err, p):
     """
     Calculates O-C values and errors and find the eclipse number for primary and secondary eclipses
@@ -195,10 +193,10 @@ def calcualte_oc(m, err, T0, T0_err, p):
     e = round(E_act * 2) / 2
     # caluclate the calculated ToM and find the O-C value
     T_calc = T0 + (e * p)
-    OC = format(m - T_calc, ".6f")
+    OC = "%.6f" % (m - T_calc)
 
     # determine the error of the O-C
-    OC_err = format(sqrt(T0_err**2 + err**2), ".6f")
+    OC_err = "%.6f" % sqrt(T0_err ** 2 + err ** 2)
 
     return e, OC, OC_err
 
@@ -407,4 +405,4 @@ def residuals(x, y, x_label, y_label, degree, model, xs):
     plt.show()
 
 
-# main()
+main()

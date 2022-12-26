@@ -14,7 +14,6 @@ from numpy.polynomial import Polynomial
 import statsmodels.formula.api as smf
 import seaborn as sns
 from numba import jit
-from timeit import timeit
 
 
 def main():

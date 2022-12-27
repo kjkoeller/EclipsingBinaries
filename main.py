@@ -10,7 +10,7 @@ Last Updated: 11/10/2022
 import tess_data_search
 import AIJ_Night_Filters
 import TESS_Night_Filters
-import APASS_AIJ_comparison_selector
+import apass
 import OConnell
 import color_light_curve
 import IRAF_Reduction
@@ -40,7 +40,7 @@ def main():
             else:
                 print("You did not enter AIJ or TESS please go back through the prompts again and enter AIJ or TESS.")
         elif prompt == 3:
-            APASS_AIJ_comparison_selector.main()
+            apass.comparison_selector()
         elif prompt == 4:
             OConnell.main()
         elif prompt == 5:

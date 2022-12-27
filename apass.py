@@ -503,4 +503,4 @@ def decimal_limit(a):
         b.append(num2)
     return b
 
-comparison_selector()
+# comparison_selector()

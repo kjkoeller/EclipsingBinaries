@@ -46,14 +46,14 @@ close on them (hopefully)
 ### TESS_Night_Filters.py
 Same thing as AIJ filters but finds the appropriate values given TESS data rather than SARA or BSUO data.
 
-### APASS_AIJ_comparison_selector.py
+### apass.py
 With this program you call upon the cousins_r.py and APASS_catalog_finder.py programs to compile a list of stars that are close to what AIJ found off Simbad and output a file that gives RA, DEC, B, V, R_c, and the respective band pass errors.
 
-### cousins_r.py
 From the paper listed in the program (https://arxiv.org/pdf/astro-ph/0609736.pdf) this program finds the Cousins R value from the band passes found in the APASS_catalog_finder and gives this output file to the APASS_AIJ_comparison_selector program.
 
-### APASS_catalog_finder.py
 Given an RA and DEC from simbad, finds stars 40 arc min box around those coordinates from the APASS catalog. This program then outputs these stars and numerous band passes to a text file that will be saved and used by the cousins_r.py program.
+
+This program overlays both APASS and AIJ comparison stars onto a real science image. This allows for the best comparison of comparison stars between AIJ and APASS.
 
 ### tess_data_search.py
 Look up the TESS data via TIC ID number and output the sector and camera number. Then download all the sector data for that TIC ID number to obtain pixel data that can then be used in Astro ImageJ to get flux data.
@@ -66,9 +66,6 @@ Allows the user to create a color light curve for both B-V and V-R bands and gat
 
 ### IRAF_Reduction.py
 This program automatiaclly reduces calibration images without the need for the user to do any sort of input except where the images are and where they will go. This program, at the moment, does technically reduce science images all the way with bias, dark, and flats, BUT is not fully tested to make sure it is comparable to IRAF legacy.
-
-### Overlay_Comparison.py
-This program overlays both APASS and AIJ comparison stars onto a real science image. This allows for the best comparison of comparison stars between AIJ and APASS.
 
 ### OC_plot.py
 Creates a plot of O-C data that differentiates between primary and secondary eclipses. This program also creates a residual plot from a given fit that the user enters. What this program does not do, is actually solve for Times of Minimum and only utlizes already found values from Dr. Robert C. Berrington's C program.

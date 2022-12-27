@@ -61,10 +61,6 @@ Given an RA and DEC from simbad, finds stars 40 arc min box around those coordin
 
 This program overlays both APASS and AIJ comparison stars onto a real science image. This allows for the best comparison of comparison stars between AIJ and APASS.
 
-### tess\_data\_search.py
-
-Look up the TESS data via TIC ID number and output the sector and camera number. Then download all the sector data for that TIC ID number to obtain pixel data that can then be used in Astro ImageJ to get flux data.
-
 ### OConnell.py
 
 Applies analysis of the O'Connel effect presented by this paper: https://app.aavso.org/jaavso/article/3511/
@@ -78,5 +74,4 @@ Allows the user to create a color light curve for both B-V and V-R bands and gat
 This program automatiaclly reduces calibration images without the need for the user to do any sort of input except where the images are and where they will go. This program, at the moment, does technically reduce science images all the way with bias, dark, and flats, BUT is not fully tested to make sure it is comparable to IRAF legacy.
 
 ### OC\_plot.py
-
 Creates a plot of O-C data that differentiates between primary and secondary eclipses. This program also creates a residual plot from a given fit that the user enters. What this program does not do, is actually solve for Times of Minimum and only utlizes already found values from Dr. Robert C. Berrington's C program.

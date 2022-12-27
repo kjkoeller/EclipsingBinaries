@@ -302,7 +302,6 @@ def overlay(catalog, radec):
     dec_catalog = list(df[2])
     ra_radec = list(dh[0])
     dec_radec = list(dh[1])
-    v_mag = list(df[5])
 
     # convert the lists to degrees for plotting purposes
     ra_cat_new = (np.array(splitter(ra_catalog)) * 15) * u.deg
@@ -431,7 +430,6 @@ def angle_dist(df, dh):
     duplicate_df = comp.drop_duplicates()
     try:
         list(duplicate_df[0])
-        pass
     except KeyError:
         print("There were not comparison stars found between APASS and the RADEC file.")
         exit()
@@ -505,4 +503,4 @@ def decimal_limit(a):
         b.append(num2)
     return b
 
-# comparison_selector()
+comparison_selector()

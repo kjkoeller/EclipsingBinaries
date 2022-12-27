@@ -28,6 +28,7 @@ Once inside the main directory type the following to automatically install the r
 *   scipy>=1.5.2
 *   statsmodels>=0.13.5
 *   tqdm>=4.64.1
+*   numba>=0.56.3
 
 ***
 

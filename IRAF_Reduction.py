@@ -1,10 +1,11 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 11/17/2022
+Last Edited: 01/08/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
-Ball State University Observatory (BSUO). The new calibrated images are placed into a new folder
+Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
+not overwrite the original images.
 """
 
 from pathlib import Path
@@ -27,9 +28,10 @@ warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 sigma_clip_low_thresh = None
 sigma_clip_high_thresh = 3
 sigclip = 5  # sigclip for cosmic ray removal
-rdnoise = 10.83  # gathered from fits headers manually
-gain = 1.43  # gathered from fits headers manually
+rdnoise = 10.83 * u.electron  # gathered from fits headers manually
+gain = 1.43 * u.electron/u.adu  # gathered from fits headers manually
 overwrite = True  # if the user wants to overwrite already existing files or not, by default it is set to True
+mem_limit = 450e6  # maximum memory limit 4.5 Gb is the recommended which is 450e6 (i.e. 8.0 Gb would be 800e6)
 
 
 def main():
@@ -40,26 +42,21 @@ def main():
     """
 
     # allows the user to input where the raw images are and where the calibrated images go to
-    # path = input("Please enter a file path or folder name (if this code is in the same main folder) or type the word "
-    #              "'Close' to leave: ")
-    path = "Calibration2"
-    if path.lower() == "close":
-        exit()
+    path = input("Please enter a file path or folder name (if this code is in the same main folder) or type the word "
+                 "'Close' to leave: ")
+    # path = "Calibration2"
     calibrated = input("Please enter a name for a new calibrated folder to not overwrite the original images: ")
 
     # checks whether the file paths from above are real
     while True:
-        test = 0
         try:
+            if path.lower() == "close":
+                exit()
             images_path = Path(path)
             calibrated_data = Path(calibrated)
-        except FileNotFoundError:
-            print("Files were not found")
-            print()
-            test = -1
-        if test == 0:
             break
-        else:
+        except FileNotFoundError:
+            print("Files were not found. Please try again.\n")
             path = input("Please enter a file path or folder name (if this code is in the same main folder): ")
             calibrated = input("Please enter a name for a new calibrated folder to not overwrite the original images: ")
 
@@ -68,8 +65,66 @@ def main():
 
     zero, overscan_region, trim_region = bias(files, calibrated_data, path)
     master_dark = dark(files, zero, calibrated_data, overscan_region, trim_region)
-    combined_flats = flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region)
-    science_images(files, calibrated_data, zero, master_dark, combined_flats, trim_region, overscan_region)
+    flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region)
+    science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region)
+
+
+def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_flat):
+    """
+    This function takes the information for each section of the reduction process into a singular function for
+    limits in duplication of the code.
+
+    :param ccd: individual image
+    :param overscan_region: the overscan region of the image
+    :param trim_region: region of the image to trim
+    :param num: tells the program what stage of the process it is in
+    :param zero: master bias
+    :param combined_dark: master dark
+    :param good_flat: master flat
+    :return: depends on the stage of process, but will return a final image for each process
+    """
+    # Subtract the overscan, ccd[columns, rows] I think?
+    ccd = ccdp.subtract_overscan(ccd, fits_section=overscan_region, median=True, overscan_axis=1)
+
+    # Trim the overscan
+    ccd = ccdp.trim_image(ccd, fits_section=trim_region)
+    # new_ccd = ccdp.gain_correct(ccd, gain=gain)
+
+    # cosmic ray reject above 5 sigmas and gain_apply is set to false because it changes the units of the image
+    new_ccd = ccdp.cosmicray_lacosmic(ccd, gain_apply=False, readnoise=rdnoise, gain=gain, sigclip=sigclip)
+
+    # this if statement checks whether the input is bias, dark, flat, or science reduction
+    # bias combining
+    if num == 0:
+        return new_ccd
+    # dark combining
+    elif num == 1:
+        # Subtract bias
+        sub_ccd = ccdp.subtract_bias(new_ccd, zero)
+
+        return sub_ccd
+    # flat combining
+    elif num == 2:
+        # Subtract bias
+        sub_ccd = ccdp.subtract_bias(new_ccd, zero)
+
+        # Subtract the dark current
+        final_ccd = ccdp.subtract_dark(sub_ccd, combined_dark, exposure_time='exptime', exposure_unit=u.second,
+                                       scale=True)
+        return final_ccd
+    # science calibration
+    elif num == 3:
+        # Subtract bias
+        sub_ccd = ccdp.subtract_bias(new_ccd, zero)
+
+        # Subtract the dark current
+        reduced = ccdp.subtract_dark(sub_ccd, combined_dark, exposure_time='exptime', exposure_unit=u.second,
+                                     scale=True)
+
+        # flat field correct the science image based on filter
+        reduced = ccdp.flat_correct(ccd=reduced, flat=good_flat, min_value=1.0)
+
+        return reduced
 
 
 def bias(files, calibrated_data, path):
@@ -98,43 +153,28 @@ def bias(files, calibrated_data, path):
     plt.title('Overscan region, Row 1000')
     plt.show()
 
-    print("For the overscan region, [rows, columns], and if you want all the columns then you want would enter, \n"
+    print("\nFor the overscan region, [rows, columns], and if you want all the columns then you want would enter, \n"
           "[1234:5678, 1234:5678] and this would say rows between those values and all the columns. \n"
-          "This would also work if you wanted all the rows ([: , 1234:5678]).")
-    print()
-    overscan_region = input("Please enter the overscan region you determined from the figure. Example [2073:2115, :]: ")
-    trim_region = input("Please enter the trim region. Example [20:2060, 12:2057]: ")
+          "This would also work if you wanted all the rows ([: , 1234:5678]).\n")
+    overscan_region = input(
+        "Please enter the overscan region you determined from the figure. Example '[2073:2115, :]': ")
+    trim_region = input("Please enter the trim region. Example '[20:2060, 12:2057]': ")
     print()
 
-    print("Starting overscan on bias.")
-    print()
-    # raw_biases = files.files_filtered(include_path=True, imagetyp='BIAS')
-    # ccd_kwargs={'unit': 'adu'},
+    print("Starting overscan on bias.\n")
     for ccd, file_name in files.ccds(imagetyp='BIAS', return_fname=True, ccd_kwargs={'unit': 'adu'}):
-        # Just get the bias frames
-        # CCDData requires a unit for the image if
-        # it is not in the header # Provide the file name too.
-
-        # Subtract the overscan, ccd[columns, rows] I think?
-        ccd = ccdp.subtract_overscan(ccd, fits_section=overscan_region, median=True, overscan_axis=1)
-
-        # Trim the overscan
-        ccd = ccdp.trim_image(ccd, fits_section=trim_region)
-
-        # cosmic ray reject above 5 sigmas and gain_apply is set to false because it changes the units of the image
-        new_ccd = ccdp.cosmicray_lacosmic(ccd, gain_apply=False, readnoise=rdnoise, gain=gain, sigclip=sigclip)
+        new_ccd = reduce(ccd, overscan_region, trim_region, 0, zero=None, combined_dark=None, good_flat=None)
 
         list_of_words = file_name.split("-")
-        # new_fname = "bias_o_{}.fits".format(list_of_words[3])
-        new_fname = "bias_o_{}.fits".format(list_of_words[1])
+        new_fname = "bias_o_{}.fits".format(list_of_words[3])
+        # new_fname = "bias_o_{}.fits".format(list_of_words[1])
         # Save the result
         new_ccd.write(calibrated_data / new_fname, overwrite=overwrite)
 
         # output that an image is finished for updates to the user
         print("Finished overscan correction for " + str(new_fname))
 
-    print()
-    print("Finished overscan correcting bias frames.")
+    print("\nFinished overscan correcting bias frames.")
     # combine all the output bias images into a master bias
     reduced_images = ccdp.ImageFileCollection(calibrated_data)
     calibrated_biases = reduced_images.files_filtered(imagetyp='BIAS', include_path=True)
@@ -148,44 +188,29 @@ def bias(files, calibrated_data, path):
                                  )
 
     combined_bias.meta['combined'] = True
-    combined_bias.write(calibrated_data / 'zero1.fits', overwrite=overwrite)
+    combined_bias.write(calibrated_data / 'zero.fits', overwrite=overwrite)
 
-    print()
-    print("Finished creating zero.fits")
-    print()
+    print("\nFinished creating zero.fits\n")
 
     return combined_bias, overscan_region, trim_region
 
 
-def dark(files, combined_bias, calibrated_path, overscan_region, trim_region):
+def dark(files, zero, calibrated_path, overscan_region, trim_region):
     """
     Calibrates the dark frames.
 
     :param files: file location of raw images
-    :param combined_bias: master bias image
+    :param zero: master bias image
     :param calibrated_path: file location for the new images
     :param trim_region: trim region for images
     :param overscan_region: overscan region for images
     :return: combined master dark
     """
-    # reduced_images = ccdp.ImageFileCollection(calibrated_path)
-    print("Starting dark calibration.")
-    print()
+    print("Starting dark calibration.\n")
 
     # calibrating a combining the dark frames
     for ccd, file_name in files.ccds(imagetyp='DARK', ccd_kwargs={'unit': 'adu'}, return_fname=True):
-        # Subtract the overscan
-        ccd = ccdp.subtract_overscan(ccd, fits_section=overscan_region, median=True, overscan_axis=1)
-
-        # Trim the overscan
-        ccd = ccdp.trim_image(ccd, fits_section=trim_region)
-
-        # cosmic ray reject above 5 sigmas and gain_apply is set to false because it changes the units of the image
-        # and applies a gain to the image as well
-        new_ccd = ccdp.cosmicray_lacosmic(ccd, gain_apply=False, readnoise=rdnoise, gain=gain, sigclip=5)
-
-        # Subtract bias
-        sub_ccd = ccdp.subtract_bias(new_ccd, combined_bias)
+        sub_ccd = reduce(ccd, overscan_region, trim_region, 1, zero, combined_dark=None, good_flat=None)
 
         list_of_words = file_name.split("-")
         # new file name that uses the number from the original image
@@ -195,10 +220,8 @@ def dark(files, combined_bias, calibrated_path, overscan_region, trim_region):
 
         print("Finished overscan correction and bias subtraction for " + str(new_fname))
 
-    print("Finished overscan correcting and bias subtracting all dark frames.")
-    print()
-    print("Starting combining dark frames.")
-    print()
+    print("\nFinished overscan correcting and bias subtracting all dark frames.")
+    print("Starting combining dark frames.\n")
     time.sleep(10)
     reduced_images = ccdp.ImageFileCollection(calibrated_path)
     calibrated_darks = reduced_images.files_filtered(imagetyp='dark', include_path=True)
@@ -214,58 +237,40 @@ def dark(files, combined_bias, calibrated_path, overscan_region, trim_region):
     combined_dark.meta['combined'] = True
     combined_dark.write(calibrated_path / 'master_dark.fits', overwrite=overwrite)
 
-    print("Finished creating a master dark.")
-    print()
+    print("Finished creating a master dark.\n")
     return combined_dark
 
 
-def flat(files, combined_bias, combined_dark, calibrated_path, overscan_region, trim_region):
+def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_region):
     """
     Calibrate flat images.
 
     :param files: file location for raw images
-    :param combined_bias: combined bias image
+    :param zero: combined bias image
     :param combined_dark: combined bias image
     :param calibrated_path: file location for new images
     :param trim_region: trim region for images
     :param overscan_region: overscan region for images
     :return: master flat files in each filter
     """
-    print("Starting flat calibration.")
+    print("Starting flat calibration.\n")
     print()
 
     # calibrating and combining the flat frames
     for ccd, file_name in files.ccds(imagetyp='FLAT', return_fname=True, ccd_kwargs={'unit': 'adu'}):
-        # Subtract the overscan
-        ccd = ccdp.subtract_overscan(ccd, fits_section=overscan_region, median=True, overscan_axis=1)
-
-        # Trim the overscan
-        ccd = ccdp.trim_image(ccd, fits_section=trim_region)
-
-        # cosmic ray reject above 5 sigmas and gain_apply is set to false because it changes the units of the image
-        # and applies a gain to the image as well
-        cosmic_ccd = ccdp.cosmicray_lacosmic(ccd, gain_apply=False, readnoise=rdnoise, gain=gain, sigclip=5)
-
-        # Subtract bias
-        new_ccd = ccdp.subtract_bias(cosmic_ccd, combined_bias)
-
-        # Subtract the dark current
-        final_ccd = ccdp.subtract_dark(new_ccd, combined_dark, exposure_time='exptime', exposure_unit=u.second,
-                                       scale=True)
+        final_ccd = reduce(ccd, overscan_region, trim_region, 2, zero, combined_dark, good_flat=None)
         list_of_words = file_name.split("-")
 
         # new file name with the filter and number from the original file
-        # new_fname = "flat_o_b_d_{}_{}.fits".format(list_of_words[2], list_of_words[4])
-        new_fname = "flat_o_b_d_{}_{}.fits".format(list_of_words[1], list_of_words[0])
+        new_fname = "flat_o_b_d_{}_{}.fits".format(list_of_words[2], list_of_words[4])
+        # new_fname = "flat_o_b_d_{}_{}.fits".format(list_of_words[1], list_of_words[0])
         # Save the result
         final_ccd.write(calibrated_path / new_fname, overwrite=overwrite)
 
         print("Finished overscan correction, bias subtraction, and dark subtraction for " + str(new_fname))
 
-    print("Finished overscan, bias subtracting, and dark subtracting of flat frames.")
-    print()
-    print("Starting flat combination.")
-    print()
+    print("\nFinished overscan, bias subtracting, and dark subtracting of flat frames.\n")
+    print("Starting flat combination.\n")
     time.sleep(10)
 
     ifc = ccdp.ImageFileCollection(calibrated_path)
@@ -284,50 +289,26 @@ def flat(files, combined_bias, combined_dark, calibrated_path, overscan_region, 
 
         combined_flats.write(calibrated_path / flat_file_name, overwrite=overwrite)
 
-        print("Finished combing flat " + str(new_fname))
+        print("Finished combining flat " + str(flat_file_name))
 
-    print("Finished creating the master flats by filter.")
-    print()
-    print("Done")
+    print("Finished creating the master flats by filter.\n")
 
     return combined_flats
 
 
-def science_images(files, calibrated_data, zero, master_dark, master_flats, trim_region, overscan_region):
+def science_images(files, calibrated_data, zero, combined_dark, trim_region, overscan_region):
     all_reds = []
-    light_ccds = []
     science_imagetyp = 'LIGHT'
     flat_imagetyp = 'FLAT'
 
     ifc_reduced = ccdp.ImageFileCollection(calibrated_data)
     combined_flats = {ccd.header['filter']: ccd for ccd in ifc_reduced.ccds(imagetyp=flat_imagetyp, combined=True)}
 
-    print("Starting reduction of science images.")
-    print()
+    print("Starting reduction of science images.\n")
 
-    for light, file_name in files.ccds(imagetyp=science_imagetyp, return_fname=True, ccd_kwargs=dict(unit='adu')):
-        light_ccds.append(light)
-
-        # Subtract the overscan
-        ccd = ccdp.subtract_overscan(light, fits_section=overscan_region, median=True, overscan_axis=1)
-
-        # Trim the overscan
-        ccd = ccdp.trim_image(ccd, fits_section=trim_region)
-
-        # cosmic ray reject above 5 sigmas and gain_apply is set to false because it changes the units of the image
-        # and applies a gain to the image as well
-        cosmic_ccd = ccdp.cosmicray_lacosmic(ccd, gain_apply=False, readnoise=rdnoise, gain=gain, sigclip=5)
-
-        # Subtract bias
-        new_ccd = ccdp.subtract_bias(cosmic_ccd, zero)
-
-        # Subtract the dark current
-        reduced = ccdp.subtract_dark(new_ccd, master_dark, exposure_time='exptime', exposure_unit=u.second,
-                                       scale=True)
-
-        # flat field correct the science image based on filter
-        # good_flat = combined_flats[final_ccd.header['filter']]
-        # reduced = ccdp.flat_correct(ccd=final_ccd, flat=good_flat)
+    for light, file_name in files.ccds(imagetyp=science_imagetyp, return_fname=True, ccd_kwargs={'unit': 'adu'}):
+        good_flat = combined_flats[light.header['filter']]
+        reduced = reduce(light, overscan_region, trim_region, 3, zero, combined_dark, good_flat)
 
         list_of_words = file_name.split("-")
         # new_fname = "{}_o_b_d_{}_{}.fits".format(list_of_words[0], list_of_words[2], list_of_words[5])
@@ -337,6 +318,7 @@ def science_images(files, calibrated_data, zero, master_dark, master_flats, trim
         reduced.write(calibrated_data / new_fname, overwrite=overwrite)
 
         print("Finished calibration of " + str(new_fname))
+    print("\nFinished calibrating all science images.")
 
 
 if __name__ == '__main__':

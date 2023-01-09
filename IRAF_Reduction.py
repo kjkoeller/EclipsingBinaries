@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 01/08/2023
+Last Edited: 01/09/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -86,12 +86,12 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
     # Subtract the overscan, ccd[columns, rows] I think?
     ccd = ccdp.subtract_overscan(ccd, fits_section=overscan_region, median=True, overscan_axis=1)
 
-    # Trim the overscan
+    # Trim the overscan and gain correct the image
     ccd = ccdp.trim_image(ccd, fits_section=trim_region)
-    # new_ccd = ccdp.gain_correct(ccd, gain=gain)
+    new_ccd = ccdp.gain_correct(ccd, gain=gain)
 
     # cosmic ray reject above 5 sigmas and gain_apply is set to false because it changes the units of the image
-    new_ccd = ccdp.cosmicray_lacosmic(ccd, gain_apply=False, readnoise=rdnoise, gain=gain, sigclip=sigclip)
+    # new_ccd = ccdp.cosmicray_lacosmic(ccd, gain_apply=False, readnoise=rdnoise, gain=gain, sigclip=sigclip)
 
     # this if statement checks whether the input is bias, dark, flat, or science reduction
     # bias combining
@@ -167,7 +167,7 @@ def bias(files, calibrated_data, path):
 
         list_of_words = file_name.split("-")
         new_fname = "bias_o_{}.fits".format(list_of_words[3])
-        # new_fname = "bias_o_{}.fits".format(list_of_words[1])
+        # new_fname = "bias_o_{}.fits".format(list_of_words[1])  # testing
         # Save the result
         new_ccd.write(calibrated_data / new_fname, overwrite=overwrite)
 
@@ -263,7 +263,7 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
 
         # new file name with the filter and number from the original file
         new_fname = "flat_o_b_d_{}_{}.fits".format(list_of_words[2], list_of_words[4])
-        # new_fname = "flat_o_b_d_{}_{}.fits".format(list_of_words[1], list_of_words[0])
+        # new_fname = "flat_o_b_d_{}_{}.fits".format(list_of_words[1], list_of_words[0])  # testing
         # Save the result
         final_ccd.write(calibrated_path / new_fname, overwrite=overwrite)
 
@@ -311,8 +311,8 @@ def science_images(files, calibrated_data, zero, combined_dark, trim_region, ove
         reduced = reduce(light, overscan_region, trim_region, 3, zero, combined_dark, good_flat)
 
         list_of_words = file_name.split("-")
-        # new_fname = "{}_o_b_d_{}_{}.fits".format(list_of_words[0], list_of_words[2], list_of_words[5])
-        new_fname = "{}_o_b_d_{}.fits".format(list_of_words[0], list_of_words[1])
+        new_fname = "{}_o_b_d_{}_{}.fits".format(list_of_words[0], list_of_words[2], list_of_words[5])
+        # new_fname = "{}_o_b_d_{}.fits".format(list_of_words[0], list_of_words[1])  # testing
 
         all_reds.append(reduced)
         reduced.write(calibrated_data / new_fname, overwrite=overwrite)

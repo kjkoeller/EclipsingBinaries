@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 01/09/2023
+Last Edited: 01/10/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -88,7 +88,7 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
 
     # Trim the overscan and gain correct the image
     ccd = ccdp.trim_image(ccd, fits_section=trim_region)
-    new_ccd = ccdp.gain_correct(ccd, gain=gain)
+    new_ccd = ccdp.gain_correct(ccd, gain=gain)  # gain correct the image
 
     # cosmic ray reject above 5 sigmas and gain_apply is set to false because it changes the units of the image
     # new_ccd = ccdp.cosmicray_lacosmic(ccd, gain_apply=False, readnoise=rdnoise, gain=gain, sigclip=sigclip)
@@ -138,22 +138,15 @@ def bias(files, calibrated_data, path):
     """
 
     # plots one of the bias image mean count values across all columns to find the trim and overscan regions
+    print("\nThe bias image that you enter next should be inside the FIRST folder that you entered above or "
+          "this will crash.")
+    image = input("Please enter the name of one of the bias images to be looked at for overscan and trim regions: ")
     cryo_path = Path(path)
-    # bias_1 = CCDData.read(cryo_path / 'Bias-S008-R003-C001-B2.fts', unit='adu')
-    bias_1 = CCDData.read(cryo_path / 'bias-0001.fits', unit='adu')
-    plt.figure(figsize=(10, 5))
-    plt.plot(bias_1.data[1000][:], label='Raw Bias')
-    plt.grid()
-    plt.axvline(x=2077, color='black', linewidth=2, linestyle='dashed', label='Suggested Start of Overscan')
-    plt.legend()
-    plt.ylim(0, 2000)
-    plt.xlim(-50, 2130)
-    plt.xlabel('pixel number')
-    plt.ylabel('Counts')
-    plt.title('Overscan region, Row 1000')
-    plt.show()
-
-    print("\nFor the overscan region, [rows, columns], and if you want all the columns then you want would enter, \n"
+    bias_1 = CCDData.read(cryo_path / image, unit='adu')
+    # bias_1 = CCDData.read(cryo_path / 'bias-0001.fits', unit='adu')  # testing
+    bias_plot(bias_1)
+    
+    print("\n\nFor the overscan region, [rows, columns], and if you want all the columns then you want would enter, \n"
           "[1234:5678, 1234:5678] and this would say rows between those values and all the columns. \n"
           "This would also work if you wanted all the rows ([: , 1234:5678]).\n")
     overscan_region = input(
@@ -193,6 +186,26 @@ def bias(files, calibrated_data, path):
     print("\nFinished creating zero.fits\n")
 
     return combined_bias, overscan_region, trim_region
+
+
+def bias_plot(ccd):
+    """
+    Plots the count values for row 1000 to find the overscan and trim regions
+
+    :param ccd: bias image to be looked at
+    :return: None
+    """
+    plt.figure(figsize=(10, 5))
+    plt.plot(ccd.data[1000][:], label='Raw Bias')
+    plt.grid()
+    plt.axvline(x=2077, color='black', linewidth=2, linestyle='dashed', label='Suggested Start of Overscan')
+    plt.legend()
+    plt.ylim(750, 1250)
+    plt.xlim(-50, 2130)
+    plt.xlabel('pixel number')
+    plt.ylabel('Counts')
+    plt.title('Count Values for Row 1000')
+    plt.show()
 
 
 def dark(files, zero, calibrated_path, overscan_region, trim_region):

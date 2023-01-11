@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 01/10/2023
+Last Edited: 01/11/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -275,7 +275,7 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
         list_of_words = file_name.split("-")
 
         # new file name with the filter and number from the original file
-        new_fname = "flat_o_b_d_{}_{}.fits".format(list_of_words[2], list_of_words[4])
+        new_fname = "flat_o_b_d_{}{}.fits".format(list_of_words[2], list_of_words[4])
         # new_fname = "flat_o_b_d_{}_{}.fits".format(list_of_words[1], list_of_words[0])  # testing
         # Save the result
         final_ccd.write(calibrated_path / new_fname, overwrite=overwrite)
@@ -324,7 +324,7 @@ def science_images(files, calibrated_data, zero, combined_dark, trim_region, ove
         reduced = reduce(light, overscan_region, trim_region, 3, zero, combined_dark, good_flat)
 
         list_of_words = file_name.split("-")
-        new_fname = "{}_o_b_d_{}_{}.fits".format(list_of_words[0], list_of_words[2], list_of_words[5])
+        new_fname = "{}_o_b_d_f_{}_{}_{}.fits".format(list_of_words[0], list_of_words[2], list_of_words[5], list_of_words[6].replace(".fts", ""))
         # new_fname = "{}_o_b_d_{}.fits".format(list_of_words[0], list_of_words[1])  # testing
 
         all_reds.append(reduced)

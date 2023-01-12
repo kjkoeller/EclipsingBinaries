@@ -32,7 +32,7 @@ Once inside the main directory type the following to automatically install the r
 
 ***
 
-## Descriptions (v0.8.2)
+## Descriptions (v0.8.3)
 
 ### main.py
 

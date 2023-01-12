@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 12/26/2022
+Last Edited: 01/12/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -22,7 +22,7 @@ def main():
     print("Enter the corresponding number to what you would like to do.\n")
     while True:
         try:
-            num = int(input("Would you like to use TESS data(1), BSUO data(2), or Both(3): "))
+            num = int(input("Would you like to use TESS data(1), BSUO data(2), Both(3), or Close Program(4): "))
             T0, To_err, period = arguments()
             if num == 1:
                 while True:
@@ -53,10 +53,12 @@ def main():
             elif num == 3:
                 print("This feature will be added in future updates.")
                 break
+            elif num == 4:
+                exit()
             else:
-                print("Please enter either 1, 2, or 3.\n")
+                print("Please enter either 1, 2, 3, or .\n")
         except ValueError:
-            print("Please enter either 1, 2, or 3.\n")
+            print("Please enter either 1, 2, 3, or 4.\n")
 
 
 def TESS_OC(T0, To_err, period, df):

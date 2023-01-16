@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 01/12/2023
+Last Edited: 01/16/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -22,7 +22,7 @@ def main():
     print("Enter the corresponding number to what you would like to do.\n")
     while True:
         try:
-            num = int(input("Would you like to use TESS data(1), BSUO data(2), Both(3), or Close Program(4): "))
+            num = int(input("Would you like to use TESS data(1), BSUO data(2), All Data(3), or Close Program(4): "))
             T0, To_err, period = arguments()
             if num == 1:
                 while True:
@@ -34,7 +34,6 @@ def main():
                         print("You have entered in an incorrect file or file pathway. Please try again.\n")
                 tess = TESS_OC(T0, To_err, period, df)
                 data_fit(tess)
-                break
             elif num == 2:
                 while True:
                     inB = input("Please enter your times of minimum file pathway for the Johnson B filter: ")
@@ -49,14 +48,19 @@ def main():
                         print("You have entered in an incorrect file or file pathway. Please try again.\n")
                 bsuo = BSUO(T0, To_err, period, db, dv, dr)
                 data_fit(bsuo)
-                break
             elif num == 3:
-                print("This feature will be added in future updates.")
-                break
+                while True:
+                    try:
+                        nights = int(input("How many nights of data do you have: "))
+                        break
+                    except ValueError:
+                        print("Please enter a valid number.\n")
+                total = all_data(nights)
+                data_fit(total)
             elif num == 4:
-                exit()
+                break
             else:
-                print("Please enter either 1, 2, 3, or .\n")
+                print("Please enter either 1, 2, 3, or 4.\n")
         except ValueError:
             print("Please enter either 1, 2, 3, or 4.\n")
 
@@ -158,6 +162,39 @@ def BSUO(T0, To_err, period, db, dv, dr):
     return outfile
 
 
+def all_data(nights):
+    minimum = []
+    e = []
+    o_c = []
+    o_c_err = []
+    for night in range(0, nights):
+        try:
+            fname = input("Please enter a file name (if the file is in the same folder as this program) or the full "
+                          "file pathway: ")
+            df = pd.read_csv(fname, header=None, delim_whitespace=True)
+            break
+        except FileNotFoundError:
+            print("You have entered in an incorrect file or file pathway. Please try again.\n")
+
+        minimum.append(df[0])
+        e.append(df[1])
+        o_c.append(df[2])
+        o_c_err.append(df[3])
+
+    dp = pd.DataFrame({
+        "Minimums": minimum,
+        "Eclipse N#": e,
+        "O-C": o_c,
+        "O-C Error": o_c_err
+    })
+
+    outfile = input("Please enter the output file name with extension (i.e. test.txt): ")
+    dp.to_csv(outfile, index=None, sep="\t")
+    print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
+    
+    return outfile
+
+
 def arguments():
     """
     This function asks the user for the T0
@@ -172,7 +209,6 @@ def arguments():
             break
         except ValueError:
             print("You have entered an invalid value. Please only enter float values and please try again.\n")
-
     return T0, To_err, period
 
 

@@ -167,7 +167,8 @@ def all_data(nights):
     e = []
     o_c = []
     o_c_err = []
-    for night in range(0, nights):
+    count = 1
+    while True:
         try:
             fname = input("Please enter a file name (if the file is in the same folder as this program) or the full "
                           "file pathway: ")
@@ -180,6 +181,12 @@ def all_data(nights):
         e.append(df[1])
         o_c.append(df[2])
         o_c_err.append(df[3])
+        
+        if count == nights:
+            break
+        else:
+            continue
+        count += 1
 
     dp = pd.DataFrame({
         "Minimums": minimum,
@@ -191,7 +198,7 @@ def all_data(nights):
     outfile = input("Please enter the output file name with extension (i.e. test.txt): ")
     dp.to_csv(outfile, index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
-    
+
     return outfile
 
 

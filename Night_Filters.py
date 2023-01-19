@@ -59,7 +59,7 @@ def check_num():
         else:
             print("You have not entered a number or the word 'Close', please try again.\n")
     return num
-    
+
 
 def get_nights_AIJ(n):
     """

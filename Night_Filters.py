@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/11/2020
-Last Updated: 12/09/2022
+Last Updated: 01/19/2023
 
 This program is meant to make the process of collecting the different filters from AIJ Excel spreadsheets faster.
 The user enters however many nights they have and the program goes through and checks those text files for the
@@ -23,34 +23,45 @@ def main(c):
     """
     # warning prompts for the user to read to make sure this program works correctly
     if c == 0:
-        # warning prompts for the user to read to make sure this program works correctly
-        print()
-        print("From each night, yous should have a file that is sort of like this: 2018.09.18.APASS.B_datasubset.dat."
-              "This file has 7 or 4 columns and you will only need 6 or 3 of them respectively.\n")
+        # AIJ Data
+        print("\nFrom each night, yous should have a file that is sort of like this: 2018.09.18.APASS.B_datasubset.dat.\n"
+              "This file has 7 or 5 columns and you will only need 5 or 3 of them respectively.\n")
         print("All of the nights that you entire MUST have the exact same column number or this program will not work.\n")
         print(
             "You may also type the word 'Close' in the next prompt to leave this program and return to the main menu.\n")
-        print()
-    else:
-        print()
+        num = check_num()
+        get_nights_AIJ(int(num))
+    elif c == 1:
+        # TESS data
+        print("\nFrom each night, yous should have a file that is sort of like this: 2018.09.18.APASS.B_datasubset.dat.\n"
+              "This file has 5 columns and you will only need 3 of them.\n")
+        print(
+            "You may also type the word 'Close' in the next prompt to leave this program and return to the main menu.\n")
+        num = check_num()
+        get_nights_TESS(int(num))
 
+
+def check_num():
+    """
+    Checks whether the user enters a real number for the number of nights
+    
+    :return: returns the entered number
+    """
     while True:
         num = input("Number of nights you have: ")
         if num.isnumeric():
             if int(num) > 0:
                 break
             else:
-                print("You have entered an invalid number. Please try again.")
-                print()
+                print("You have entered an invalid number. Please try again.\n")
         elif num.lower() == "close":
             exit()
         else:
-            print("You have not entered a number or the word 'Close', please try again.")
-            print()
-    get_nights(int(num))
+            print("You have not entered a number or the word 'Close', please try again.\n")
+    return num
+    
 
-
-def get_nights(n):
+def get_nights_AIJ(n):
     """
     Takes a number of nights for a given filter and takes out the HJD, either A_Mag1 or T1_flux, and
     error for mag or flux. Determines if the user has entered a file that contains 4 or 7 columns and correctly parses
@@ -107,8 +118,7 @@ def get_nights(n):
             except KeyError:
                 print("The file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
                       "Please re-enter the file path and make sure its the correct file.")
-                c = 1
-                main(c)
+                main(0)
 
             total_hjd.append(hjd)
             total_amag.append(amag)
@@ -123,7 +133,7 @@ def get_nights(n):
             new_flux_err = [item for elem in total_flux_err for item in elem]
 
             data_amount = 2
-        elif len(df.columns == 4):
+        elif len(df.columns == 5):
             # set parameters to lists from the file by the column header
             hjd = []
             amag = []
@@ -149,6 +159,7 @@ def get_nights(n):
             data_amount = 1
         else:
             print("The file you entered does not have the correct amount of columns.")
+            main(0)
             # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
     if data_amount == 1:
         data2 = pd.DataFrame({
@@ -185,6 +196,71 @@ def get_nights(n):
         data1.to_csv(output + "_magnitudes.txt", index=False, header=False, sep="\t")
         data2.to_csv(output + "_flux.txt", index=False, header=False, sep="\t")
         print("")
+
+
+def get_nights_TESS(n):
+    """
+    Takes a number of nights for a given filter and takes out the HJD, either A_Mag1 or T1_flux, and
+    error for mag or flux
+
+    :param n: Number of observation nights
+    :return: the output text files for each night in a given filter
+    """
+    total_bjd = []
+    total_rel_flux = []
+    total_rel_flux_err = []
+    # checks for either the b, v, r filter as either upper or lowercase will work
+    for i in range(n):
+        while True:
+            # makes sure the file pathway is real and points to some file
+            # (does not check if that file is the correct one though)
+            try:
+                # an example pathway for the files
+                print(r"Example: D:\Research\Data\NSVS_254037\nsvs_254037_tess_data\sector18\sector18_datasubset.dat")
+                file = input("Enter night %d file path: " % (i + 1))
+                if path.exists(file):
+                    break
+                else:
+                    continue
+            except FileNotFoundError:
+                print("Please enter a correct file path")
+
+        # noinspection PyUnboundLocalVariable
+        df = pd.read_csv(file, delimiter="\t")
+
+        # set parameters to lists from the file by the column header
+        bjd = []
+        rel_flux = []
+        rel_flux_err = []
+        try:
+            bjd = list(df["BJD_TDB"])
+            rel_flux = list(df["rel_flux_T1"])
+            rel_flux_err = list(df["rel_flux_err_T1"])
+        except KeyError:
+            print("The file you entered does not have the columns of BJD_TDB, rel_flux_T1, or rel_flux_err_T1. Please ")
+            main(1)
+
+        total_bjd.append(bjd)
+        total_rel_flux.append(rel_flux)
+        total_rel_flux_err.append(rel_flux_err)
+
+    # converts the Dataframe embedded lists into a normal flat list
+    new_bjd = [item for elem in total_bjd for item in elem]
+    new_rel_flux = [item for elem in total_rel_flux for item in elem]
+    new_rel_flux_err = [item for elem in total_rel_flux_err for item in elem]
+
+    # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
+    data = pd.DataFrame({
+        "BJD": new_bjd,
+        "rel_flux": new_rel_flux,
+        "rel_flux_err": new_rel_flux_err
+    })
+    print("")
+    output = input("What is the file output name (with file extension .txt): ")
+
+    data.to_csv(output, index=False, header=False, sep='\t')
+    print("")
+    print("Fished saving the file to the same location as this program.")
 
 
 if __name__ == '__main__':

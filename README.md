@@ -32,24 +32,20 @@ Once inside the main directory type the following to automatically install the r
 
 ***
 
-## Descriptions (v0.8.3)
+## Descriptions (v0.8.5)
 
 ### main.py
 
 The main program that can call all the other programs given a user's prompts. When using this package, always run the main.py first as this will connect to all the following programs.
 
-### AIJ\_Night\_Filters.py
+### Night\_Filters.py
 
-This program is meant to make the process of collecting the different filters from AIJ excel spreadsheets faster.
+This program is meant to make the process of collecting the different filters from AIJ and TESS excel spreadsheets faster.
 The user enters however many nights they have and the program goes through and checks those text files for the
 different columns for,HJD, Amag, and Amag error for the B and V filters.
 The program will also calculate the R magnitude from the rel flux of T1.
 There are error catching statements within the program so if the user mistypes, the program will not crash and
-close on them (hopefully)
-
-### TESS\_Night\_Filters.py
-
-Same thing as AIJ filters but finds the appropriate values given TESS data rather than SARA or BSUO data.
+close on them (hopefully).
 
 ### apass.py
 

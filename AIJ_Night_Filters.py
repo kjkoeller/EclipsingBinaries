@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/11/2020
-Last Updated: 12/09/2022
+Last Updated: 01/19/2023
 
 This program is meant to make the process of collecting the different filters from AIJ Excel spreadsheets faster.
 The user enters however many nights they have and the program goes through and checks those text files for the
@@ -123,7 +123,7 @@ def get_nights(n):
             new_flux_err = [item for elem in total_flux_err for item in elem]
 
             data_amount = 2
-        elif len(df.columns == 4):
+        elif len(df.columns == 5):
             # set parameters to lists from the file by the column header
             hjd = []
             amag = []
@@ -149,6 +149,7 @@ def get_nights(n):
             data_amount = 1
         else:
             print("The file you entered does not have the correct amount of columns.")
+            main(0)
             # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
     if data_amount == 1:
         data2 = pd.DataFrame({

@@ -7,8 +7,7 @@ Last Updated: 01/12/2023
 """
 
 import tess_data_search
-import AIJ_Night_Filters
-import TESS_Night_Filters
+import Night_Filters
 import apass
 import OConnell
 import color_light_curve
@@ -31,9 +30,9 @@ def main():
         elif prompt == 2:
             aij = input("AIJ or TESS or 'Go Back': ")
             if aij.lower() == "aij":
-                AIJ_Night_Filters.main(0)
+                Night_Filters.main(0)
             elif aij.lower() == "tess":
-                TESS_Night_Filters.main(0)
+                Night_Filters.main(1)
             elif aij.lower() == "go back":
                 pass
             else:

@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 01/16/2023
+Last Edited: 01/20/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -181,12 +181,12 @@ def all_data(nights):
         e.append(df[1])
         o_c.append(df[2])
         o_c_err.append(df[3])
-        
+
         if count == nights:
             break
         else:
+            count += 1
             continue
-        count += 1
 
     dp = pd.DataFrame({
         "Minimums": minimum,
@@ -195,9 +195,46 @@ def all_data(nights):
         "O-C Error": o_c_err
     })
 
-    outfile = input("Please enter the output file name with extension (i.e. test.txt): ")
-    dp.to_csv(outfile, index=None, sep="\t")
+    outfile = input("Please enter the output file name without extension (i.e. test): ")
+    dp.to_csv(outfile+".txt", index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
+
+    """
+    LaTeX table stuff, don't change unless you know what you're doing!
+    """
+    table_header = '\\begin{center}\n' + '\\begin{longtable}{ccc}\n'
+    table_header += '$BJD_{TDB}$ & ' + 'E & ' + 'O-C \\\ \n'
+    table_header += '\\hline\n' + '\\endfirsthead\n'
+    table_header += '\\multicolumn{3}{c}\n'
+    table_header += '{\\tablename\ \\thetable\ -- \\textit{Continued from previous page}} \\\ \n'
+    table_header += '$BJD_{TDB}$ & E & O-C \\\ \n'
+    table_header += '\\hline\n' + '\\endhead\n' + '\\hline\n'
+    table_header += '\\multicolumn{3}{c}{\\textit{Continued on next page}} \\\ \n'
+    table_header += '\\endfoot\n' + '\\endlastfoot\n'
+
+    minimum_lines = []
+    for i in range(len(minimum)):
+        line = str(minimum[i]) + ' & ' + str(e[i]) + ' & $' + str(o_c[i]) + ' \pm ' + str(o_c_err[i]) + '$ ' + "\\\ \n"
+        minimum_lines.append(line)
+
+    output = table_header
+    for count, line in enumerate(minimum_lines):
+        output += line
+
+    output += '\\hline\n' + '\caption{NSVS 896797 O-C. The first column is the \n' \
+                            '$BJD_{TDB}$ and column 2 is the eclipse number with a whole number \n' \
+                            'being a primary eclipse and a half integer value being a secondary \n' \
+                            'eclipse. Column 3 is the $(O-C)$ value with the corresponding \n' \
+                            'error.}' \
+              + '\\label{896797_OC}\n' + '\\end{longtable}\n' + '\\end{center}\n'
+    """
+    End LaTeX table stuff.
+    """
+    
+    # outputfile = input("Please enter an output file name without the extension: ")
+    file = open(outfile + ".tex", "w")
+    file.write(output)
+    file.close()
 
     return outfile
 
@@ -449,4 +486,5 @@ def residuals(x, y, x_label, y_label, degree, model, xs):
     plt.show()
 
 
-main()
+if __name__ == '__main__':
+    main()

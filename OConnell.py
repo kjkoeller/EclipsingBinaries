@@ -3,7 +3,7 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 11/03/2022
+Last Edited: 01/20/2023
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -24,7 +24,7 @@ def main():
     while True:
         prompt = input("Enter 3 if you are going to use BVR or less than 3 for a combination of them: ")
         if prompt.isnumeric():
-            if 0 < prompt < 4:
+            if 0 < int(prompt) < 4:
                 break
             else:
                 print("You have entered in a wrong number not between 1-3. Please try again.")
@@ -35,7 +35,7 @@ def main():
     print("")
     # If statement checks which value was entered for the 'prompt' and corresponds the correct number of files to enter
     # for the O'Connel calculations
-    if prompt == 3:
+    if prompt == "3":
         print("Please have all files in the same directory as this python program.")
         while True:
             infile1 = input("File 1 name: ")
@@ -52,7 +52,7 @@ def main():
         outputile = input("What is the output file name (do not add extensions): ")
         multi_OConnell_total([infile1, infile2, infile3], hjd, period, order=10, sims=1000,
                              sections=4, section_order=7, plot_only=False, save=True, outName=outputile+".pdf")
-    elif prompt == 2:
+    elif prompt == "2":
         print("Please have all files in the same directory as this python program.")
         while True:
             infile1 = input("File 1 name: ")
@@ -483,8 +483,8 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
         """
         print(output)
         outputfile = input("Please enter an output file name without the extension: ")
-        file = open(outputfile+"txt", "w")
-        # file.write(sims)
+        file = open(outputfile+".txt", "w")
+        file.write(output)
         file.close()
     return 'nada'
 

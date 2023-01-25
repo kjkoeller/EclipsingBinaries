@@ -9,15 +9,24 @@ A Python project for Ball State University's Variable Star Research Group
 
 ***
 
+## Installation and Usage
+
+To install type the following,
+
+    pip install EclipsingBinaires
+
+Once installed, in the command line type the following:
+    
+    EclipsingBinaries
+
+This will run the `menu.py` file and will initiate all other programs for usage.
+Once installed using pip, you can just go to a command line and type `EclipsingBinaries` to start the program each time.
+
+***
+
 ## Dependencies
 
-https://github.com/kjkoeller/Variable\_Star\_Research\_Package/wiki/Installation
-
-Once inside the main directory type the following to automatically install the required packages below and check for a minimum python version.
-
-    python setup.py install
-
-*   python >=3.5
+*   python >=3.7
 *   astropy>=5.1.1
 *   astroquery>=0.4.6
 *   ccdproc>=2.4.0
@@ -32,9 +41,9 @@ Once inside the main directory type the following to automatically install the r
 
 ***
 
-## Descriptions (v0.8.6)
+## Descriptions (v2.0.0)
 
-### main.py
+### menu.py
 
 The main program that can call all the other programs given a user's prompts. When using this package, always run the main.py first as this will connect to all the following programs.
 

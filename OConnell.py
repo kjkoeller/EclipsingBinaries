@@ -3,14 +3,14 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 01/20/2023
+Last Edited: 01/25/2023
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
 """
 
 import matplotlib.pyplot as plt
-import vseq_updated as vseq
+from . import vseq_updated as vseq
 from tqdm import tqdm
 import numpy as np
 import statistics as st
@@ -105,7 +105,7 @@ def Half_Comp(filter_files, Epoch, period,
         plt.rcParams['font.family'] = 'serif'
         plt.rcParams['mathtext.fontset'] = 'dejavuserif'
     bands = len(filter_files)
-    axs = vseq.plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
+    axs = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
     flux = axs[0]
     dI = axs[1]
     colors = ['blue', 'limegreen', 'red', 'm']

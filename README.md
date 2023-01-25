@@ -41,7 +41,7 @@ Once installed using pip, you can just go to a command line and type `EclipsingB
 
 ***
 
-## Descriptions (v2.0.0)
+## Descriptions (v2.1.0)
 
 ### menu.py
 

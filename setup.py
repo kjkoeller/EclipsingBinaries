@@ -2,11 +2,15 @@
 
 """Setup script for the package."""
 
-import setuptools
+from setuptools import setup, find_packages  # Always prefer setuptools over distutils
 import sys
 
+from pathlib import Path
+this_directory = Path(__file__).parent
+long_description = (this_directory / "README.md").read_text()
 
-MINIMUM_PYTHON_VERSION = 3, 5
+
+MINIMUM_PYTHON_VERSION = 3, 7
 
 
 def check_python_version():
@@ -17,23 +21,44 @@ def check_python_version():
 
 check_python_version()
 
-setuptools.setup(
+setup(
+    version="2.1.2",
+    name="EclipsingBinaries",
     description="Binary Star Package for Ball State University's Astronomy Research Group",
+    long_description=long_description,
+    long_description_content_type='text/markdown',
     url='https://github.com/kjkoeller/Binary_Star_Research_Package',
     author='Kyle Koeller',
 
-    packages=setuptools.find_packages(),
+    packages=find_packages(),
 
-    entry_points={'console_scripts': []},
+    entry_points={'console_scripts': [
+        'EclipsingBinaries = EclipsingBinaries.menu:main'
+        ],
+    },
 
-    license='MIT',
+    license="MIT",
     classifiers=[
         'Development Status :: 4 - Beta',
         'Natural Language :: English',
         'Operating System :: OS Independent',
         'Programming Language :: Python',
-        'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.7',
+    ],
+    install_requires=[
+        'astropy>=5.1.1',
+        'astroquery>=0.4.6',
+        'ccdproc>=2.4.0',
+        'matplotlib>=3.3.1',
+        'numpy>=1.19.1',
+        'pandas>=1.1.0',
+        'PyAstronomy>=0.18.0',
+        'scipy>=1.5.2',
+        'statsmodels>=0.13.5',
+        'tqdm>=4.64.1',
+        'numba>=0.56.3'
     ],
 
-    install_requires=open("requirements.txt").readlines(),
+    include_package_data=True,
+
 )

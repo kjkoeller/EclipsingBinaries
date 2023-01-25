@@ -2,14 +2,14 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 11/17/2022
+Last Updated: 01/25/2022
 """
 
 # import required packages
 import astroquery.exceptions
 from astroquery.mast import Tesscut
 import astropy.units as u
-import tesscut as tCut
+from .tesscut import main as tCut
 
 
 def main():
@@ -40,7 +40,7 @@ def main():
         print()
         print("Starting download of Sector " + str(i))
         manifest = Tesscut.download_cutouts(objectname=system_name, size=[30, 30] * u.arcmin, sector=i)
-        tCut.main(manifest)
+        tCut(manifest)
         print("Finished downloading Sector " + str(i))
     print("Finished downloading all sector data related to " + system_name)
 

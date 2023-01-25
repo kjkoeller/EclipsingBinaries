@@ -10,7 +10,7 @@ Last Edits Done By: Kyle Koeller
 """
 
 import matplotlib.pyplot as plt
-from . import vseq_updated as vseq
+from .vseq_updated import plot, binning, calc, FT, OConnell
 from tqdm import tqdm
 import numpy as np
 import statistics as st
@@ -114,17 +114,17 @@ def Half_Comp(filter_files, Epoch, period,
     R2_halves = []
     dI.axhline(0, linestyle='-', color='black', linewidth=1)
     for band in range(bands):
-        a, b = vseq.binning.polybinner(filter_files[band], Epoch, period, sections=sections,
+        a, b = binning.polybinner(filter_files[band], Epoch, period, sections=sections,
                                        norm_factor='alt', section_order=section_order)[0][:2:]
         half = int(0.5 * resolution) + 1
-        FT1 = vseq.FT.FT_plotlist(a, b, FT_order, resolution)
-        FT2 = vseq.FT.FT_plotlist(a, -1 * b, FT_order, resolution)
+        FT1 = FT.FT_plotlist(a, b, FT_order, resolution)
+        FT2 = FT.FT_plotlist(a, -1 * b, FT_order, resolution)
         FTphase1, FTflux1 = FT1[0][:half:], FT1[1][:half:]
         FTphase2, FTflux2 = FT2[0][:half:], FT2[1][:half:]
 
-        # R2_halves.append(np.mean([vseq.calc.error.CoD(FTflux1,FTflux2),vseq.calc.error.CoD(FTflux2,FTflux1)]))
-        R2_halves.append(vseq.calc.error.CoD(FTflux1, FTflux2))
-        R2_halves.append(vseq.calc.error.CoD(FTflux2, FTflux1))
+        # R2_halves.append(np.mean([calc.error.CoD(FTflux1,FTflux2),calc.error.CoD(FTflux2,FTflux1)]))
+        R2_halves.append(calc.error.CoD(FTflux1, FTflux2))
+        R2_halves.append(calc.error.CoD(FTflux2, FTflux1))
 
         dIlist = []
         for phase in FTphase1:
@@ -144,8 +144,8 @@ def Half_Comp(filter_files, Epoch, period,
         flux.set_ylabel('Flux', fontsize=16)
 
     # mpl.rcParams['mathtext.fontset'] = 'dejavusans'
-    vseq.plot.sm_format(flux, numbersize=15, X=0.125, x=0.025, xbottom=False, bottomspine=False, Y=None)
-    vseq.plot.sm_format(dI, numbersize=15, X=0.125, x=0.025, xtop=False, topspine=False)
+    plot.sm_format(flux, numbersize=15, X=0.125, x=0.025, xbottom=False, bottomspine=False, Y=None)
+    plot.sm_format(dI, numbersize=15, X=0.125, x=0.025, xtop=False, topspine=False)
     # plt.rcParams['text.usetex'] = True
     # mpl.rcParams['mathtext.fontset'] = 'cm'
     dI.set_xlabel(r'$\Phi$', fontsize=18)
@@ -175,7 +175,7 @@ def Half_Comp(filter_files, Epoch, period,
     plt.rcParams['font.family'] = 'sans'
     plt.rcParams['mathtext.fontset'] = 'dejavusans'
 
-    # print('R^2 half =',(vseq.calc.error.CoD(FTflux1,FTflux2)+vseq.calc.error.CoD(FTflux2,FTflux1))/2)
+    # print('R^2 half =',(calc.error.CoD(FTflux1,FTflux2)+calc.error.CoD(FTflux2,FTflux1))/2)
     # print(R2_halves)
     # print(1-np.mean(R2_halves),'+/-',statistics.stdev(R2_halves))
     # print()
@@ -197,7 +197,7 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     Generating master parameters from the observational data.
     """
     # ============== DO NOT CHANGE ┬─┬ノ( º _ ºノ) ==============================
-    PB = vseq.binning.polybinner(inputFile, Epoch, period, sections=sections, norm_factor=norm_factor,
+    PB = binning.polybinner(inputFile, Epoch, period, sections=sections, norm_factor=norm_factor,
                                  section_order=section_order, FT_order=FT_order)
     c_MB = PB[1][0]
     nc_MB = PB[1][1]
@@ -214,10 +214,10 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     b = PB[0][1]  # Fourier coefficients
     # ==========================================================================
 
-    FTsynth = vseq.FT.synth(a, b, ob_phaselist, FT_order)  # synthetic FT curve
+    FTsynth = FT.synth(a, b, ob_phaselist, FT_order)  # synthetic FT curve
     master_simflux = []
     for sim in tqdm(range(sims), desc='Simulating light curves', position=0):
-        master_simflux.append(vseq.FT.sim_ob_flux(FTsynth, ob_fluxerr))
+        master_simflux.append(FT.sim_ob_flux(FTsynth, ob_fluxerr))
     # ============
 
     # ============
@@ -260,20 +260,20 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
         # == end section loop == ; resume sim loop
 
         # Generating polynomial resampled fluxes for each simulation.
-        minipoly = vseq.binning.minipolybinner(c_sec_phases, c_master_simflux[sim],
+        minipoly = binning.minipolybinner(c_sec_phases, c_master_simflux[sim],
                                                nc_sec_phases, nc_master_simflux[sim],
                                                section_order)
         master_polyflux.append(minipoly[1])
 
         # Calculating various parameters for each simulation.
-        FTcoef = vseq.FT.coefficients(master_polyflux[sim])
+        FTcoef = FT.coefficients(master_polyflux[sim])
         master_a.append(FTcoef[1])
         master_b.append(FTcoef[2])
-        master_FTflux.append(vseq.FT.FT_plotlist(master_a[sim], master_b[sim], FT_order, FTres)[1])
-        OERlist.append(vseq.OConnell.OER_FT(master_a[sim], master_b[sim], FT_order))
-        LCAlist.append(vseq.OConnell.LCA_FT(master_a[sim], master_b[sim], FT_order, 256))
-        dIlist.append(vseq.OConnell.Delta_I_fixed(master_b[sim], FT_order))
-        dIavelist.append(vseq.OConnell.Delta_I_mean_obs_noerror(ob_phaselist, ob_fluxlist, phase_range=0.05))
+        master_FTflux.append(FT.FT_plotlist(master_a[sim], master_b[sim], FT_order, FTres)[1])
+        OERlist.append(OConnell.OER_FT(master_a[sim], master_b[sim], FT_order))
+        LCAlist.append(OConnell.LCA_FT(master_a[sim], master_b[sim], FT_order, 256))
+        dIlist.append(OConnell.Delta_I_fixed(master_b[sim], FT_order))
+        dIavelist.append(OConnell.Delta_I_mean_obs_noerror(ob_phaselist, ob_fluxlist, phase_range=0.05))
     # = end sim loop =
 
     # dIaveerror=st.stdev(dIavelist)#no purpose, compining MC errors with observation errors is double-counting
@@ -284,15 +284,15 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     Calculating FT model errors, as opposed to the errors calculated
     with the simulate light curves.
     """
-    a0sig, a0rat = vseq.FT.a_sig_fast(a, b, 0, a[0], ob_phaselist, ob_fluxlist, ob_fluxerr, order)
+    a0sig, a0rat = FT.a_sig_fast(a, b, 0, a[0], ob_phaselist, ob_fluxlist, ob_fluxerr, order)
     a_model_err = [a0sig]
     b_model_err = [0]
     a_rat = [a0rat]
     b_rat = [1]
     for n in tqdm(range(1, order + 1), position=0, desc='Calculating FT errors'):
         # TODO, dx0=1 isn't fullproof
-        asig, ar = vseq.FT.a_sig_fast(a, b, n, a[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order, dx0=1)
-        bsig, br = vseq.FT.b_sig_fast(a, b, n, b[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order, dx0=1)
+        asig, ar = FT.a_sig_fast(a, b, n, a[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order, dx0=1)
+        bsig, br = FT.b_sig_fast(a, b, n, b[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order, dx0=1)
         a_model_err.append(asig)
         b_model_err.append(bsig)
         a_rat.append(ar)
@@ -308,25 +308,25 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     a2_0125_a2_err = sig_f(lambda x: x * (0.125 - x), a[2], a_total_err[2])
 
     # == OER ==
-    OER = vseq.OConnell.OER_FT(a, b, order)
-    OER_model_err = vseq.OConnell.OER_FT_error_fixed(a, b, a_model_err, b_model_err, order)
+    OER = OConnell.OER_FT(a, b, order)
+    OER_model_err = OConnell.OER_FT_error_fixed(a, b, a_model_err, b_model_err, order)
     OER_MC_err = st.stdev(OERlist)
     OER_total_err = (OER_model_err ** 2 + OER_MC_err ** 2) ** 0.5
 
     # == LCA ==
-    LCA = vseq.OConnell.LCA_FT(a, b, order, 1024)
-    LCA_model_err = vseq.OConnell.LCA_FT_error(a, b, a_model_err, b_model_err, order, 1024)[1]
+    LCA = OConnell.LCA_FT(a, b, order, 1024)
+    LCA_model_err = OConnell.LCA_FT_error(a, b, a_model_err, b_model_err, order, 1024)[1]
     LCA_MC_err = st.stdev(LCAlist)
     LCA_total_err = (LCA_model_err ** 2 + LCA_MC_err ** 2) ** 0.5
 
     # == Delta_I ==
-    Delta_I_025 = vseq.OConnell.Delta_I_fixed(b, order)
-    Delta_I_025_model_err = vseq.OConnell.Delta_I_error_fixed(b_model_err, order)
+    Delta_I_025 = OConnell.Delta_I_fixed(b, order)
+    Delta_I_025_model_err = OConnell.Delta_I_error_fixed(b_model_err, order)
     Delta_I_025_MC_err = st.stdev(dIlist)
     Delta_I_025_total_err = (Delta_I_025_model_err ** 2 + Delta_I_025_MC_err ** 2) ** 0.5
 
     # == Delta_I_ave ==
-    DIave = vseq.OConnell.Delta_I_mean_obs(ob_phaselist, ob_fluxlist, ob_fluxerr, phase_range=0.05, weighted=False)
+    DIave = OConnell.Delta_I_mean_obs(ob_phaselist, ob_fluxlist, ob_fluxerr, phase_range=0.05, weighted=False)
     Delta_I_ave = DIave[0]
     Delta_I_ave_err = DIave[1]
 

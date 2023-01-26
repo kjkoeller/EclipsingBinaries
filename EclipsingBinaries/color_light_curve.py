@@ -4,11 +4,11 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 11/03/2022
+Last Edited: 01/26/2022
 Editor: Kyle Koeller
 """
 
-import vseq_updated as vseq
+from . import vseq_updated as vseq
 import numpy as np
 import matplotlib.pyplot as plt
 import statistics as st

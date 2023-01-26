@@ -40,7 +40,7 @@ check_python_version()
 # version = get_version("EclipsingBinaries/__init__.py")
 
 setup(
-    version="2.1.8,
+    version="2.1.8",
     name="EclipsingBinaries",
     description="Binary Star Package for Ball State University's Astronomy Research Group",
     long_description=long_description,

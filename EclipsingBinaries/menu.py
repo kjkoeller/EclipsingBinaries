@@ -12,7 +12,7 @@ from .apass import comparison_selector as comp_select
 from.OConnell import main as oconnell
 from .color_light_curve import color_gui as gui
 from .IRAF_Reduction import main as IRAF
-from .OC_plot import data_fit as data_fit
+from .OC_plot import main as data_fit
 
 
 def main():

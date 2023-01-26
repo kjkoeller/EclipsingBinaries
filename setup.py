@@ -22,7 +22,7 @@ def check_python_version():
 check_python_version()
 
 setup(
-    version="2.1.5",
+    version="2.1.6",
     name="EclipsingBinaries",
     description="Binary Star Package for Ball State University's Astronomy Research Group",
     long_description=long_description,

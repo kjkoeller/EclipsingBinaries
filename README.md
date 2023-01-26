@@ -22,6 +22,15 @@ Once installed, in the command line type the following:
 This will run the `menu.py` file and will initiate all other programs for usage.
 Once installed using pip, you can just go to a command line and type `EclipsingBinaries` to start the program each time.
 
+To check the version you have,
+
+    pip show EclipsingBinaries
+this will show numerous things, but you want to look at the version and make sure it is up to date.
+
+If your version is not the most recent version then in order to update type the following,
+
+    pip install --upgrade EclipsingBinaries
+
 ***
 
 ## Dependencies
@@ -41,7 +50,7 @@ Once installed using pip, you can just go to a command line and type `EclipsingB
 
 ***
 
-## Descriptions (v2.1.6)
+## Descriptions
 
 ### menu.py
 

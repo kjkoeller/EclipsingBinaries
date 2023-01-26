@@ -59,6 +59,7 @@ def main():
                 data_fit(total)
             elif num == 4:
                 break
+                exit()
             else:
                 print("Please enter either 1, 2, 3, or 4.\n")
         except ValueError:
@@ -102,7 +103,7 @@ def TESS_OC(T0, To_err, period, df):
     })
 
     # output file name to place the above dataframe into for saving
-    outfile = input("Please enter the output file name with extension (i.e. test.txt): ")
+    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\test.txt): ")
     dp.to_csv(outfile, index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
 
@@ -155,7 +156,7 @@ def BSUO(T0, To_err, period, db, dv, dr):
     })
 
     # output file name to place the above dataframe into for saving
-    outfile = input("Please enter the output file name with extension (i.e. test.txt): ")
+    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\test.txt): ")
     dp.to_csv(outfile, index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
 
@@ -171,7 +172,7 @@ def all_data(nights):
     while True:
         try:
             fname = input("Please enter a file name (if the file is in the same folder as this program) or the full "
-                          "file pathway: ")
+                          "file pathway for all your data: ")
             df = pd.read_csv(fname, header=None, delim_whitespace=True)
             break
         except FileNotFoundError:
@@ -195,7 +196,7 @@ def all_data(nights):
         "O-C Error": o_c_err
     })
 
-    outfile = input("Please enter the output file name without extension (i.e. test): ")
+    outfile = input("Please enter the output fil pathway and file name WITHOUT extension for the ToM (i.e. C:\folder\[file_name]): ")
     dp.to_csv(outfile+".txt", index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
 
@@ -333,7 +334,7 @@ def data_fit(input_file):
     while not degree_test:
         # make sure the value entered is actually an integer
         try:
-            degree = int(input("How many polynomial degrees do you want to fit (integer values > 0): "))
+            degree = int(input("How many polynomial degrees do you want to fit (integer values > 0) i.e. 1=linear and 2=qudratic: "))
             degree_test = True
         except ValueError:
             print("This is not an integer, please enter an integer.")
@@ -360,8 +361,7 @@ def data_fit(input_file):
         if output_file.endswith((".txt", ".tex")):
             output_test = True
         else:
-            print("This is not an allowed file output. Please make sure the file has the extension .txt or .tex.")
-            print()
+            print("This is not an allowed file output. Please make sure the file has the extension .txt or .tex.\n")
 
     # noinspection PyUnboundLocalVariable
     f = open(output_file, 'w')
@@ -411,11 +411,9 @@ def data_fit(input_file):
         y_label = input("Y-Label: ")
         title = input("Title: ")
         if not x_label:
-            print("x label is empty. Please enter a string or value for these variables.")
-            print()
+            print("x label is empty. Please enter a string or value for these variables.\n")
         elif not y_label:
-            print("y label is empty. Please enter a string or value for these variables.")
-            print()
+            print("y label is empty. Please enter a string or value for these variables.\n")
         else:
             empty = True
 

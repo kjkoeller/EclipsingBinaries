@@ -8,16 +8,18 @@ import codecs
 import os.path
 
 from pathlib import Path
+
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
 
-
 MINIMUM_PYTHON_VERSION = 3, 8
+
 
 def read(rel_path):
     here = os.path.abspath(os.path.dirname(__file__))
     with codecs.open(os.path.join(here, rel_path), 'r') as fp:
         return fp.read()
+
 
 def get_version(rel_path):
     for line in read(rel_path).splitlines():
@@ -27,6 +29,7 @@ def get_version(rel_path):
     else:
         raise RuntimeError("Unable to find version string.")
 
+
 def check_python_version():
     """Exit when the Python version is too low."""
     if sys.version_info < MINIMUM_PYTHON_VERSION:
@@ -34,9 +37,10 @@ def check_python_version():
 
 
 check_python_version()
+version = get_version("EclipsingBinaries/__init__.py")
 
 setup(
-    version=get_version("EclipsingBinaries/__init__.py"),
+    version=version,
     name="EclipsingBinaries",
     description="Binary Star Package for Ball State University's Astronomy Research Group",
     long_description=long_description,
@@ -48,7 +52,7 @@ setup(
 
     entry_points={'console_scripts': [
         'EclipsingBinaries = EclipsingBinaries.menu:main'
-        ],
+    ],
     },
 
     license="MIT",

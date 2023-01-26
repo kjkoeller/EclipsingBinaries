@@ -10,7 +10,7 @@ this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
 
 
-MINIMUM_PYTHON_VERSION = 3, 7
+MINIMUM_PYTHON_VERSION = 3, 8
 
 
 def check_python_version():

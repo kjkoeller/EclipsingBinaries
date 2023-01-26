@@ -56,7 +56,8 @@ setup(
         'scipy>=1.5.2',
         'statsmodels>=0.13.5',
         'tqdm>=4.64.1',
-        'numba>=0.56.3'
+        'numba>=0.56.3',
+        'seaborn>=0.12.2',
     ],
 
     include_package_data=True,

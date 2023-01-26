@@ -49,6 +49,7 @@ If your version is not the most recent version then in order to update type the 
 *   statsmodels>=0.13.5
 *   tqdm>=4.64.1
 *   numba>=0.56.3
+*   seaborn>=0.12.2
 
 ***
 

@@ -37,10 +37,10 @@ def check_python_version():
 
 
 check_python_version()
-# version = get_version("EclipsingBinaries/__init__.py")
+version = get_version("EclipsingBinaries/__init__.py")
 
 setup(
-    version="2.1.8",
+    version=version,
     name="EclipsingBinaries",
     description="Binary Star Package for Ball State University's Astronomy Research Group",
     long_description=long_description,
@@ -61,7 +61,7 @@ setup(
         'Natural Language :: English',
         'Operating System :: OS Independent',
         'Programming Language :: Python',
-        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.7',
     ],
     install_requires=[
         'astropy>=5.1.1',

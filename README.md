@@ -55,6 +55,8 @@ If your version is not the most recent version then in order to update type the 
 
 ## Descriptions
 
+Check the wiki for some help with specific programs. More will be added at a later date.
+
 ### menu.py
 
 The main program that can call all the other programs given a user's prompts. When using this package, always run the main.py first as this will connect to all the following programs.

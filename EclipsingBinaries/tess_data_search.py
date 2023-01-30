@@ -2,7 +2,7 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 01/25/2022
+Last Updated: 01/30/2022
 """
 
 # import required packages
@@ -20,15 +20,14 @@ def main():
     """
 
     # While loops checks to make sure that the user has entered a valid TIC number that can be found.
-    print("If you want to close this program type 'Close' in the following prompt.")
-    print()
+    print("If you want to close this program type 'Close' in the following prompt.\n")
     while True:
         try:
             system_name = input("Enter in the TIC-ID given in SIMBAD (TIC 468293391): ")
             sector_table = Tesscut.get_sectors(objectname=system_name)
             break
         except astroquery.exceptions.ResolverError:
-            print("The TIC number you entered is invalid or there is no data for this given system.")
+            print("\nThe TIC number you entered is invalid or there is no data for this given system.\n")
 
     if system_name.lower() == "close":
         exit()
@@ -42,7 +41,7 @@ def main():
         manifest = Tesscut.download_cutouts(objectname=system_name, size=[30, 30] * u.arcmin, sector=i)
         tCut(manifest)
         print("Finished downloading Sector " + str(i))
-    print("Finished downloading all sector data related to " + system_name)
+    print("Finished downloading all sector data related to " + system_name + "\n")
 
 
 if __name__ == '__main__':

@@ -9,7 +9,7 @@ Last Updated: 01/30/2022
 import astroquery.exceptions
 from astroquery.mast import Tesscut
 import astropy.units as u
-from tesscut import main as tCut
+from .tesscut import main as tCut
 from os.path import exists
 
 

@@ -9,7 +9,8 @@ Last Updated: 01/30/2022
 import astroquery.exceptions
 from astroquery.mast import Tesscut
 import astropy.units as u
-from .tesscut import main as tCut
+from tesscut import main as tCut
+from os.path import exists
 
 
 def main():
@@ -23,7 +24,8 @@ def main():
     print("If you want to close this program type 'Close' in the following prompt.\n")
     while True:
         try:
-            system_name = input("Enter in the TIC-ID given in SIMBAD (TIC 468293391): ")
+            system_name = input("Enter in the TIC-ID given in SIMBAD (TIC 468293391) or the word 'Close' "
+                                "to close the program: ")
             sector_table = Tesscut.get_sectors(objectname=system_name)
             break
         except astroquery.exceptions.ResolverError:
@@ -34,13 +36,32 @@ def main():
 
     # prints off the sector table to let the user know what sectors TESS has observed the object
     print(sector_table)
+    while True:
+        download_ans = input("\nDo you want to download the TESS data: ")
+        if download_ans.lower() == "yes":
+            break
+        elif download_ans.lower() == "no":
+            print("\nProgram will exit now.\n")
+            exit()
+        else:
+            print("\nPlease enter 'Yes' or 'No' only.\n")
+
+    print("\nWhen TESS data starts the initial download, it downloads, essentially, a big ZIP file with "
+          "all the individual images inside. Below, please enter the entire file path.")
+    print("Example output file path: 'C:\\folder1\\TESS_data\n'")
+    while True:
+        download_path = input("Please enter a file pathway where you want the sector ZIP file to go: ")
+        if exists(download_path):
+            break
+        else:
+            print("\nThe file pathway you entered does not exist. Please try again.\n")
+
     for i in sector_table["sector"]:
         # downloads the pixel file data that can then be analyzed with AIJ
-        print()
-        print("Starting download of Sector " + str(i))
-        manifest = Tesscut.download_cutouts(objectname=system_name, size=[30, 30] * u.arcmin, sector=i)
+        print("\nStarting download of Sector " + str(i))
+        manifest = Tesscut.download_cutouts(objectname=system_name, size=[30, 30] * u.arcmin, sector=i, path=download_path)
         tCut(manifest)
-        print("Finished downloading Sector " + str(i))
+        print("\nFinished downloading Sector " + str(i))
     print("Finished downloading all sector data related to " + system_name + "\n")
 
 

@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 12/26/2022
+Last Updated: 01/30/2023
 """
 
 from astroquery.vizier import Vizier
@@ -120,14 +120,11 @@ def catalog_finder():
     })
 
     # saves the dataframe to a text file and prints that dataframe out to easily see what was copied to the text file
-    print()
-    print("This output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and "
-          "should not be used for anything else other than calculation confirmation if needed later on.")
-    print()
-    text_file = input("Enter a text file name for the output comparisons (ex: APASS_254037.txt): ")
+    print("\nThis output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and "
+          "should not be used for anything else other than calculation confirmation if needed later on.\n")
+    text_file = input("Enter a text file pathway/name for the output comparisons (ex: C:\\folder1\\APASS_254037.txt): ")
     df.to_csv(text_file, index=None)
-    print("Completed save")
-    print()
+    print("\nCompleted save.\n")
 
     return text_file
 
@@ -144,7 +141,7 @@ def comparison_selector():
     """
     # reads the text files to be analyzed for comparison star matches between APASS and Simbad
     # apass_file = input("Enter the text file name for the generated APASS stars: ")
-    print("Must have all files in the same folder as the Python code OR type out the full file pathway to the file.\n")
+    print("\nMust have all files in the same folder as the Python code OR type out the full file pathway to the file.\n")
     radec_file = input("Enter the text file name for the RADEC file from AIJ or type 'Close' to exit the program: ")
     if radec_file.lower() == "close":
         exit()
@@ -155,8 +152,7 @@ def comparison_selector():
             df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
             dh = pd.read_csv(radec_file, header=None, skiprows=7)
         except FileNotFoundError:
-            print("File was not found, please enter them again.")
-            print()
+            print("\nOne of the files were not found, please enter them again.\n")
             test = -1
         if test == 0:
             break
@@ -188,15 +184,12 @@ def comparison_selector():
     # prints the output and saves the dataframe to the text file with "tab" spacing
     output_file = input("Enter an output file name (ex: APASS_254037_Catalog.txt): ")
     final.to_csv(output_file, index=True, sep="\t")
-    print("Finished Saving")
-    print()
+    print("Finished Saving\n")
     print("This program is not 100% accurate, so the recommendation is to compare what you found in AIJ to what this "
           "code has found and make sure that the two lists are the same and enter in the filter values manually into"
-          "the RADEC file for AIJ to use in the photometry.")
-    print()
+          "the RADEC file for AIJ to use in the photometry.\n")
     print("The output file you have entered has RA and DEC for stars and their B, V, and Cousins R magnitudes with "
-          "their respective errors.")
-    print()
+          "their respective errors.\n")
 
     overlay(output_file, radec_file)
 
@@ -235,8 +228,7 @@ def cousins_r():
         # prints off instructions and then closes the program
         print("The file you have loaded does not have the enough columns.")
         print("Must include RA, DEC, B, V, g', r', and their respective errors.")
-        print("Please run the catalog finder first to get these values from the APASS database before running this "
-              "program.")
+        print("Please run this program from the beginning first to get these values from the APASS database.\n")
         exit()
 
     Rc = []
@@ -277,8 +269,7 @@ def cousins_r():
     output_file = input("Enter an output file name (ex: APASS_254037_Rc_values.txt): ")
     # noinspection PyTypeChecker
     final.to_csv(output_file, index=None, sep="\t")
-    print("Finished Saving")
-    print()
+    print("Finished Saving\n")
 
     return output_file
 
@@ -310,8 +301,7 @@ def overlay(catalog, radec):
     dec_radec_new = np.array(splitter(dec_radec)) * u.deg
 
     # text for the caption below the graph
-    txt = "Number represents index value given in the final output catalog file.\n " \
-          "'V' is the Johnson V magnitude for that given APASS comparison star."
+    txt = "Number represents index value given in the final output catalog file."
 
     # plot the image and the overlays
     wcs = WCS(header)
@@ -431,7 +421,7 @@ def angle_dist(df, dh):
     try:
         list(duplicate_df[0])
     except KeyError:
-        print("There were not comparison stars found between APASS and the RADEC file.")
+        print("There were no comparison stars found between APASS and the RADEC file.\n")
         exit()
 
     return duplicate_df

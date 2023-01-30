@@ -3,7 +3,7 @@ The main program helps centralize all the other programs into one selection rout
 other programs.
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 01/25/2023
+Last Updated: 01/30/2023
 """
 
 from .tess_data_search import main as data_search
@@ -16,13 +16,14 @@ from .OC_plot import main as data_fit
 
 
 def main():
-    print()
-    print("Which program do you want to run?")
+    print("If you need a description of what each option does, please refer to the README for this packages GitHub page"
+          " https://github.com/kjkoeller/Binary_Star_Research_Package")
+    print("\nWhich program do you want to run?\n")
 
     while True:
         print(
             "TESS Database Search/Download(1), AIJ/TESS Night Filters(2), AIJ Comparison Star Selector(3), O'Connel Effect(4), "
-            "Color Light Curve(5), IRAF Reduction(6), O-C Plotting(7), Close Program(8)")
+            "Color Light Curve(5), IRAF Reduction(6), O-C Plotting(7), Close Program(8)\n")
         print("")
         prompt = int(input("Please type out the number corresponding to the corresponding action: "))
         if prompt == 1:
@@ -36,7 +37,7 @@ def main():
             elif aij.lower() == "go back":
                 pass
             else:
-                print("You did not enter AIJ or TESS please go back through the prompts again and enter AIJ or TESS.")
+                print("\nYou did not enter AIJ or TESS please go back through the prompts again and enter AIJ or TESS.\n")
         elif prompt == 3:
             comp_select()
         elif prompt == 4:
@@ -50,8 +51,7 @@ def main():
         elif prompt == 8:
             break
         else:
-            print("You have not entered any of the allowed entries, please try again.")
-            print()
+            print("\nYou have not entered any of the allowed entries, please try again.\n")
 
 
 if __name__ == '__main__':

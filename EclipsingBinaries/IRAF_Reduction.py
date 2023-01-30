@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 01/11/2023
+Last Edited: 01/30/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -44,14 +44,15 @@ def main():
     # allows the user to input where the raw images are and where the calibrated images go to
     path = input("Please enter a file path or folder name (if this code is in the same main folder) or type the word "
                  "'Close' to leave: ")
+    if path.lower() == "close":
+        exit()
     # path = "Calibration2"
-    calibrated = input("Please enter a name for a new calibrated folder to not overwrite the original images: ")
+    calibrated = input("Please enter a file pathway for a new calibrated folder to not overwrite the original images "
+                       "(): ")
 
     # checks whether the file paths from above are real
     while True:
         try:
-            if path.lower() == "close":
-                exit()
             images_path = Path(path)
             calibrated_data = Path(calibrated)
             break
@@ -139,7 +140,7 @@ def bias(files, calibrated_data, path):
 
     # plots one of the bias image mean count values across all columns to find the trim and overscan regions
     print("\nThe bias image that you enter next should be inside the FIRST folder that you entered above or "
-          "this will crash.")
+          "this will crash.\n")
     image = input("Please enter the name of one of the bias images to be looked at for overscan and trim regions: ")
     cryo_path = Path(path)
     bias_1 = CCDData.read(cryo_path / image, unit='adu')
@@ -154,7 +155,7 @@ def bias(files, calibrated_data, path):
     trim_region = input("Please enter the trim region. Example '[20:2060, 12:2057]': ")
     print()
 
-    print("Starting overscan on bias.\n")
+    print("\nStarting overscan on bias.\n")
     for ccd, file_name in files.ccds(imagetyp='BIAS', return_fname=True, ccd_kwargs={'unit': 'adu'}):
         new_ccd = reduce(ccd, overscan_region, trim_region, 0, zero=None, combined_dark=None, good_flat=None)
 
@@ -234,7 +235,7 @@ def dark(files, zero, calibrated_path, overscan_region, trim_region):
         print("Finished overscan correction and bias subtraction for " + str(new_fname))
 
     print("\nFinished overscan correcting and bias subtracting all dark frames.")
-    print("Starting combining dark frames.\n")
+    print("\nStarting combining dark frames.\n")
     time.sleep(10)
     reduced_images = ccdp.ImageFileCollection(calibrated_path)
     calibrated_darks = reduced_images.files_filtered(imagetyp='dark', include_path=True)
@@ -304,7 +305,7 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
 
         print("Finished combining flat " + str(flat_file_name))
 
-    print("Finished creating the master flats by filter.\n")
+    print("\nFinished creating the master flats by filter.\n")
 
     return combined_flats
 

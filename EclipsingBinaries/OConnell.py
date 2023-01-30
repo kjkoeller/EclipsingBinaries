@@ -3,7 +3,7 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 01/25/2023
+Last Edited: 01/30/2023
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -27,16 +27,15 @@ def main():
             if 0 < int(prompt) < 4:
                 break
             else:
-                print("You have entered in a wrong number not between 1-3. Please try again.")
+                print("\nYou have entered in a wrong number not between 1-3. Please try again.\n")
         elif prompt.lower() == "close":
             exit()
         else:
-            print("You have entered a wrong value. Please try entering a number or the word 'Close'.")
-    print("")
+            print("\nYou have entered a wrong value. Please try entering a number or the word 'Close'.\n")
     # If statement checks which value was entered for the 'prompt' and corresponds the correct number of files to enter
     # for the O'Connel calculations
     if prompt == "3":
-        print("Please have all files in the same directory as this python program.")
+        print("\nPlease enter full file pathways for the following prompt.\n")
         while True:
             infile1 = input("File 1 name: ")
             infile2 = input("File 2 name: ")
@@ -44,45 +43,42 @@ def main():
             if path.exists(infile1) and path.exists(infile2) and path.exists(infile3):
                 break
             else:
-                print("One of the files you have entered does not exist, please try all three again.")
-                print("")
+                print("\nOne of the files you have entered does not exist, please try all three again.\n")
                 continue
         hjd = float(input("What is the HJD: "))
         period = float(input("What is the period: "))
-        outputile = input("What is the output file name (do not add extensions): ")
+        outputile = input("What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
         multi_OConnell_total([infile1, infile2, infile3], hjd, period, order=10, sims=1000,
-                             sections=4, section_order=7, plot_only=False, save=True, outName=outputile+".pdf")
+                             sections=4, section_order=7, plot_only=False, save=True, outName=outputile)
     elif prompt == "2":
-        print("Please have all files in the same directory as this python program.")
+        print("\nPlease enter full file pathways for the following prompt.\n")
         while True:
             infile1 = input("File 1 name: ")
             infile2 = input("File 2 name: ")
             if path.exists(infile1) and path.exists(infile2):
                 break
             else:
-                print("One of the files you have entered does not exist, please try all three again.")
-                print("")
+                print("\nOne of the files you have entered does not exist, please try all three again.\n")
                 continue
         hjd = float(input("What is the HJD: "))
         period = float(input("What is the period: "))
-        outputile = input("What is the output file name (do not add extensions): ")
+        outputile = input("What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
         multi_OConnell_total([infile1, infile2], hjd, period, order=10, sims=1000,
-                             sections=4, section_order=7, plot_only=False, save=True, outName=outputile + ".pdf")
+                             sections=4, section_order=7, plot_only=False, save=True, outName=outputile)
     else:
-        print("Please have all files in the same directory as this python program.")
+        print("\nPlease enter full file pathways for the following prompt.\n")
         while True:
             infile1 = input("File 1 name: ")
             if path.exists(infile1):
                 break
             else:
-                print("One of the files you have entered does not exist, please try all three again.")
-                print("")
+                print("\nThe file you have entered does not exist, please try all three again.\n")
                 continue
         hjd = float(input("What is the HJD: "))
         period = float(input("What is the period: "))
-        outputile = input("What is the output file name (do not add extensions): ")
+        outputile = input("What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
         multi_OConnell_total([infile1], hjd, period, order=10, sims=1000,
-                             sections=4, section_order=7, plot_only=False, save=True, outName=outputile + ".pdf")
+                             sections=4, section_order=7, plot_only=False, save=True, outName=outputile)
 
 
 # print(sig_f(lambda x:1/x,3.4,0.01))

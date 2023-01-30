@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 01/20/2023
+Last Edited: 01/30/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -103,7 +103,7 @@ def TESS_OC(T0, To_err, period, df):
     })
 
     # output file name to place the above dataframe into for saving
-    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\test.txt): ")
+    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\\test.txt): ")
     dp.to_csv(outfile, index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
 
@@ -156,7 +156,7 @@ def BSUO(T0, To_err, period, db, dv, dr):
     })
 
     # output file name to place the above dataframe into for saving
-    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\test.txt): ")
+    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\\test.txt): ")
     dp.to_csv(outfile, index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
 
@@ -196,14 +196,17 @@ def all_data(nights):
         "O-C Error": o_c_err
     })
 
-    outfile = input("Please enter the output fil pathway and file name WITHOUT extension for the ToM (i.e. C:\folder\[file_name]): ")
-    dp.to_csv(outfile+".txt", index=None, sep="\t")
-    print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
+    outfile_path = input("Please enter the JUST the output file pathway (i.e. C:\\folder\[file_name]): ")
+    outfile_name = input("Please enter a file name WITHOUT any extension (i.e. 'test' without .txt or anything else): ")
+    outfile = outfile_path + outfile_name
+    dp.to_csv(outfile + ".txt", index=None, sep="\t")
+    print("\nFinished saving file to " + outfile)
 
     """
     LaTeX table stuff, don't change unless you know what you're doing!
     """
-    table_header = '\\begin{center}\n' + '\\begin{longtable}{ccc}\n'
+    table_header = "\\renewcommand{\\baselinestretch}{1.00} \small\\normalsize"
+    table_header += '\\begin{center}\n' + '\\begin{longtable}{ccc}\n'
     table_header += '$BJD_{TDB}$ & ' + 'E & ' + 'O-C \\\ \n'
     table_header += '\\hline\n' + '\\endfirsthead\n'
     table_header += '\\multicolumn{3}{c}\n'
@@ -228,6 +231,7 @@ def all_data(nights):
                             'eclipse. Column 3 is the $(O-C)$ value with the corresponding \n' \
                             'error.}' \
               + '\\label{896797_OC}\n' + '\\end{longtable}\n' + '\\end{center}\n'
+    output += '\\renewcommand{\\baselinestretch}{1.66} \small\\normalsize'
     """
     End LaTeX table stuff.
     """

@@ -4,7 +4,7 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 11/22/2022
+Last Edited: 01/30/2023
 
 Spyder Editor
 This is a temporary script file.
@@ -32,24 +32,22 @@ Detects and does not convert low quality
 
 
 def main(search_file):
-    print(str(search_file))
+    # print(str(search_file))
     infile = "tess" + str(search_file).split("tess")[1]
-    print()
-    print("Example output file path: ")
-    print('C:\\Users\Kyle\OneDrive\PhysicsAstro\Astronomy\Code\Tess_Search\\test\\[prefix name of files]\ ')
+    print("\nExample output file path: ")
+    print('C:\\Users\Kyle\OneDrive\PhysicsAstro\Astronomy\Code\Tess_Search\\test\\')
     while True:
         # makes sure the file pathway is real and points to some file
         # (does not check if that file is the correct one though)
         try:
-            print()
             outprefix = input("Where do you want to output the files (entire file path): ")
             if os.path.exists(infile):
                 break
             else:
-                print("input file path does not exist")
+                print("\nInput file path does not exist.\n")
                 continue
         except FileNotFoundError:
-            print("Please enter a valid file path.")
+            print("\nPlease enter a valid file path.\n")
 
     # Set an overwrite flag True so that images can be overwritten
     # Otherwise set it False for safety

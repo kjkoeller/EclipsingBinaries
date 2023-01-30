@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/11/2020
-Last Updated: 01/19/2023
+Last Updated: 01/30/2023
 
 This program is meant to make the process of collecting the different filters from AIJ Excel spreadsheets faster.
 The user enters however many nights they have and the program goes through and checks those text files for the
@@ -80,10 +80,9 @@ def get_nights_AIJ(n):
     # checks for either the b or v filter as either upper or lowercase will work
     # an example pathway for the files
     print("Example of a correct file path: "
-          "E:/Research/Data/NSVS_254037/2018.10.12-reduced/Check/V/2018.09.18.APASS.B_datasubset.dat")
-    print()
+          "E:/Research/Data/NSVS_254037/2018.10.12-reduced/Check/V/2018.09.18.APASS.B_datasubset.dat\n")
     print("When entering a file path make sure to use files that are the same filter. So if you are going"
-          " through the Johnson B files, then ONLY use the file paths of the Johnson B and not V or R yet.")
+          " through the Johnson B files, then ONLY use the file paths of the Johnson B and not V or R yet.\n")
     for i in range(n):
         while True:
             # makes sure the file pathway is real and points to some file
@@ -95,7 +94,7 @@ def get_nights_AIJ(n):
                 else:
                     continue
             except FileNotFoundError:
-                print("Please enter a correct file path.")
+                print("Please enter a correct file path.\n")
 
         # noinspection PyUnboundLocalVariable
         df = pd.read_csv(file, delimiter="\t")
@@ -116,8 +115,8 @@ def get_nights_AIJ(n):
                 flux = list(df["rel_flux_T1"])
                 flux_err = list(df["rel_flux_err_T1"])
             except KeyError:
-                print("The file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
-                      "Please re-enter the file path and make sure its the correct file.")
+                print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
+                      "Please re-enter the file path and make sure its the correct file.\n")
                 main(0)
 
             total_hjd.append(hjd)
@@ -143,8 +142,8 @@ def get_nights_AIJ(n):
                 amag = list(df["Source_AMag_T1"])
                 amag_err = list(df["Source_AMag_Err_T1"])
             except KeyError:
-                print("The file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
-                      "Please re-enter the file path and make sure its the correct file.")
+                print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
+                      "Please re-enter the file path and make sure its the correct file.\n")
                 c = 1
                 main(c)
 
@@ -158,7 +157,7 @@ def get_nights_AIJ(n):
             new_amag_err = [item for elem in total_amag_err for item in elem]
             data_amount = 1
         else:
-            print("The file you entered does not have the correct amount of columns.")
+            print("\nThe file you entered does not have the correct amount of columns.\n")
             main(0)
             # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
     if data_amount == 1:
@@ -174,7 +173,7 @@ def get_nights_AIJ(n):
         # output the text files with a designation of magnitude or flux
         data2.to_csv(output + "_magnitudes.txt", index=False, header=False, sep="\t")
         print("")
-        print("Fished saving the file to the same location as this program.")
+        print("Fished saving the file to the same location as this program.\n\n")
     elif data_amount == 2:
         # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
         data1 = pd.DataFrame({
@@ -188,8 +187,7 @@ def get_nights_AIJ(n):
             "AMag": new_amag,
             "AMag Error": new_amag_err
         })
-
-        print("")
+        
         output = input("What is the file output name (WITHOUT any file extension): ")
 
         # output both text files with a designation of magnitude or flux
@@ -216,14 +214,15 @@ def get_nights_TESS(n):
             # (does not check if that file is the correct one though)
             try:
                 # an example pathway for the files
-                print(r"Example: D:\Research\Data\NSVS_254037\nsvs_254037_tess_data\sector18\sector18_datasubset.dat")
+                print(r"Example: D:\Research\Data\NSVS_254037\nsvs_254037_tess_data\sector18\sector18_datasubset.dat" + 
+                      "\n")
                 file = input("Enter night %d file path: " % (i + 1))
                 if path.exists(file):
                     break
                 else:
                     continue
             except FileNotFoundError:
-                print("Please enter a correct file path")
+                print("\nPlease enter a correct file path\n")
 
         # noinspection PyUnboundLocalVariable
         df = pd.read_csv(file, delimiter="\t")
@@ -237,7 +236,8 @@ def get_nights_TESS(n):
             rel_flux = list(df["rel_flux_T1"])
             rel_flux_err = list(df["rel_flux_err_T1"])
         except KeyError:
-            print("The file you entered does not have the columns of BJD_TDB, rel_flux_T1, or rel_flux_err_T1. Please ")
+            print("\nThe file you entered does not have the columns of BJD_TDB, rel_flux_T1, or rel_flux_err_T1. "
+                  "Please re-enter the file path and make sure its the correct file.\n")
             main(1)
 
         total_bjd.append(bjd)
@@ -260,7 +260,7 @@ def get_nights_TESS(n):
 
     data.to_csv(output, index=False, header=False, sep='\t')
     print("")
-    print("Fished saving the file to the same location as this program.")
+    print("Fished saving the file to the same location as this program.\n\n")
 
 
 if __name__ == '__main__':

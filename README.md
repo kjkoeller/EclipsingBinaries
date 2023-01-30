@@ -92,3 +92,6 @@ This program automatiaclly reduces calibration images without the need for the u
 
 ### OC\_plot.py
 Creates a plot of O-C data that differentiates between primary and secondary eclipses. This program also creates a residual plot from a given fit that the user enters. What this program does not do, is actually solve for Times of Minimum and only utlizes already found values from Dr. Robert C. Berrington's C program.
+
+### tess\_data\_search.py
+Searches the TESS database for sector data for a specific TIC system. Lets the user know if there are no sectors available and if there are, automatically downloads the data to a specified folder that user designates via `tesscut.py`

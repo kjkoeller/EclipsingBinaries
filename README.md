@@ -7,7 +7,7 @@
 
 # Binary Star Research Package
 
-A Python project for Ball State University's Variable Star Research Group
+A Python project for Ball State University's Variable Star Research Group. Check the wiki (https://github.com/kjkoeller/Binary_Star_Research_Package/wiki) for more detailed descriptions than the ones below and for usage details of each program.
 
 ***
 

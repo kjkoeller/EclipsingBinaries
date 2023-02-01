@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 01/30/2023
+Last Edited: 02/01/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -23,8 +23,8 @@ def main():
     while True:
         try:
             num = int(input("Would you like to use TESS data(1), BSUO data(2), All Data(3), or Close Program(4): "))
-            T0, To_err, period = arguments()
             if num == 1:
+                T0, To_err, period = arguments()
                 while True:
                     infile = input("Please enter your combined times of minimum file pathway: ")
                     try:
@@ -35,6 +35,7 @@ def main():
                 tess = TESS_OC(T0, To_err, period, df)
                 data_fit(tess)
             elif num == 2:
+                T0, To_err, period = arguments()
                 while True:
                     inB = input("Please enter your times of minimum file pathway for the Johnson B filter: ")
                     inV = input("Please enter your times of minimum file pathway for the Johnson V filter: ")
@@ -103,7 +104,7 @@ def TESS_OC(T0, To_err, period, df):
     })
 
     # output file name to place the above dataframe into for saving
-    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\\test.txt): ")
+    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\test.txt): ")
     dp.to_csv(outfile, index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
 
@@ -150,13 +151,13 @@ def BSUO(T0, To_err, period, db, dv, dr):
     # create a dataframe for all outputs to be places in for easy output
     dp = pd.DataFrame({
         "Minimums": average_min,
-        "Eclipse #": E_est,
+        "Eclipse_#": E_est,
         "O-C": O_C,
-        "O-C Error": O_C_err
+        "O-C_Error": O_C_err
     })
 
     # output file name to place the above dataframe into for saving
-    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\\test.txt): ")
+    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\test.txt): ")
     dp.to_csv(outfile, index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
 
@@ -164,49 +165,54 @@ def BSUO(T0, To_err, period, db, dv, dr):
 
 
 def all_data(nights):
-    minimum = []
-    e = []
-    o_c = []
-    o_c_err = []
     count = 1
+
+    minimum_list = []
+    e_list = []
+    o_c_list = []
+    o_c_err_list = []
+
     while True:
-        try:
-            fname = input("Please enter a file name (if the file is in the same folder as this program) or the full "
-                          "file pathway for all your data: ")
-            df = pd.read_csv(fname, header=None, delim_whitespace=True)
-            break
-        except FileNotFoundError:
-            print("You have entered in an incorrect file or file pathway. Please try again.\n")
+        #try:
+        print("\n\nPlease make sure that the very first line for each and every file that you have starts with the following\n"
+              "'Minimums	Eclipse_#	O-C	O-C_Error'\n"
+              "With each space entered as a space.\n")
+        fname = input("Please enter a file name (if the file is in the same folder as this program) or the full "
+                      "file pathway for all your data: ")
+        df = pd.read_csv(fname, header=None, skiprows=[0], delim_whitespace=True)
+        #except FileNotFoundError:
+        #    print("You have entered in an incorrect file or file pathway. Please try again.\n")
+        minimum = np.array(df[0])
+        e = np.array(df[1])
+        o_c = np.array(df[2])
+        o_c_err = np.array(df[3])
 
-        minimum.append(df[0])
-        e.append(df[1])
-        o_c.append(df[2])
-        o_c_err.append(df[3])
-
+        for num, val in enumerate(minimum):
+            minimum_list.append(val)
+            e_list.append(e[num])
+            o_c_list.append(o_c[num])
+            o_c_err_list.append(o_c_err[num])
         if count == nights:
             break
         else:
             count += 1
             continue
-
     dp = pd.DataFrame({
-        "Minimums": minimum,
-        "Eclipse N#": e,
-        "O-C": o_c,
-        "O-C Error": o_c_err
+        "Minimums": minimum_list,
+        "Eclipse_#": e_list,
+        "O-C": o_c_list,
+        "O-C_Error": o_c_err_list
     })
 
-    outfile_path = input("Please enter the JUST the output file pathway (i.e. C:\\folder\[file_name]): ")
-    outfile_name = input("Please enter a file name WITHOUT any extension (i.e. 'test' without .txt or anything else): ")
-    outfile = outfile_path + outfile_name
+    outfile = input("Please enter the output file pathway and file name WITHOUT extension "
+                    "for the ToM (i.e. C:\\folder\[file_name]): ")
     dp.to_csv(outfile + ".txt", index=None, sep="\t")
-    print("\nFinished saving file to " + outfile)
+    print("\nFinished saving file to " + outfile + ".txt")
 
     """
     LaTeX table stuff, don't change unless you know what you're doing!
     """
-    table_header = "\\renewcommand{\\baselinestretch}{1.00} \small\\normalsize"
-    table_header += '\\begin{center}\n' + '\\begin{longtable}{ccc}\n'
+    table_header = '\\begin{center}\n' + '\\begin{longtable}{ccc}\n'
     table_header += '$BJD_{TDB}$ & ' + 'E & ' + 'O-C \\\ \n'
     table_header += '\\hline\n' + '\\endfirsthead\n'
     table_header += '\\multicolumn{3}{c}\n'
@@ -231,7 +237,6 @@ def all_data(nights):
                             'eclipse. Column 3 is the $(O-C)$ value with the corresponding \n' \
                             'error.}' \
               + '\\label{896797_OC}\n' + '\\end{longtable}\n' + '\\end{center}\n'
-    output += '\\renewcommand{\\baselinestretch}{1.66} \small\\normalsize'
     """
     End LaTeX table stuff.
     """
@@ -240,6 +245,8 @@ def all_data(nights):
     file = open(outfile + ".tex", "w")
     file.write(output)
     file.close()
+
+    outfile += ".txt"
 
     return outfile
 
@@ -296,12 +303,12 @@ def data_fit(input_file):
     :return: None
     """
     # read in the text file
-    df = pd.read_csv(input_file, header=0, delimiter="\t")
+    df = pd.read_csv(input_file, header=0, delim_whitespace=True)
 
     # append values to their respective lists for further and future potential use
-    x = df["Eclipse #"]
+    x = df["Eclipse_#"]
     y = df["O-C"]
-    y_err = df["O-C Error"]
+    y_err = df["O-C_Error"]
 
     # these next parts are mainly for O-C data as I just want to plot primary minima's and not both primary/secondary
     x1_prim = []

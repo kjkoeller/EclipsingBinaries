@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 02/01/2023
+Last Edited: 02/02/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -212,7 +212,8 @@ def all_data(nights):
     """
     LaTeX table stuff, don't change unless you know what you're doing!
     """
-    table_header = '\\begin{center}\n' + '\\begin{longtable}{ccc}\n'
+    table_header = "\\renewcommand{\\baselinestretch}{1.00} \small\\normalsize"
+    table_header += '\\begin{center}\n' + '\\begin{longtable}{ccc}\n'
     table_header += '$BJD_{TDB}$ & ' + 'E & ' + 'O-C \\\ \n'
     table_header += '\\hline\n' + '\\endfirsthead\n'
     table_header += '\\multicolumn{3}{c}\n'
@@ -237,6 +238,7 @@ def all_data(nights):
                             'eclipse. Column 3 is the $(O-C)$ value with the corresponding \n' \
                             'error.}' \
               + '\\label{896797_OC}\n' + '\\end{longtable}\n' + '\\end{center}\n'
+    output += '\\renewcommand{\\baselinestretch}{1.66} \small\\normalsize'
     """
     End LaTeX table stuff.
     """

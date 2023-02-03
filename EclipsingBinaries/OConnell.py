@@ -3,7 +3,7 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 01/30/2023
+Last Edited: 02/03/2023
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -22,7 +22,8 @@ sig_f = lambda f, x, sig_x: abs(f(x + sig_x) - f(x - sig_x)) / 2
 def main():
     print("How many filters are you going to use?")
     while True:
-        prompt = input("Enter 3 if you are going to use BVR or less than 3 for a combination of them: ")
+        prompt = input("Enter 3 if you are going to use BVR or less than 3 for a combination of them of type 'Close' "
+                       "to close the program: ")
         if prompt.isnumeric():
             if 0 < int(prompt) < 4:
                 break

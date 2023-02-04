@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 01/30/2023
+Last Updated: 02/04/2023
 """
 
 from astroquery.vizier import Vizier
@@ -12,10 +12,124 @@ import pandas as pd
 import astropy.units as u
 import astropy.coordinates as coord
 from astropy.wcs import WCS
+from astropy import wcs
 from astropy.io import fits
-from PyAstronomy import pyasl
 from numba import jit
 import matplotlib.pyplot as plt
+import warnings
+from PyAstronomy import pyasl
+
+# turn off this warning that just tells the user,
+# "The warning raised when the contents of the FITS header have been modified to be standards compliant."
+warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
+
+
+def comparison_selector():
+    """
+    This code compares AIJ found stars (given an RA and DEC) to APASS stars to get their respective Johnson B, V, and
+    Cousins R values and their respective errors.
+
+    This code is not 100% accurate and will still need the human eye to compare the final list to the AIJ given list. As
+    this code can only get down to such an accuracy to be effective in gathering stars to be usable.
+
+    :return: A list of stars that are the most likely to be on the AIJ list of stars
+    """
+
+    apass_file, input_ra, input_dec = cousins_r()
+    df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
+
+    print("Finished Saving\n")
+    print("This program is not 100% accurate, so the recommendation is to compare what you found in AIJ to what this "
+          "code has found and make sure that the two lists are the same and enter in the filter values manually into"
+          "the RADEC file for AIJ to use in the photometry.\n")
+    print("The output file you have entered has RA and DEC for stars and their B, V, and Cousins R magnitudes with "
+          "their respective errors.\n")
+
+    create_radec(df, input_ra, input_dec)
+
+    overlay(df)
+
+
+def cousins_r():
+    """
+    Calculates the Cousins R_c value for a given B, V, g', and r' from APASS
+
+    :return: Outputs a file to be used for R_c values
+    """
+    # predefined values DO NOT change
+    alpha = 0.278
+    e_alpha = 0.016
+    beta = 1.321
+    e_beta = 0.03
+    gamma = 0.219
+
+    input_file, input_ra, input_dec = catalog_finder()
+    df = pd.read_csv(input_file, header=None, skiprows=[0], sep=",")
+
+    # writes the columns from the input file
+    try:
+        # this try except function checks whether there are just enough columns in the file being loaded and tells
+        # the user what they need to do in order to get the correct columns
+        ra = df[0]
+        dec = df[1]
+        B = df[2]
+        e_B = df[3]
+        V = df[4]
+        e_V = df[5]
+        g = df[6]
+        e_g = df[7]
+        r = df[8]
+        e_r = df[9]
+    except KeyError:
+        # prints off instructions and then closes the program
+        print("The file you have loaded does not have the enough columns.")
+        print("Must include RA, DEC, B, V, g', r', and their respective errors.")
+        print("Please run this program from the beginning first to get these values from the APASS database.\n")
+        exit()
+
+    Rc = []
+    e_Rc = []
+    count = 0
+
+    #  = 10.551 + (((0.278 * 0.682) - 0.219 - 10.919 + 10.395) / 1.321)
+    # total_Rc(test)
+
+    # loop that goes through each value in B to get the total amount of values to be calculated
+    for i in B:
+        root, val = calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
+        if isNaN(val) is True:
+            # if the value is nan then append 99.999 to the R_c value and its error to make it obvious that there is
+            # no given value
+            Rc.append(99.999)
+            e_Rc.append(99.999)
+        else:
+            # if there is a value then format that value with only 2 decimal places otherwise there will be like 8
+            Rc.append(format(val, ".2f"))
+            e_Rc.append(format(root, ".2f"))
+        count += 1
+
+    # puts all columns into a dataframe for output
+    final = pd.DataFrame({
+        # need to keep RA and DEC in order to compare with catalog comparison or with the radec file
+        "RA": ra,
+        "DEC": dec,
+        "BMag": B,
+        "e_BMag": e_B,
+        "VMag": V,
+        "e_VMag": e_V,
+        "Rc": Rc,
+        "e_Rc": e_Rc
+    })
+    print(
+        "\nThis output file contains all the calculated Cousins R magnitudes along with error and "
+        "both Johnson bands and respective errors.\n")
+    # saves the dataframe to an entered output file
+    output_file = input("Enter an output file name (ex: APASS_254037_Catalog.txt): ")
+    # noinspection PyTypeChecker
+    final.to_csv(output_file, index=True, sep="\t")
+    print("\nCompleted Save.\n")
+
+    return output_file, input_ra, input_dec
 
 
 def catalog_finder():
@@ -36,12 +150,10 @@ def catalog_finder():
     "width"- set to the notation that is currently set as, but you may change the number being used
             30m = 30 arc-minutes
     """
-    # catalog is II/336/apass9
     # 00:28:27.9684836736 78:57:42.657327180
     # 78:57:42.657327180
     ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
     dec_input = input("Enter the DEC of your system (DD:MM:SS.SSSS or -DD:MM:SS.SSSS): ")
-    print()
 
     ra_input2 = splitter([ra_input])
     dec_input2 = splitter([dec_input])
@@ -53,6 +165,7 @@ def catalog_finder():
         coord.SkyCoord(ra=ra_input2[0], dec=dec_input2[0], unit=(u.h, u.deg), frame="icrs"),
         width="30m", catalog="APASS")
 
+    # catalog is II/336/apass9
     tb = result['II/336/apass9']
 
     # converts the table result to a list format for putting values into lists
@@ -120,161 +233,88 @@ def catalog_finder():
     })
 
     # saves the dataframe to a text file and prints that dataframe out to easily see what was copied to the text file
-    print("\nThis output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and "
-          "should not be used for anything else other than calculation confirmation if needed later on.\n")
-    text_file = input("Enter a text file pathway/name for the output comparisons (ex: C:\\folder1\\APASS_254037.txt): ")
+    print(
+        "\nThis output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and "
+        "should not be used for anything else other than calculation confirmation if needed later on.\n")
+    text_file = input("Enter a text file pathway and name for the output comparisons "
+                      "(ex: C:\\folder1\\APASS_254037.txt): ")
     df.to_csv(text_file, index=None)
     print("\nCompleted save.\n")
 
-    return text_file
+    return text_file, ra_input2[0], dec_input2[0]
 
 
-def comparison_selector():
+def create_radec(df, ra, dec):
     """
-    This code compares AIJ found stars (given an RA and DEC) to APASS stars to get their respective Johnson B, V, and
-    Cousins R values and their respective errors.
+    Creates a RADEC file for all 3 filters (Johnson B, V, and Cousins R
 
-    This code is not 100% accurate and will still need the human eye to compare the final list to the AIJ given list. As
-    this code can only get down to such an accuracy to be effective in gathering stars to be usable.
+    :param df: input catalog DataFrame
+    :param ra: user entered RA for system
+    :param dec: user entered DEC for system
 
-    :return: A list of stars that are the most likely to be on the AIJ list of stars
+    :return: None but saves the RADEC file to user specified locations
     """
-    # reads the text files to be analyzed for comparison star matches between APASS and Simbad
-    # apass_file = input("Enter the text file name for the generated APASS stars: ")
-    print("\nMust have all files in the same folder as the Python code OR type out the full file pathway to the file.\n")
-    radec_file = input("Enter the text file name for the RADEC file from AIJ or type 'Close' to exit the program: ")
-    if radec_file.lower() == "close":
-        exit()
-    apass_file = cousins_r()
-    while True:
-        test = 0
-        try:
-            df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
-            dh = pd.read_csv(radec_file, header=None, skiprows=7)
-        except FileNotFoundError:
-            print("\nOne of the files were not found, please enter them again.\n")
-            test = -1
-        if test == 0:
-            break
-        else:
-            radec_file = input("Enter the text file name for the RADEC file from AIJ: ")
-    # noinspection PyUnboundLocalVariable
-    duplicate_df = angle_dist(df, dh)
+    filters = ["B", "V", "R"]
+    header = "#RA in decimal or sexagesimal HOURS\n " \
+             "#Dec in decimal or sexagesimal DEGREES\n" \
+             "#Ref Star=0,1,missing (0=target star, 1=ref star, missing->first ap=target, others=ref)\n" \
+             "#Centroid=0,1,missing (0=do not centroid, 1=centroid, missing=centroid)\n" \
+             "#Apparent Magnitude or missing (value = apparent magnitude, or value > 99 or missing = no mag info)\n" \
+             "#Add one comma separated line per aperture in the following format:\n"
+    header += "#RA, Dec, Ref Star, Centroid, Magnitude\n"
+    header += str(conversion([ra])) + str(conversion([dec])) + " 0, 1, 99.999\n"
 
-    ra = duplicate_df[0]
-    dec = duplicate_df[1]
-    B = duplicate_df[2]
-    e_B = duplicate_df[3]
-    V = duplicate_df[4]
-    e_V = duplicate_df[5]
-    R_c = duplicate_df[6]
-    e_R_c = duplicate_df[7]
+    ra_list = df[1]
+    dec_list = df[2]
+    b_mag = df[2]
+    v_mag = [4]
+    r_mag = [6]
 
-    final = pd.DataFrame({
-        "RA": ra,
-        "DEC": dec,
-        "B": B,
-        "e_B": e_B,
-        "V": V,
-        "e_V": e_V,
-        "R_c": R_c,
-        "e_R_c": e_R_c
-    })
+    ra_decimal = np.array(splitter(ra_list))
+    dec_decimal = np.array(splitter(dec_list))
 
-    # prints the output and saves the dataframe to the text file with "tab" spacing
-    output_file = input("Enter an output file name (ex: APASS_254037_Catalog.txt): ")
-    final.to_csv(output_file, index=True, sep="\t")
-    print("Finished Saving\n")
-    print("This program is not 100% accurate, so the recommendation is to compare what you found in AIJ to what this "
-          "code has found and make sure that the two lists are the same and enter in the filter values manually into"
-          "the RADEC file for AIJ to use in the photometry.\n")
-    print("The output file you have entered has RA and DEC for stars and their B, V, and Cousins R magnitudes with "
-          "their respective errors.\n")
+    next_ra = float(ra_decimal[0])
+    next_dec = float(dec_decimal[0])
 
-    overlay(output_file, radec_file)
+    # to write lines to the file in order create new RADEC files for each filter
+    for fcount, filt in enumerate(filters):
+        header2 = ""
+        for count, val in enumerate(ra_list):
+            # checks where the RA and DEC given by the user at the beginning is in the file to make sure there is no
+            # duplication
+            angle = angle_dist(float(ra), float(dec), next_ra, next_dec)
+            if angle is False:
+                # checks where the filter is B, V, R for output reasons
+                if filt == "B":
+                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(b_mag[count]) + "\n"
+                elif filt == "V":
+                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(v_mag[count]) + "\n"
+                elif filt == "R":
+                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(r_mag[count]) + "\n"
+            else:
+                continue
+
+            next_ra = float(ra_decimal[count])
+            next_dec = float(dec_decimal[count])
+
+        output = header + header2
+        outputfile = input("Please enter an output file pathway without the extension but with the file name for the "
+                           "" + filt + " filter (i.e. C:\\folder1\\folder2\[filename]): ")
+        file = open(outputfile + ".radec", "w")
+        file.write(output)
+        file.close()
+
+    print("\nFinished writing RADEC files for Johnson B, Johnson V, and Cousins R.\n")
 
 
-def cousins_r():
+def overlay(df):
     """
-    Calculates the Cousins R_c value for a given B, V, g', and r' from APASS
+    Creates an overlay of a science image with APASS objects numbered as seen in the catalog file that
+    was saved previously
 
-    :return: Outputs a file to be used for R_c values
+    :param df: input catalog DataFrame
+    :return: None but displays a science image with over-layed APASS objects
     """
-    # predefined values do not change
-    alpha = 0.278
-    e_alpha = 0.016
-    beta = 1.321
-    e_beta = 0.03
-    gamma = 0.219
-
-    input_file = catalog_finder()
-    df = pd.read_csv(input_file, header=None, skiprows=[0], sep=",")
-
-    # writes the columns from the input file
-    try:
-        # this try except function checks whether there are just enough columns in the file being loaded and tells
-        # the user what they need to do in order to get the correct columns
-        ra = df[0]
-        dec = df[1]
-        B = df[2]
-        e_B = df[3]
-        V = df[4]
-        e_V = df[5]
-        g = df[6]
-        e_g = df[7]
-        r = df[8]
-        e_r = df[9]
-    except KeyError:
-        # prints off instructions and then closes the program
-        print("The file you have loaded does not have the enough columns.")
-        print("Must include RA, DEC, B, V, g', r', and their respective errors.")
-        print("Please run this program from the beginning first to get these values from the APASS database.\n")
-        exit()
-
-    Rc = []
-    e_Rc = []
-    count = 0
-
-    test = 10.551 + (((0.278 * 0.682) - 0.219 - 10.919 + 10.395) / 1.321)
-    total_Rc(test)
-
-    # loop that goes through each value in B to get the total amount of values to be calculated
-    for i in B:
-        root, val = calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
-        if isNaN(val) is True:
-            # if the value is nan then append 99.999 to the R_c value and its error to make it obvious that there is
-            # no given value
-            Rc.append(99.999)
-            e_Rc.append(99.999)
-        else:
-            # if there is a value then format that value with only 2 decimal places otherwise there will be like 8
-            Rc.append(format(val, ".2f"))
-            e_Rc.append(format(root, ".2f"))
-        count += 1
-
-    # puts all columns into a dataframe for output
-    final = pd.DataFrame({
-        # need to keep RA and DEC in order to compare with catalog comparison or with the radec file
-        "RA": ra,
-        "DEC": dec,
-        "BMag": B,
-        "e_BMag": e_B,
-        "VMag": V,
-        "e_VMag": e_V,
-        "Rc": Rc,
-        "e_Rc": e_Rc
-    })
-
-    # saves the dataframe to an entered output file
-    output_file = input("Enter an output file name (ex: APASS_254037_Rc_values.txt): ")
-    # noinspection PyTypeChecker
-    final.to_csv(output_file, index=None, sep="\t")
-    print("Finished Saving\n")
-
-    return output_file
-
-
-def overlay(catalog, radec):
     # NSVS_254037-S001-R004-C001-Empty-R-B2.fts
     fits_file = input("Enter file pathway to one of your image files: ")
 
@@ -283,22 +323,14 @@ def overlay(catalog, radec):
     image = header_data_unit_list[0].data
     header = header_data_unit_list[0].header
 
-    # read in the catalog and radec files
-    df = pd.read_csv(catalog, header=None, skiprows=[0], sep="\t")
-    dh = pd.read_csv(radec, header=None, skiprows=7)
-
     # set variables to lists
     index_num = list(df[0])
     ra_catalog = list(df[1])
     dec_catalog = list(df[2])
-    ra_radec = list(dh[0])
-    dec_radec = list(dh[1])
 
     # convert the lists to degrees for plotting purposes
     ra_cat_new = (np.array(splitter(ra_catalog)) * 15) * u.deg
     dec_cat_new = np.array(splitter(dec_catalog)) * u.deg
-    ra_radec_new = (np.array(splitter(ra_radec)) * 15) * u.deg
-    dec_radec_new = np.array(splitter(dec_radec)) * u.deg
 
     # text for the caption below the graph
     txt = "Number represents index value given in the final output catalog file."
@@ -317,14 +349,12 @@ def overlay(catalog, radec):
 
     ax.scatter(ra_cat_new, dec_cat_new, transform=ax.get_transform('fk5'), s=200,
                edgecolor='red', facecolor='none', label="Potential Comparison Stars")
-    ax.scatter(ra_radec_new, dec_radec_new, transform=ax.get_transform('fk5'), s=200,
-               edgecolor='green', facecolor='none', label="AIJ Comparison Stars")
 
     count = 0
     # annotates onto the image the index number and Johnson V magnitude
     for x, y in zip(ra_cat_new, dec_cat_new):
         px, py = wcs.wcs_world2pix(x, y, 0.)
-        plt.annotate(str(index_num[count]), xy=(px+30, py-50), color="white", fontsize=12)
+        plt.annotate(str(index_num[count]), xy=(px + 30, py - 50), color="white", fontsize=12)
         count += 1
 
     plt.gca().invert_xaxis()
@@ -334,6 +364,26 @@ def overlay(catalog, radec):
 
 @jit(forceobj=True)
 def calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count):
+    """
+    Calculates (O-C) values
+
+    :param i: i' mag
+    :param V: Johnson V magnitude
+    :param g: g' mag
+    :param r: r' mag
+    :param gamma: coefficient from paper
+    :param beta: coefficient from paper
+    :param e_beta: error of beta
+    :param alpha: coefficient from paper
+    :param e_alpha: error of alpha
+    :param e_B: error of Johnson B mag
+    :param e_V: error of Johnson V mag
+    :param e_g: error of g' mag
+    :param e_r: error of r' mag
+    :param count: the number that the iteration is on to pick the correct values from lists
+
+    :return: root, val - mag and error respectively
+    """
     # separates the equation out into more easily readable sections
     numerator = alpha * (float(i) - float(V[count])) - gamma - float(g[count]) + float(r[count])
     div = numerator / beta
@@ -351,6 +401,26 @@ def calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g,
     return root, val
 
 
+def angle_dist(x1, y1, x2, y2):
+    """
+    Determines whether the two sets of coordinates are the same position or not.
+    This is primarily to not output the target star twice in the same RADEC file.
+
+    :param x1: ra coordinate in degrees
+    :param y1: dec coordinate in degrees
+    :param x2: ra coordinate in degrees
+    :param y2: dec coordinate in degrees
+
+    :return: True or False for the equality
+    """
+    # noinspection PyUnresolvedReferences
+    radial = pyasl.getAngDist(x1, y1, x2, y2)
+    if radial <= 0.025:
+        return True
+    else:
+        return False
+
+
 def isNaN(num):
     """
     Checks if a value is nan
@@ -362,13 +432,10 @@ def isNaN(num):
     return num != num
 
 
-def total_Rc(Rc):
-    assert Rc == 10.132071915215745
-
-
 def new_list(a):
     """
     Converts lists into number format with minimal decimal places
+
     :param a: list
     :return: new list with floats
     """
@@ -376,55 +443,6 @@ def new_list(a):
     for i in a:
         b.append(float(format(i, ".2f")))
     return b
-
-
-def angle_dist(df, dh):
-    """
-    Gathers a list of stars that are very close to the ones given in the RADEC file
-
-    :param df: apass dataframe
-    :param dh: radec dataframe
-    :return: compared list
-    """
-    # checks specific columns and adds those values to a list variable for comparison in the nested for loops below
-    apass_dec = list(df[1])
-    apass_ra = list(df[0])
-    simbad_dec = list(dh[1])
-    simbad_ra = list(dh[0])
-
-    # converts the RA and Dec coordinate format to decimal format
-    apass_split_ra = splitter(apass_ra)
-    apass_split_dec = splitter(apass_dec)
-
-    simbad_split_ra = splitter(simbad_ra)
-    simbad_split_dec = splitter(simbad_dec)
-
-    comp = pd.DataFrame()
-    simbad_count = 0
-    # finds the comparison star in both APASS text file and RA and Dec files to an output variable with
-    # the RA and Dec noted for magnitude finding
-    for i in simbad_split_dec:
-        apass_count = 0
-        for k in apass_split_dec:
-            # noinspection PyUnresolvedReferences
-            radial = pyasl.getAngDist(float(apass_split_ra[apass_count]), float(k),
-                                      float(simbad_split_ra[simbad_count]),
-                                      float(i))
-            if radial <= 0.025:
-                # comp = comp.append(df.loc[apass_count:apass_count], ignore_index=True)
-                comp = pd.concat([comp, df.loc[apass_count:apass_count]])
-            apass_count += 1
-        simbad_count += 1
-
-    # removes all duplicate rows from the dataframe
-    duplicate_df = comp.drop_duplicates()
-    try:
-        list(duplicate_df[0])
-    except KeyError:
-        print("There were no comparison stars found between APASS and the RADEC file.\n")
-        exit()
-
-    return duplicate_df
 
 
 def conversion(a):
@@ -493,4 +511,7 @@ def decimal_limit(a):
         b.append(num2)
     return b
 
-# comparison_selector()
+
+comparison_selector()
+# overlay("APASS_254037_Rc_values.txt", "NSVS_254037-B.radec")
+# find_comp()

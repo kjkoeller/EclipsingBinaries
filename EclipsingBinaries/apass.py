@@ -262,13 +262,13 @@ def create_radec(df, ra, dec):
              "#Apparent Magnitude or missing (value = apparent magnitude, or value > 99 or missing = no mag info)\n" \
              "#Add one comma separated line per aperture in the following format:\n"
     header += "#RA, Dec, Ref Star, Centroid, Magnitude\n"
-    header += str(conversion([ra])) + str(conversion([dec])) + " 0, 1, 99.999\n"
+    header += str(conversion([ra])[0]) + ", " + str(conversion([dec])[0]) + ", 0, 1, 99.999\n"
 
     ra_list = df[1]
     dec_list = df[2]
-    b_mag = df[2]
-    v_mag = [4]
-    r_mag = [6]
+    b_mag = df[3]
+    v_mag = df[5]
+    r_mag = df[7]
 
     ra_decimal = np.array(splitter(ra_list))
     dec_decimal = np.array(splitter(dec_list))
@@ -278,6 +278,7 @@ def create_radec(df, ra, dec):
 
     # to write lines to the file in order create new RADEC files for each filter
     for fcount, filt in enumerate(filters):
+        print(filt)
         header2 = ""
         for count, val in enumerate(ra_list):
             # checks where the RA and DEC given by the user at the beginning is in the file to make sure there is no
@@ -291,8 +292,6 @@ def create_radec(df, ra, dec):
                     header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(v_mag[count]) + "\n"
                 elif filt == "R":
                     header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(r_mag[count]) + "\n"
-            else:
-                continue
 
             next_ra = float(ra_decimal[count])
             next_dec = float(dec_decimal[count])

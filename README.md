@@ -72,13 +72,11 @@ close on them (hopefully).
 
 ### apass.py
 
-With this program you call upon the cousins\_r.py and APASS\_catalog\_finder.py programs to compile a list of stars that are close to what AIJ found off Simbad and output a file that gives RA, DEC, B, V, R\_c, and the respective band pass errors.
+With this program you compile a list of stars that are 30 arcmin box around a set of coordinates that the user enters and output a file that gives RA, DEC, B, V, R\_c, and the respective band pass errors.
 
-From the paper listed in the program (https://arxiv.org/pdf/astro-ph/0609736.pdf) this program finds the Cousins R value from the band passes found in the APASS\_catalog\_finder and gives this output file to the APASS\_AIJ\_comparison\_selector program.
+From the paper listed in the program (https://arxiv.org/pdf/astro-ph/0609736.pdf) this program finds the Cousins R value from the band passes found and gives this in an output file.
 
-Given an RA and DEC from simbad, finds stars 40 arc min box around those coordinates from the APASS catalog. This program then outputs these stars and numerous band passes to a text file that will be saved and used by the cousins\_r.py program.
-
-This program overlays both APASS and AIJ comparison stars onto a real science image. This allows for the best comparison of comparison stars between AIJ and APASS.
+This program then overlays all found stars onto a real science image to show the user what the field will look like and then will create a RADEC file for each of the filters (Johnson B, Johnson V, and Cousins R) that can be used in AIJ.
 
 ### OConnell.py
 

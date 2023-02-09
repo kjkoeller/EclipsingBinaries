@@ -511,6 +511,6 @@ def decimal_limit(a):
     return b
 
 
-comparison_selector()
+# comparison_selector()
 # overlay("APASS_254037_Rc_values.txt", "NSVS_254037-B.radec")
 # find_comp()

@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 02/02/2023
+Last Edited: 02/10/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -22,20 +22,14 @@ def main():
     print("Enter the corresponding number to what you would like to do.\n")
     while True:
         try:
-            num = int(input("Would you like to use TESS data(1), BSUO data(2), All Data(3), or Close Program(4): "))
+            num = int(input("Would you like to use BSUO data(1), TESS data(2), All Data(3), or Close Program(4): "))
             if num == 1:
-                T0, To_err, period = arguments()
-                while True:
-                    infile = input("Please enter your combined times of minimum file pathway: ")
-                    try:
-                        df = pd.read_csv(infile, header=None, delim_whitespace=True)
-                        break
-                    except FileNotFoundError:
-                        print("You have entered in an incorrect file or file pathway. Please try again.\n")
-                tess = TESS_OC(T0, To_err, period, df)
-                data_fit(tess)
-            elif num == 2:
-                T0, To_err, period = arguments()
+                if first_time.lower() == "yes":
+                    T0 = 0
+                    To_err = 0
+                    period = float(input("Please enter the period for your system: "))
+                else:
+                    T0, To_err, period = arguments()
                 while True:
                     inB = input("Please enter your times of minimum file pathway for the Johnson B filter: ")
                     inV = input("Please enter your times of minimum file pathway for the Johnson V filter: ")
@@ -49,13 +43,30 @@ def main():
                         print("You have entered in an incorrect file or file pathway. Please try again.\n")
                 bsuo = BSUO(T0, To_err, period, db, dv, dr)
                 data_fit(bsuo)
+            elif num == 2:
+                first_time = input("Do you already have an Epoch value 'Yes' or 'No': ")
+                if first_time.lower() == "yes":
+                    T0 = 0
+                    To_err = 0
+                    period = float(input("Please enter the period for your system: "))
+                else:
+                    T0, To_err, period = arguments()
+                while True:
+                    infile = input("Please enter your combined times of minimum file pathway: ")
+                    try:
+                        df = pd.read_csv(infile, header=None, delim_whitespace=True)
+                        break
+                    except FileNotFoundError:
+                        print("You have entered in an incorrect file or file pathway. Please try again.\n")
+                tess = TESS_OC(T0, To_err, period, df)
+                data_fit(tess)
             elif num == 3:
                 while True:
                     try:
                         nights = int(input("How many nights of data do you have: "))
                         break
                     except ValueError:
-                        print("Please enter a valid number.\n")
+                        print("Please enter a valid whole number.\n")
                 total = all_data(nights)
                 data_fit(total)
             elif num == 4:
@@ -89,7 +100,7 @@ def TESS_OC(T0, To_err, period, df):
     # this for loop, loops through the min_strict list and calculates a variety of values
     for count, val in enumerate(min_strict):
         # call the function to calculate the O-C values
-        e, OC, OC_err = calcualte_oc(val, min_strict_err[count], T0, To_err, period)
+        e, OC, OC_err, T0, To_err = calcualte_oc(val, min_strict_err[count], T0, To_err, period)
 
         E_est.append(e)
         O_C.append(OC)
@@ -98,13 +109,14 @@ def TESS_OC(T0, To_err, period, df):
     # create a dataframe for all outputs to be places in for easy output
     dp = pd.DataFrame({
         "Minimums": min_strict,
-        "Eclipse #": E_est,
+        "Eclipse_#": E_est,
         "O-C": O_C,
-        "O-C Error": O_C_err
+        "O-C_Error": O_C_err
     })
 
     # output file name to place the above dataframe into for saving
-    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\test.txt): ")
+    outfile = input("Please enter the output file pathway and file name with extension for the ToM "
+                    "(i.e. C:\\folder1\\test.txt): ")
     dp.to_csv(outfile, index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
 
@@ -143,7 +155,7 @@ def BSUO(T0, To_err, period, db, dv, dr):
         average_err.append(err)
 
         # call the function to calculate the O-C values
-        e, OC, OC_err = calcualte_oc(minimum, err, T0, To_err, period)
+        e, OC, OC_err, T0, To_err = calcualte_oc(minimum, err, T0, To_err, period)
         E_est.append(e)
         O_C.append(OC)
         O_C_err.append(OC_err)
@@ -155,9 +167,10 @@ def BSUO(T0, To_err, period, db, dv, dr):
         "O-C": O_C,
         "O-C_Error": O_C_err
     })
-
+    
     # output file name to place the above dataframe into for saving
-    outfile = input("Please enter the output fil pathway and file name with extension for the ToM (i.e. C:\test.txt): ")
+    outfile = input("Please enter the output fil pathway and file name with extension for the ToM "
+                    "(i.e. C:\\folder1\\test.txt): ")
     dp.to_csv(outfile, index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
 
@@ -173,15 +186,12 @@ def all_data(nights):
     o_c_err_list = []
 
     while True:
-        #try:
         print("\n\nPlease make sure that the very first line for each and every file that you have starts with the following\n"
               "'Minimums	Eclipse_#	O-C	O-C_Error'\n"
               "With each space entered as a space.\n")
         fname = input("Please enter a file name (if the file is in the same folder as this program) or the full "
                       "file pathway for all your data: ")
         df = pd.read_csv(fname, header=None, skiprows=[0], delim_whitespace=True)
-        #except FileNotFoundError:
-        #    print("You have entered in an incorrect file or file pathway. Please try again.\n")
         minimum = np.array(df[0])
         e = np.array(df[1])
         o_c = np.array(df[2])
@@ -261,8 +271,8 @@ def arguments():
     """
     while True:
         try:
-            T0 = float(input("Please enter your T0 (ex. '2457143.761819') : "))  # First ToM
-            To_err = float(input("Please enter the T0 error (ex. 0.0002803). : "))  # error associated with the T0
+            T0 = float(input("Please enter your Epoch number (ex. '2457143.761819') : "))  # First primary ToM
+            To_err = float(input("Please enter the Epoch error (ex. 0.0002803). : "))  # error associated with the T0
             period = float(input("Please enter the period of your system (ex. 0.31297): "))  # period of a system
             break
         except ValueError:
@@ -282,18 +292,21 @@ def calcualte_oc(m, err, T0, T0_err, p):
 
     :return: e (eclipse number), OC (O-C value), OC_err (corresponding O-C error)
     """
+    if T0 == 0:
+        T0 = m
+        T0_err = err
     # get the exact E value
     E_act = (m - T0) / p
     # estimate for the primary or secondary eclipse by rounding to the nearest 0.5
     e = round(E_act * 2) / 2
     # caluclate the calculated ToM and find the O-C value
     T_calc = T0 + (e * p)
-    OC = "%.6f" % (m - T_calc)
+    OC = "%.4f" % (m - T_calc)
 
     # determine the error of the O-C
-    OC_err = "%.6f" % sqrt(T0_err ** 2 + err ** 2)
+    OC_err = "%.4f" % sqrt(T0_err ** 2 + err ** 2)
 
-    return e, OC, OC_err
+    return e, OC, OC_err, T0, T0_err
 
 
 def data_fit(input_file):
@@ -370,7 +383,7 @@ def data_fit(input_file):
     # opens a file with this name to begin writing to the file
     output_test = None
     while not output_test:
-        output_file = input("What is the output file name for the regression tables (either .txt or .tex): ")
+        output_file = input("What is the output file name and pathway for the regression tables (either .txt or .tex): ")
         if output_file.endswith((".txt", ".tex")):
             output_test = True
         else:
@@ -418,17 +431,9 @@ def data_fit(input_file):
     # make the legend always be in the upper right hand corner of the graph
     plt.legend(loc="upper right")
 
-    empty = None
-    while not empty:
-        x_label = input("X-Label: ")
-        y_label = input("Y-Label: ")
-        title = input("Title: ")
-        if not x_label:
-            print("x label is empty. Please enter a string or value for these variables.\n")
-        elif not y_label:
-            print("y label is empty. Please enter a string or value for these variables.\n")
-        else:
-            empty = True
+    x_label = "Epoch"
+    y_label = "O-C (days)"
+    title = ""
 
     # noinspection PyUnboundLocalVariable
     plt.xlabel(x_label)

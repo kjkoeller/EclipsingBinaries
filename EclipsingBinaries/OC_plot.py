@@ -24,6 +24,7 @@ def main():
         try:
             num = int(input("Would you like to use BSUO data(1), TESS data(2), All Data(3), or Close Program(4): "))
             if num == 1:
+                first_time = input("Do you already have an Epoch value 'Yes' or 'No': ")
                 if first_time.lower() == "yes":
                     T0 = 0
                     To_err = 0
@@ -167,7 +168,7 @@ def BSUO(T0, To_err, period, db, dv, dr):
         "O-C": O_C,
         "O-C_Error": O_C_err
     })
-    
+
     # output file name to place the above dataframe into for saving
     outfile = input("Please enter the output fil pathway and file name with extension for the ToM "
                     "(i.e. C:\\folder1\\test.txt): ")

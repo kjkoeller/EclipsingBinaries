@@ -2,7 +2,7 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 01/30/2022
+Last Updated: 02/13/2023
 """
 
 # import required packages
@@ -37,7 +37,7 @@ def main():
     # prints off the sector table to let the user know what sectors TESS has observed the object
     print(sector_table)
     while True:
-        download_ans = input("\nDo you want to download the TESS data: ")
+        download_ans = input("\nDo you want to download the TESS data ('Yes' or 'No'): ")
         if download_ans.lower() == "yes":
             break
         elif download_ans.lower() == "no":

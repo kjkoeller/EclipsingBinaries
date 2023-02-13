@@ -4,7 +4,7 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 01/30/2023
+Last Edited: 02/13/2023
 
 Spyder Editor
 This is a temporary script file.
@@ -32,22 +32,15 @@ Detects and does not convert low quality
 
 
 def main(search_file):
-    # print(str(search_file))
-    infile = "tess" + str(search_file).split("tess")[1]
-    print("\nExample output file path: ")
-    print('C:\\Users\Kyle\OneDrive\PhysicsAstro\Astronomy\Code\Tess_Search\\test\\')
-    while True:
-        # makes sure the file pathway is real and points to some file
-        # (does not check if that file is the correct one though)
-        try:
-            outprefix = input("Where do you want to output the files (entire file path): ")
-            if os.path.exists(infile):
-                break
-            else:
-                print("\nInput file path does not exist.\n")
-                continue
-        except FileNotFoundError:
-            print("\nPlease enter a valid file path.\n")
+    print(str(search_file))
+    infile = "tess" + str(search_file).split("tess")[1]  # gets the actual sector file
+    print(infile)
+    pathway = str(search_file).split("tess")[0]  # gets the file pathway
+    print("\nThe program will use the file pathway that you entered previously and will now ask for a prefix "
+          "to each file name.")
+
+    print("Example prefix might be 'NSVS_896797_[program adds stuff here]'\n")
+    outprefix = input("Please enter what you want each file to always have in its name: ")
 
     # Set an overwrite flag True so that images can be overwritten
     # Otherwise set it False for safety
@@ -55,7 +48,7 @@ def main(search_file):
     overwriteflag = True
 
     # Open the fits file readonly by default and create an input hdulist
-    inlist = pyfits.open(infile)
+    inlist = pyfits.open(search_file)
     # Assign the input headers
 
     # Master
@@ -95,6 +88,7 @@ def main(search_file):
     # print(np.size(imagedata))
     # print(len(imagedata[0]))
 
+    print("Starting to check images. This may take a few minutes. \n")
     for i in range(nimages):
         # Get image data
 
@@ -125,6 +119,7 @@ def main(search_file):
             dec = split[2]
 
             jd_t = time_inp.jd
+            # noinspection PyUnresolvedReferences
             hjd = pyasl.helio_jd(jd_t-2.4e6, float(ra), float(dec))
 
             # Create the fits object for this image using the header of the bintable image
@@ -148,8 +143,12 @@ def main(search_file):
 
             # Write the fits file
 
-            outfile = outprefix + 'tess_%05d.fits' % (i,)
+            outfile = pathway + outprefix + 'tess_%05d.fits' % (i,)
             outlist.writeto(outfile, overwrite=overwriteflag)
 
-        # Close the input  and exit
+    print("Finished checking all images.\n")
+    # Close the input  and exit
     inlist.close()
+
+
+# main("D:\\NSVS_11868841\\tess-s0056-1-1_349.489832_19.284108_87x88_astrocut.fits")

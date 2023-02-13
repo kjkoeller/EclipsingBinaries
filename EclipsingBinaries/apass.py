@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 02/04/2023
+Last Updated: 02/13/2023
 """
 
 from astroquery.vizier import Vizier
@@ -278,7 +278,6 @@ def create_radec(df, ra, dec):
 
     # to write lines to the file in order create new RADEC files for each filter
     for fcount, filt in enumerate(filters):
-        print(filt)
         header2 = ""
         for count, val in enumerate(ra_list):
             # checks where the RA and DEC given by the user at the beginning is in the file to make sure there is no

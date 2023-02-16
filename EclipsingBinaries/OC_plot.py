@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 02/10/2023
+Last Edited: 02/16/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -34,7 +34,7 @@ def main():
                 while True:
                     inB = input("Please enter your times of minimum file pathway for the Johnson B filter: ")
                     inV = input("Please enter your times of minimum file pathway for the Johnson V filter: ")
-                    inR = input("Please enter your times of minimum file pathway for the Johnson R filter: ")
+                    inR = input("Please enter your times of minimum file pathway for the Cousins R filter: ")
                     try:
                         db = pd.read_csv(inB, header=None, delim_whitespace=True)
                         dv = pd.read_csv(inV, header=None, delim_whitespace=True)

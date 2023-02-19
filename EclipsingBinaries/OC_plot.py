@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 02/16/2023
+Last Edited: 02/19/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -17,7 +17,7 @@ from numba import jit
 
 
 def main():
-    print("The format of these input files should be the of the raw form given from Dr. Robert Berrginton's"
+    print("\n\nThe format of these input files should be the of the raw form given from Dr. Robert Berrginton's"
           " 'find_minimum' C program.")
     print("Enter the corresponding number to what you would like to do.\n")
     while True:
@@ -190,8 +190,7 @@ def all_data(nights):
         print("\n\nPlease make sure that the very first line for each and every file that you have starts with the following\n"
               "'Minimums	Eclipse_#	O-C	O-C_Error'\n"
               "With each space entered as a space.\n")
-        fname = input("Please enter a file name (if the file is in the same folder as this program) or the full "
-                      "file pathway for all your data: ")
+        fname = input("Please enter a file name and pathway (i.e. C:\\folder1\\folder2\\[file name]): ")
         df = pd.read_csv(fname, header=None, skiprows=[0], delim_whitespace=True)
         minimum = np.array(df[0])
         e = np.array(df[1])
@@ -218,7 +217,7 @@ def all_data(nights):
     outfile = input("Please enter the output file pathway and file name WITHOUT extension "
                     "for the ToM (i.e. C:\\folder\[file_name]): ")
     dp.to_csv(outfile + ".txt", index=None, sep="\t")
-    print("\nFinished saving file to " + outfile + ".txt")
+    print("\nFinished saving file to " + outfile + ".txt\n")
 
     """
     LaTeX table stuff, don't change unless you know what you're doing!
@@ -253,7 +252,7 @@ def all_data(nights):
     """
     End LaTeX table stuff.
     """
-    
+
     # outputfile = input("Please enter an output file name without the extension: ")
     file = open(outfile + ".tex", "w")
     file.write(output)
@@ -356,19 +355,7 @@ def data_fit(input_file):
     y1_sec = np.array(y1_sec)
     y_err_new_sec = np.array(y_err_new_sec)
 
-    # numpy curve fit
-    degree_test = None
-    while not degree_test:
-        # make sure the value entered is actually an integer
-        try:
-            degree = int(input("How many polynomial degrees do you want to fit (integer values > 0) i.e. 1=linear and 2=qudratic: "))
-            degree_test = True
-        except ValueError:
-            print("This is not an integer, please enter an integer.")
-            print()
-            degree_test = False
-
-    print("")
+    # different line styles that can be used
     line_style = [(0, (1, 10)), (0, (1, 1)), (0, (5, 10)), (0, (5, 5)), (0, (5, 1)),
                   (0, (3, 10, 1, 10)), (0, (3, 5, 1, 5)), (0, (3, 1, 1, 1)), (0, (3, 5, 1, 5, 1, 5)),
                   (0, (3, 10, 1, 10, 1, 10)), (0, (3, 1, 1, 1, 1, 1))]
@@ -394,9 +381,12 @@ def data_fit(input_file):
     f = open(output_file, 'w')
     f.write(beginningtex)
 
+    # sets up the fitting parameters
     xs = np.linspace(x.min(), x.max(), 1000)
+    degree = 2
+    degree_list = ["Linear", "Quadratic"]
     # noinspection PyUnboundLocalVariable
-    for i in range(1, degree + 1):
+    for i in range(1, degree+1):
         """
         Inside the model variable:
         'np.polynomial.polynomial.polyfit(x, y, i)' gathers the coefficients of the line fit
@@ -406,7 +396,7 @@ def data_fit(input_file):
         model = Polynomial(np.polynomial.polynomial.polyfit(x1_prim, y1_prim, i))
 
         # plot the main graph with both fits (linear and poly) onto the same graph
-        plt.plot(xs, model(xs), color="black", label="polynomial fit of degree " + str(i),
+        plt.plot(xs, model(xs), color="black", label=degree_list[i-1] + " fit",
                  linestyle=line_style[line_count])
         line_count += 1
 
@@ -425,23 +415,23 @@ def data_fit(input_file):
     f.write(endtex)
     # writes to the file the end latex code and then saves the file
     f.close()
-    print("Finished saving latex/text file.")
+    print("\nFinished saving latex/text file.\n\n")
 
     plt.errorbar(x1_prim, y1_prim, yerr=y_err_new_prim, fmt="o", color="blue", label="Primary")
     plt.errorbar(x1_sec, y1_sec, yerr=y_err_new_sec, fmt="s", color="green", label="Secondary")
-    # make the legend always be in the upper right hand corner of the graph
-    plt.legend(loc="upper right")
+    # allows the legend to be moved wherever the user wants the legend to be placed rather than in a fixed location
+    print("\n\nNOTE:")
+    print("You can drag the legend to move it wherever you would like, the default is the top right. Just click and drag"
+          " to move around the figure.\n")
+    plt.legend(loc="upper right").set_draggable(True)
 
-    x_label = "Epoch"
+    x_label = "Eclipse Number"
     y_label = "O-C (days)"
-    title = ""
 
     # noinspection PyUnboundLocalVariable
     plt.xlabel(x_label)
     # noinspection PyUnboundLocalVariable
     plt.ylabel(y_label)
-    # noinspection PyUnboundLocalVariable
-    plt.title(title)
     plt.grid()
     plt.show()
 

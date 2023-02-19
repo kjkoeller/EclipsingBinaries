@@ -4,7 +4,7 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 02/13/2023
+Last Edited: 02/19/2023
 
 Spyder Editor
 This is a temporary script file.
@@ -14,13 +14,10 @@ Paper is: https://ui.adsabs.harvard.edu/abs/2019ascl.soft05007B/abstract
 
 # !/usr/local/bin/python3
 
-import os
 import numpy as np
 import astropy.io.fits as pyfits
 from time import gmtime, strftime  # for utc
 from astropy.time import Time
-import astropy.units as u
-from astropy.coordinates import SkyCoord
 from PyAstronomy import pyasl
 
 """

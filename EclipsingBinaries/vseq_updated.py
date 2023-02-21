@@ -6,9 +6,6 @@ Created on Sat Feb 22 16:09:28 2020
 Collection of functions, coefficients and equations commonly used
 with short-period variable stars, but many can be used more
 generally
-
-Last Edited: 11/01/2022
-Editor: Kyle Koeller
 """
 import numpy as np
 # import csv
@@ -152,7 +149,7 @@ class calc:  # assortment of functions
     class poly:
         def result(coeflist, value, deriv=False):
             """
-            Result of a polynomial given an ascending order coefficient list, and 
+            Result of a polynomial given an ascending order coefficient list, and
             an x value.
             """
             # n0=0
@@ -165,18 +162,18 @@ class calc:  # assortment of functions
             # deg = len(coeflist)-1
             # coeflist=np.array(coeflist)
             # if deriv == True:
-            # 
+            #
 
             return sum(np.array(coeflist) * value ** np.arange(len(coeflist)))
 
         def error(coeflist, value, error):
             """
             Propagated uncertainty of a standard polynomial.
-            
+
             coeflist: ascending order coefficient list
-            
+
             value: input value
-            
+
             error: error in value
             """
             n0 = 1
@@ -192,7 +189,7 @@ class calc:  # assortment of functions
             Generates a list of predicted values from a given
             ascending coefficient list. Specifiy the bounds, and the
             resolution (number of points). x domain is evenly spaced.
-            
+
             Useful for plotting or Fourier transforms.
             """
             xrange = abs(xmax - xmin)
@@ -298,9 +295,9 @@ class calc:  # assortment of functions
 
         def truncnorm(size, lower=-3.0, upper=3.0, mean=0.0, sigma=1.0):
             """
-            Returns a list (of specified size) of Gaussian deviates 
+            Returns a list (of specified size) of Gaussian deviates
             from a capped standard deviation range.
-            
+
             Defaults to the traditional 3 sigma rule.
             """
             import scipy.stats as sci
@@ -356,19 +353,19 @@ class calc:  # assortment of functions
             """
             Calculates the coefficient of determination (R^2) using the
             actual and modelled data. Lists must be the same length.
-            
+
             ----------
-            
+
             R^2 = 1 - RSS/ESS
-            
+
             RSS: Sum of the square of the residuals.
-            
+
             ESS: Explained sum of squares. Variance in the observed data
             times N-1
             """
             return 1 - calc.error.SS_residuals(obslist, modellist) / calc.error.SS_total(obslist)
 
-    # -------------------        
+    # -------------------
     class astro:
         class convert:
             def HJD_phase(HJDlist, period, Epoch, Pdot=0):
@@ -793,10 +790,10 @@ class FT:  # Fourier transform
         -------
         Fbfli : array
             combines both a & b coefficients, ignore
-        
+
         coslist : array
             cosine FT coefficients (a)
-        
+
         sinlist : array
             sine FT coefficients (b)
 
@@ -961,7 +958,7 @@ class FT:  # Fourier transform
         and alters each value by a capped 3 sigma Gaussian deviate of the observational
         error given the index in ob_fluxerr. The two lists should be sorted by the same
         phase, but sim_FT_curve does this naturally.
-        
+
         This is really only for the sim_FT_curve program, and not a standalone fucntion.
         """
         obs = len(ob_fluxerr)
@@ -1022,7 +1019,7 @@ class FT:  # Fourier transform
         return np.sqrt(int_unc)
 
 
-# ======================================     
+# ======================================
 class OConnell:  # O'Connell effect
     def OER(binnedfluxlist):  # don't use
         """
@@ -1140,7 +1137,7 @@ class OConnell:  # O'Connell effect
         return np.sqrt(sig_A2 / A ** 2 + sig_B2 / B ** 2) / abs(1 + A / (2 * B) + B / (2 * A))
         # h=
 
-    # ==================================  
+    # ==================================
     def LCA(binnedfluxlist):  # don't use
         """
         Don't use
@@ -1227,7 +1224,7 @@ class OConnell:  # O'Connell effect
         dL_da0 = -2 * L / I;
         dL_dak = [];
         dL_dbk = []
-        # dL_da0=-2*J**2*I ; dL_dak=[] ; dL_dbk=[]   
+        # dL_da0=-2*J**2*I ; dL_dak=[] ; dL_dbk=[]
         # J2I=J**2*I
         for k in range(1, order + 1):
             # dL_dak.append(dL_da0*np.cos(2*np.pi*k*phase))
@@ -1338,7 +1335,7 @@ class OConnell:  # O'Connell effect
         """
         Calculates the difference of flux at quadrature from observational fluxes
         and the error the uncertainty of this measure.
-        
+
         Averages the fluxes in a specified range from quadrature, and subtracts the two
         values. Average can be weighted, although that is probably overkill and/or
         undesireable.
@@ -1407,7 +1404,7 @@ def waverage(valuelist, errorlist):
         return sum(weightlist)
 
 
-# ======================================       
+# ======================================
 class Flower:  # stuff from Flower 1996, Torres 2010
     class T:
         # c=[c0,c1,c2,c3,c4,c5,c6,c7]
@@ -1556,27 +1553,27 @@ class plot:
         """
         Creates two graphs on the same plot. Designed for the top part to be
         the actual/synthetic data values, and the bottom the residuals.
-        
+
         -------required parameters------
-        
+
         ob_phase, ob_mag: Observational phases and magnitdues respectively
-        
+
         synth_phase, synth_mag: Synthetic or model phases/mags
-        
+
         resid: list of the residuals of obs - model
-        
+
         -------optional------
-        
+
         figsize: entered as tuple, of (length, height). Default is (8,8)
-        
+
         dpi: dots per inch, entered as integer, default is 512
-        
+
         X: major ticks on the x-axis (phase)
-        
+
         x: minor ticks on x-axis
-        
+
         Y1: major y-axis ticks for top plot
-        
+
         y1: minor y-axis ticks for top plot
 
         """
@@ -1883,7 +1880,7 @@ class Roche:
             return -r * q / (r ** 2 + z ** 2) ** (3 / 2) - (r + np.cos(phi)) / (
                         1 + r ** 2 + z ** 2 + 2 * r * np.cos(phi)) ** (3 / 2) + np.cos(phi) + (1 + q) * r
         else:
-   
+
          return print('Invalid body, choose M1 or M2.')
 
     def gen_Kopal_zero(rho, phi, z, q, Kopal,

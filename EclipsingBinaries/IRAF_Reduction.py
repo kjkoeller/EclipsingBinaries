@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 01/30/2023
+Last Edited: 02/21/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -42,7 +42,7 @@ def main():
     """
 
     # allows the user to input where the raw images are and where the calibrated images go to
-    path = input("Please enter a file path or folder name (if this code is in the same main folder) or type the word "
+    path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2) to where the raw images are or type the word "
                  "'Close' to leave: ")
     if path.lower() == "close":
         exit()

@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 02/19/2023
+Last Edited: 02/23/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -25,7 +25,7 @@ def main():
             num = int(input("Would you like to use BSUO data(1), TESS data(2), All Data(3), or Close Program(4): "))
             if num == 1:
                 first_time = input("Do you already have an Epoch value 'Yes' or 'No': ")
-                if first_time.lower() == "yes":
+                if first_time.lower() == "no":
                     T0 = 0
                     To_err = 0
                     period = float(input("Please enter the period for your system: "))
@@ -46,7 +46,7 @@ def main():
                 data_fit(bsuo)
             elif num == 2:
                 first_time = input("Do you already have an Epoch value 'Yes' or 'No': ")
-                if first_time.lower() == "yes":
+                if first_time.lower() == "no":
                     T0 = 0
                     To_err = 0
                     period = float(input("Please enter the period for your system: "))

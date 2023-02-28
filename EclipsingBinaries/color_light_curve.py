@@ -4,7 +4,7 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 01/26/2022
+Last Edited: 02/27/2022
 Editor: Kyle Koeller
 """
 
@@ -163,7 +163,7 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
     aB_minus_V = B_V[0][3]
     quadcolor, colorerr = B_V[3:5:]
     if Rfile == '':
-        axs = vseq.plot.multiplot((7, 7.5), height_ratios=[8, 4.5])
+        axs, fig = vseq.plot.multiplot((7, 7.5), height_ratios=[8, 4.5])
         mag = axs[0]
         bv = axs[1]
         mag.plot(Vphase, Vmag, 'og', ms=2)

@@ -3,7 +3,7 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 02/03/2023
+Last Edited: 02/27/2023
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -102,7 +102,7 @@ def Half_Comp(filter_files, Epoch, period,
         plt.rcParams['font.family'] = 'serif'
         plt.rcParams['mathtext.fontset'] = 'dejavuserif'
     bands = len(filter_files)
-    axs = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
+    axs, fog = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
     flux = axs[0]
     dI = axs[1]
     colors = ['blue', 'limegreen', 'red', 'm']

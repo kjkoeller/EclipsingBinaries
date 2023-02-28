@@ -1542,7 +1542,7 @@ class plot:
             fig = plt.figure(1, figsize=figsize, dpi=dpi)
         axs = fig.subplots(len(height_ratios), sharex=sharex, sharey=sharey,
                            gridspec_kw={'hspace': hspace, 'height_ratios': height_ratios})
-        return axs
+        return axs, fig
 
     def value_resid_plot(ob_phase, ob_mag, synth_phase, synth_mag, resid, figsize=(8, 8), dpi=512,
                          X=0.25, x=0.05, Y1=0.1, y1=0.025, Y2=0.025, y2=0.005, tickwidth=None,

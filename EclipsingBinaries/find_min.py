@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
 Created:  07/03/2021
-Last Edited: 02/27/2023
-
 Original Author: Alec Neal
+
 Last Edits Done By: Kyle Koeller
+Last Edited: 03/03/2023
 """
 
 # import vseq  # testing purposes
 from . import vseq_updated as vseq
-import os
+from os import environ, path
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy
@@ -17,7 +17,19 @@ import scipy
 from collections import Counter
 import statistics
 from tqdm import tqdm
-os.environ['MPLBACKEND'] = 'TkAgg'
+environ['MPLBACKEND'] = 'TkAgg'
+
+
+day = 1  # starting day
+lb = 0.69  # starting left boundary
+rb = 0.775  # starting right boundary
+last_rb = rb  # defines the last right boundary used for global use
+last_lb = lb  # defines the last left boundary used for global use
+order = 5  # order for the LSQ fitting (not shown in the figure)
+resolution = 200  # resolution for the fitting
+npairs = 20  # number of data point pairs
+fontsize = 9  # font size of text
+import_files = []
 
 
 def percent_to_xy(xy, xlist, ylist, x_rev=False, y_rev=False):
@@ -46,8 +58,6 @@ def best_root(coef, lb, rb, filter_files):
     so we have to do this nonsense to get the most
     sensible root.
     """
-    global last_lb
-    global last_rb
     dcoef = []
     for n in range(1, len(coef)):
         dcoef.append(n * coef[n])
@@ -302,7 +312,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
         parameters = {'axes.labelsize': fontsize}
         plt.rcParams.update(parameters)
 
-        [Splot, MIN], fig = vseq.plot.multiplot(figsize=(5, 4), height_ratios=[1, 3], sharex=False, sharey=False,
+        [Splot, MIN], fig = vseq.plot.multiplot(figsize=(5, 4), height_ratios=[1, 4], sharex=False, sharey=False,
                                                 hspace=0)
         MIN.errorbar(fracHJD, all_flux[day], all_fluxerr[day], fmt='ok', ms=3, capsize=3, elinewidth=0.6, ecolor='gray',
                      capthick=0.6)  # ,'ok',ms=3)
@@ -348,7 +358,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
                     fluxerr_band_in[band].append(master_fluxerrnight[band][day][n])
 
         # red_chi = vseq.calc.error.red_X2(flux_inbounds, results, fluxerr_inbounds) / len(results)
-        root_error, kweeer = sim_min(HJD_band_in, flux_band_in, fluxerr_band_in, order, sims, filter_files)[0:3:2]
+        # root_error, kweeer = sim_min(HJD_band_in, flux_band_in, fluxerr_band_in, order, sims, filter_files)[0:3:2]
 
         # ===================================================================================================
         try:
@@ -359,10 +369,10 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
             plot_obs(filter_files, day=day, lb=last_lb, rb=last_rb, order=order, resolution=resolution, npairs=npairs,
                      para_range=None, norm_method="norm")
 
-        bestroot = best_root(coef, min(HJD_inbounds), max(HJD_inbounds), filter_files)
+        # bestroot = best_root(coef, min(HJD_inbounds), max(HJD_inbounds), filter_files)
 
-        from T_LSQ_error_test import idktho
-        idkerror = idktho(HJD_inbounds, flux_inbounds, bestroot, coef)
+        # from T_LSQ_error_test import idktho
+        # idkerror = idktho(HJD_inbounds, flux_inbounds, bestroot, coef)
 
         MIN.set_xlabel(r'$\mathrm{HJD}-' + str(intday) + '$', fontsize=fontsize)
         MIN.set_ylabel('Flux', fontsize=fontsize)
@@ -404,6 +414,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
         plt.grid(alpha=0.35)
         plt.savefig('MIN-program_demo.pdf', bbox_inches='tight')
         # print(f"Backend: {plt.get_backend()}")
+        f = zoom_factory(MIN, base_scale=2.)
         plt.show()
     else:
         ax = plt.figure(figsize=(9, 7), dpi=256).subplots()
@@ -457,15 +468,81 @@ def press(event):
         print("\nPress 'a' for right boundary, 'd' for left boundary, or the 'ESC' key to close the figure.\n")
 
 
-day = 1
-lb = 0.69
-rb = 0.775
-last_rb = rb
-last_lb = lb
-order = 5
-resolution = 200
-npairs = 20
-fontsize = 9
+def zoom_factory(ax, base_scale=2.):
+    def zoom_fun(event):
+        # get the current x and y limits
+        cur_xlim = ax.get_xlim()
+        cur_ylim = ax.get_ylim()
+        cur_xrange = (cur_xlim[1] - cur_xlim[0]) * .5
+        cur_yrange = (cur_ylim[1] - cur_ylim[0]) * .5
+        xdata = event.xdata  # get event x location
+        ydata = event.ydata  # get event y location
+        if event.button == 'up':
+            # deal with zoom in
+            scale_factor = 1/base_scale
+        elif event.button == 'down':
+            # deal with zoom out
+            scale_factor = base_scale
+        else:
+            # deal with something that should never happen
+            scale_factor = 1
+        # set new limits
+        ax.set_xlim([xdata - cur_xrange*scale_factor,
+                     xdata + cur_xrange*scale_factor])
+        ax.set_ylim([ydata - cur_yrange*scale_factor,
+                     ydata + cur_yrange*scale_factor])
+        plt.draw() # force re-draw
 
-plot_obs(['896797_B.txt'], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
-         para_range=None, norm_method='norm')
+    fig = ax.get_figure() # get the figure of interest
+    # attach the call back
+    fig.canvas.mpl_connect('scroll_event',zoom_fun)
+
+    # return the function
+    return zoom_fun
+
+
+def main():
+    num_filters = input("How many filters do you have (i.e. 1-3) or type 'Close' to close the program: ")
+    print()
+    if num_filters == '1':
+        while True:
+            filter1 = input("Please enter a complete file pathway to your data file (i.e. C:\\folder1\\folder2\\data.txt: ")
+            if path.exists(filter1):
+                break
+            else:
+                print("\nOne of the files you have entered does not exist, please try all three again.\n")
+                continue
+        plot_obs([filter1], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
+                 para_range=None, norm_method='norm')
+    elif num_filters == '2':
+        while True:
+            filter1 = input("Please enter a complete file pathway to data file 1 (i.e. C:\\folder1\\folder2\\data.txt: ")
+            filter2 = input("Please enter a complete file pathway to data file 2 (i.e. C:\\folder1\\folder2\\data.txt: ")
+            if path.exists(filter1) and path.exists(filter2):
+                break
+            else:
+                print("\nOne of the files you have entered does not exist, please try all three again.\n")
+                continue
+        plot_obs([filter1, filter2], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
+                 para_range=None, norm_method='norm')
+    elif num_filters == '3':
+        while True:
+            filter1 = input("Please enter a complete file pathway to data file 1 (i.e. C:\\folder1\\folder2\\data.txt: ")
+            filter2 = input("Please enter a complete file pathway to data file 2 (i.e. C:\\folder1\\folder2\\data.txt: ")
+            filter3 = input("Please enter a complete file pathway to data file 3 (i.e. C:\\folder1\\folder2\\data.txt: ")
+            if path.exists(filter1) and path.exists(filter2) and path.exists(filter3):
+                break
+            else:
+                print("\nOne of the files you have entered does not exist, please try all three again.\n")
+                continue
+        plot_obs([filter1, filter2, filter3], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
+                 para_range=None, norm_method='norm')
+    elif num_filters.lower() == "close":
+        exit()
+    else:
+        print("Please enter a number between 1-3 or the word 'Close'.\n")
+        main()
+
+
+if __name__ == '__main__':
+    main()

@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 02/21/2023
+Last Edited: 03/08/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -85,7 +85,10 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
     :return: depends on the stage of process, but will return a final image for each process
     """
     # Subtract the overscan, ccd[columns, rows] I think?
-    ccd = ccdp.subtract_overscan(ccd, fits_section=overscan_region, median=True, overscan_axis=1)
+    if overscan_region.lower() == "none":
+        pass
+    else:
+        ccd = ccdp.subtract_overscan(ccd, fits_section=overscan_region, median=True, overscan_axis=1)
 
     # Trim the overscan and gain correct the image
     ccd = ccdp.trim_image(ccd, fits_section=trim_region)
@@ -145,13 +148,14 @@ def bias(files, calibrated_data, path):
     cryo_path = Path(path)
     bias_1 = CCDData.read(cryo_path / image, unit='adu')
     # bias_1 = CCDData.read(cryo_path / 'bias-0001.fits', unit='adu')  # testing
-    bias_plot(bias_1)
     
     print("\n\nFor the overscan region, [rows, columns], and if you want all the columns then you want would enter, \n"
           "[1234:5678, 1234:5678] and this would say rows between those values and all the columns. \n"
           "This would also work if you wanted all the rows ([: , 1234:5678]).\n")
-    overscan_region = input(
-        "Please enter the overscan region you determined from the figure. Example '[2073:2115, :]': ")
+    bias_plot(bias_1)
+
+    overscan_region = input("Please enter the overscan region you determined from the figure.\n"
+                            "Example '[2073:2115, :]' or if you do not have an overscan region enter 'None': ")
     trim_region = input("Please enter the trim region. Example '[20:2060, 12:2057]': ")
     print()
 

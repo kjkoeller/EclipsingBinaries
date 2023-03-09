@@ -96,3 +96,6 @@ Creates a plot of O-C data that differentiates between primary and secondary ecl
 
 ### tess\_data\_search.py
 Searches the TESS database for sector data for a specific TIC system. Lets the user know if there are no sectors available and if there are, automatically downloads the data to a specified folder that user designates via `tesscut.py`
+
+### gaia.py
+Searches Gaia data for parameters for a given system entered by a user such as: parallax, distance, and effective temperature of the hotter star.

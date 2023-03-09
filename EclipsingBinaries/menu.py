@@ -67,7 +67,7 @@ def main():
         elif prompt == 5:
             # O-C plotting
             data_fit()
-        elif prompt == 8:
+        elif prompt == 9:
             # close program
             break
         elif prompt == 6:

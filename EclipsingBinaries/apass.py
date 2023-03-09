@@ -512,6 +512,6 @@ def decimal_limit(a):
     return b
 
 
-comparison_selector()
+# comparison_selector()
 # overlay("test_cat.txt", "00:28:27.9684836736", "78:57:42.657327180")
 # find_comp()

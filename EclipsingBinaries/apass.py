@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 02/13/2023
+Last Updated: 03/08/2023
 """
 
 from astroquery.vizier import Vizier
@@ -39,15 +39,12 @@ def comparison_selector():
     df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
 
     print("Finished Saving\n")
-    print("This program is not 100% accurate, so the recommendation is to compare what you found in AIJ to what this "
-          "code has found and make sure that the two lists are the same and enter in the filter values manually into"
-          "the RADEC file for AIJ to use in the photometry.\n")
     print("The output file you have entered has RA and DEC for stars and their B, V, and Cousins R magnitudes with "
           "their respective errors.\n")
 
     create_radec(df, input_ra, input_dec)
 
-    overlay(df)
+    overlay(df, input_ra, input_dec)
 
 
 def cousins_r():
@@ -124,7 +121,8 @@ def cousins_r():
         "\nThis output file contains all the calculated Cousins R magnitudes along with error and "
         "both Johnson bands and respective errors.\n")
     # saves the dataframe to an entered output file
-    output_file = input("Enter an output file name (ex: APASS_254037_Catalog.txt): ")
+    output_file = input("Enter an output file name and location for the finalized catalog file "
+                        "(ex: C:\\folder1\\folder2\\APASS_254037_Catalog.txt): ")
     # noinspection PyTypeChecker
     final.to_csv(output_file, index=True, sep="\t")
     print("\nCompleted Save.\n")
@@ -305,11 +303,13 @@ def create_radec(df, ra, dec):
     print("\nFinished writing RADEC files for Johnson B, Johnson V, and Cousins R.\n")
 
 
-def overlay(df):
+def overlay(df, tar_ra, tar_dec):
     """
     Creates an overlay of a science image with APASS objects numbered as seen in the catalog file that
     was saved previously
 
+    :param tar_dec: target declination
+    :param tar_ra: target right ascension
     :param df: input catalog DataFrame
     :return: None but displays a science image with over-layed APASS objects
     """
@@ -347,6 +347,8 @@ def overlay(df):
 
     ax.scatter(ra_cat_new, dec_cat_new, transform=ax.get_transform('fk5'), s=200,
                edgecolor='red', facecolor='none', label="Potential Comparison Stars")
+    ax.scatter((tar_ra*15)*u.deg, tar_dec*u.deg, transform=ax.get_transform('fk5'), s=200,
+               edgecolor='green', facecolor='none', label="Target Star")
 
     count = 0
     # annotates onto the image the index number and Johnson V magnitude
@@ -510,6 +512,6 @@ def decimal_limit(a):
     return b
 
 
-# comparison_selector()
-# overlay("APASS_254037_Rc_values.txt", "NSVS_254037-B.radec")
+comparison_selector()
+# overlay("test_cat.txt", "00:28:27.9684836736", "78:57:42.657327180")
 # find_comp()

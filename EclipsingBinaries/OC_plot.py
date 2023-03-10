@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 02/23/2023
+Last Edited: 03/09/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -104,8 +104,8 @@ def TESS_OC(T0, To_err, period, df):
         e, OC, OC_err, T0, To_err = calcualte_oc(val, min_strict_err[count], T0, To_err, period)
 
         E_est.append(e)
-        O_C.append(OC)
-        O_C_err.append(OC_err)
+        O_C.append("%.5f" % OC)
+        O_C_err.append("%.5f" % OC_err)
 
     # create a dataframe for all outputs to be places in for easy output
     dp = pd.DataFrame({
@@ -152,14 +152,14 @@ def BSUO(T0, To_err, period, db, dv, dr):
         minimum = (val + strict_V[count] + strict_R[count]) / 3
         err = sqrt(strict_B_err[count] ** 2 + strict_V_err[count] ** 2 + strict_R_err[count] ** 2) / 3
 
-        average_min.append(minimum)
+        average_min.append("%.5f" % minimum)
         average_err.append(err)
 
         # call the function to calculate the O-C values
         e, OC, OC_err, T0, To_err = calcualte_oc(minimum, err, T0, To_err, period)
         E_est.append(e)
-        O_C.append(OC)
-        O_C_err.append(OC_err)
+        O_C.append("%.5f" % OC)
+        O_C_err.append("%.5f" % OC_err)
 
     # create a dataframe for all outputs to be places in for easy output
     dp = pd.DataFrame({
@@ -198,10 +198,10 @@ def all_data(nights):
         o_c_err = np.array(df[3])
 
         for num, val in enumerate(minimum):
-            minimum_list.append(val)
+            minimum_list.append("%.5f" % val)
             e_list.append(e[num])
-            o_c_list.append(o_c[num])
-            o_c_err_list.append(o_c_err[num])
+            o_c_list.append("%.5f" % o_c[num])
+            o_c_err_list.append("%.5f" % o_c_err[num])
         if count == nights:
             break
         else:
@@ -224,31 +224,31 @@ def all_data(nights):
     """
     table_header = "\\renewcommand{\\baselinestretch}{1.00} \small\\normalsize"
     table_header += '\\begin{center}\n' + '\\begin{longtable}{ccc}\n'
-    table_header += '$BJD_{TDB}$ & ' + 'E & ' + 'O-C \\\ \n'
+    table_header += '$BJD_{\\rm TDB}$ & ' + 'E & ' + 'O-C \\\ \n'
     table_header += '\\hline\n' + '\\endfirsthead\n'
     table_header += '\\multicolumn{3}{c}\n'
     table_header += '{\\tablename\ \\thetable\ -- \\textit{Continued from previous page}} \\\ \n'
-    table_header += '$BJD_{TDB}$ & E & O-C \\\ \n'
+    table_header += '$BJD_{\\rm TDB}$ & E & O-C \\\ \n'
     table_header += '\\hline\n' + '\\endhead\n' + '\\hline\n'
     table_header += '\\multicolumn{3}{c}{\\textit{Continued on next page}} \\\ \n'
     table_header += '\\endfoot\n' + '\\endlastfoot\n'
 
     minimum_lines = []
     for i in range(len(minimum)):
-        line = str(minimum[i]) + ' & ' + str(e[i]) + ' & $' + str(o_c[i]) + ' \pm ' + str(o_c_err[i]) + '$ ' + "\\\ \n"
+        line = str("%.5f" % minimum[i]) + ' & ' + str(e[i]) + ' & $' + str("%.5f" % o_c[i]) + ' \pm ' + str( "%.5f" %o_c_err[i]) + '$ ' + "\\\ \n"
         minimum_lines.append(line)
 
     output = table_header
     for count, line in enumerate(minimum_lines):
         output += line
 
-    output += '\\hline\n' + '\caption{NSVS 896797 O-C. The first column is the \n' \
-                            '$BJD_{TDB}$ and column 2 is the eclipse number with a whole number \n' \
+    output += '\\hline\n' + '\\caption{NSVS 896797 O-C. The first column is the \n' \
+                            '$BJD_{TDB}$ and column 2 is the epoch number with a whole number \n' \
                             'being a primary eclipse and a half integer value being a secondary \n' \
                             'eclipse. Column 3 is the $(O-C)$ value with the corresponding \n' \
-                            'error.}' \
-              + '\\label{896797_OC}\n' + '\\end{longtable}\n' + '\\end{center}\n'
-    output += '\\renewcommand{\\baselinestretch}{1.66} \small\\normalsize'
+                            '1$\\sigma$ error.}\n' \
+              + '\\label{tbl:896797_OC}\n' + '\\end{longtable}\n' + '\\end{center}\n'
+    output += '\\renewcommand{\\baselinestretch}{1.66} \\small\\normalsize'
     """
     End LaTeX table stuff.
     """
@@ -417,25 +417,26 @@ def data_fit(input_file):
     f.close()
     print("\nFinished saving latex/text file.\n\n")
 
+    fontsize = 12
     plt.errorbar(x1_prim, y1_prim, yerr=y_err_new_prim, fmt="o", color="blue", label="Primary")
     plt.errorbar(x1_sec, y1_sec, yerr=y_err_new_sec, fmt="s", color="green", label="Secondary")
     # allows the legend to be moved wherever the user wants the legend to be placed rather than in a fixed location
     print("\n\nNOTE:")
     print("You can drag the legend to move it wherever you would like, the default is the top right. Just click and drag"
           " to move around the figure.\n")
-    plt.legend(loc="upper right").set_draggable(True)
+    plt.legend(loc="upper right", fontsize=fontsize).set_draggable(True)
 
     x_label = "Eclipse Number"
     y_label = "O-C (days)"
 
     # noinspection PyUnboundLocalVariable
-    plt.xlabel(x_label)
+    plt.xlabel(x_label, fontsize=fontsize)
     # noinspection PyUnboundLocalVariable
-    plt.ylabel(y_label)
+    plt.ylabel(y_label, fontsize=fontsize)
     plt.grid()
     plt.show()
 
-    residuals(x1_prim, y1_prim, x_label, y_label, degree, model, xs)
+    # residuals(x1_prim, y1_prim, x_label, y_label, degree, model, xs)
 
 
 def residuals(x, y, x_label, y_label, degree, model, xs):

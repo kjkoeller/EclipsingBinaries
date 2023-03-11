@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 03/09/2023
+Last Edited: 03/11/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -110,7 +110,7 @@ def TESS_OC(T0, To_err, period, df):
     # create a dataframe for all outputs to be places in for easy output
     dp = pd.DataFrame({
         "Minimums": min_strict,
-        "Eclipse_#": E_est,
+        "Epoch": E_est,
         "O-C": O_C,
         "O-C_Error": O_C_err
     })
@@ -164,7 +164,7 @@ def BSUO(T0, To_err, period, db, dv, dr):
     # create a dataframe for all outputs to be places in for easy output
     dp = pd.DataFrame({
         "Minimums": average_min,
-        "Eclipse_#": E_est,
+        "Epoch": E_est,
         "O-C": O_C,
         "O-C_Error": O_C_err
     })
@@ -188,7 +188,7 @@ def all_data(nights):
 
     while True:
         print("\n\nPlease make sure that the very first line for each and every file that you have starts with the following\n"
-              "'Minimums	Eclipse_#	O-C	O-C_Error'\n"
+              "'Minimums	Epoch	O-C	O-C_Error'\n"
               "With each space entered as a space.\n")
         fname = input("Please enter a file name and pathway (i.e. C:\\folder1\\folder2\\[file name]): ")
         df = pd.read_csv(fname, header=None, skiprows=[0], delim_whitespace=True)
@@ -209,7 +209,7 @@ def all_data(nights):
             continue
     dp = pd.DataFrame({
         "Minimums": minimum_list,
-        "Eclipse_#": e_list,
+        "Epoch": e_list,
         "O-C": o_c_list,
         "O-C_Error": o_c_err_list
     })
@@ -321,7 +321,7 @@ def data_fit(input_file):
     df = pd.read_csv(input_file, header=0, delim_whitespace=True)
 
     # append values to their respective lists for further and future potential use
-    x = df["Eclipse_#"]
+    x = df["Epoch"]
     y = df["O-C"]
     y_err = df["O-C_Error"]
 
@@ -417,7 +417,7 @@ def data_fit(input_file):
     f.close()
     print("\nFinished saving latex/text file.\n\n")
 
-    fontsize = 12
+    fontsize = 14
     plt.errorbar(x1_prim, y1_prim, yerr=y_err_new_prim, fmt="o", color="blue", label="Primary")
     plt.errorbar(x1_sec, y1_sec, yerr=y_err_new_sec, fmt="s", color="green", label="Secondary")
     # allows the legend to be moved wherever the user wants the legend to be placed rather than in a fixed location
@@ -426,13 +426,15 @@ def data_fit(input_file):
           " to move around the figure.\n")
     plt.legend(loc="upper right", fontsize=fontsize).set_draggable(True)
 
-    x_label = "Eclipse Number"
+    x_label = "Epoch"
     y_label = "O-C (days)"
 
     # noinspection PyUnboundLocalVariable
     plt.xlabel(x_label, fontsize=fontsize)
+    plt.xticks(fontsize=fontsize)
     # noinspection PyUnboundLocalVariable
     plt.ylabel(y_label, fontsize=fontsize)
+    plt.yticks(fontsize=fontsize)
     plt.grid()
     plt.show()
 
@@ -494,5 +496,5 @@ def residuals(x, y, x_label, y_label, degree, model, xs):
     plt.show()
 
 
-if __name__ == '__main__':
-    main()
+# data_fit('254037_OC.txt')
+# data_fit('896797_OC.txt')

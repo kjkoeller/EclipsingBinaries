@@ -73,7 +73,7 @@ def main():
     df.to_csv(text_file, index=None, sep="\t")
 
     print("\n For more information on each of the output parameters please reference this webpage: "
-          "https://gea.esac.esa.int/archive/documentation/GDR3/Gaia_archive/chap_datamodel/sec_dm_main_source_catalogue/ssec_dm_gaia_source.html#gaia_source-teff_gspphot")
+          "https://gea.esac.esa.int/archive/documentation/GDR3/Gaia_archive/chap_datamodel/sec_dm_main_source_catalogue/ssec_dm_gaia_source.html")
     print("If any of the parameters have values of '1e+20', then Gaia does not have data on that specific parameter.")
 
     print("\nCompleted save.\n")

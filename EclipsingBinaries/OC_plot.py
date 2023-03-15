@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 03/11/2023
+Last Edited: 03/15/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -18,7 +18,10 @@ from numba import jit
 
 def main():
     print("\n\nThe format of these input files should be the of the raw form given from Dr. Robert Berrginton's"
-          " 'find_minimum' C program.")
+          " 'find_minimum' C program.\n")
+    print("Run TESS data by itself through the TESS option and filtered SARA/BSUO data through the BSU option.\n"
+          "DO NOT combine them in any way unless you have already run them through to get the (O-C) values and"
+          "are about to run the 'All Data' option.")
     print("Enter the corresponding number to what you would like to do.\n")
     while True:
         try:
@@ -64,7 +67,7 @@ def main():
             elif num == 3:
                 while True:
                     try:
-                        nights = int(input("How many nights of data do you have: "))
+                        nights = int(input("How many files of data do you have: "))
                         break
                     except ValueError:
                         print("Please enter a valid whole number.\n")

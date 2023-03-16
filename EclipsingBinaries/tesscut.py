@@ -121,8 +121,8 @@ def main(search_file):
             # gather light time travel effects
             location = EarthLocation.of_site("greenwich")
             time_inp = Time(bjd, format='jd', scale='tdb', location=location)
-            # ltt_bary, _ = getLightTravelTimes(ra[0], dec[0], time_inp)
-            # BJD_ltt = Time(time_inp.tdb - ltt_bary, format='jd', scale='tdb', location=location)
+            ltt_bary, _ = getLightTravelTimes(ra[0], dec[0], time_inp)
+            BJD_ltt = Time(time_inp.tdb - ltt_bary, format='jd', scale='tdb', location=location)
 
             # convert to HJD from the BJD above
             _, ltt_helio = getLightTravelTimes(ra[0], dec[0], BJD_ltt)
@@ -176,4 +176,4 @@ def getLightTravelTimes(ra, dec, time_to_correct):
     return ltt_bary, ltt_helio
 
 
-# main("tess-s0016-4-3_211.037012_50.344067_88x88_astrocut.fits")
+main("tess-s0016-4-3_211.037012_50.344067_88x88_astrocut.fits")

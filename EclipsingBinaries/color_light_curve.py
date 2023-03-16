@@ -4,10 +4,11 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 02/27/2022
+Last Edited: 03/16/2022
 Editor: Kyle Koeller
 """
 
+# import vseq  # testing purposes
 from . import vseq_updated as vseq
 import numpy as np
 import matplotlib.pyplot as plt
@@ -134,6 +135,8 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     B_V = [B_minus_V, BV_mean, BV_err, aB_minus_V]
     B = [aBphase, aB_mag, aB_interp_mag]
     V = [aVphase, aV_mag]
+
+    print('T =', vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1)))
 
     return B_V, B, V, quadcolor, colorerr
 
@@ -333,7 +336,7 @@ def color_gui(developer=False):
     for parameter in range(len(entries)):
         # if parameter < 3:
         # wid=30
-        # else: 
+        # else:
         # wid=15
         if entries[parameter][0] == 'Save? (True/False)':
             var = IntVar()
@@ -411,6 +414,7 @@ def color_gui(developer=False):
         ' the three light curves will be shown along with interpolated B-V, V-R colors.'))
     # ====================
     getit = lambda entr: entr[1].get()
+    temp = Label(root, text='')
     BVL = Label(root, text='')
     BVL.grid(row=len(entries) + 6, column=0, columnspan=2)
     VRL = Label(root, text='')
@@ -547,6 +551,9 @@ def color_gui(developer=False):
             # canvas.get_tk_widget().grid(row=0,column=3,rowspan=100,padx=5)
             # if getit(Save) == 'True':
             # plt.savefig(getit(Out),bbox_inches='tight')
+
+        temp.config(text='(B-V) = ' + str(round(quadcolor, 6)) + ' +/- ' + str(round(colorerr, 6)), bg='white',
+                   relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
 
         BVL.config(text='(B-V) = ' + str(round(quadcolor, 6)) + ' +/- ' + str(round(colorerr, 6)), bg='white',
                    relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))

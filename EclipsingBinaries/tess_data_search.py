@@ -2,7 +2,7 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 02/13/2023
+Last Updated: 03/16/2023
 """
 
 # import required packages
@@ -59,7 +59,7 @@ def main():
     for i in sector_table["sector"]:
         # downloads the pixel file data that can then be analyzed with AIJ
         print("\nStarting download of Sector " + str(i))
-        manifest = Tesscut.download_cutouts(objectname=system_name, size=[30, 30] * u.arcmin, sector=i, path=download_path)
+        manifest = Tesscut.download_cutouts(objectname=system_name, size=[10, 10] * u.arcmin, sector=i, path=download_path)
         tCut(manifest)
         print("\nFinished downloading Sector " + str(i))
     print("Finished downloading all sector data related to " + system_name + "\n")

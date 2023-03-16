@@ -4,10 +4,7 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 02/19/2023
-
-Spyder Editor
-This is a temporary script file.
+Last Edited: 03/16/2023
 
 Paper is: https://ui.adsabs.harvard.edu/abs/2019ascl.soft05007B/abstract
 """
@@ -18,7 +15,13 @@ import numpy as np
 import astropy.io.fits as pyfits
 from time import gmtime, strftime  # for utc
 from astropy.time import Time
-from PyAstronomy import pyasl
+# from PyAstronomy import pyasl
+import astropy.units as u
+from astropy.coordinates import (
+    SkyCoord,
+    EarthLocation
+    )
+from apass import conversion
 
 """
 Extract all images from a TESS pixel BINTABLE file
@@ -29,9 +32,9 @@ Detects and does not convert low quality
 
 
 def main(search_file):
-    print(str(search_file))
+    # print(str(search_file))
     infile = "tess" + str(search_file).split("tess")[1]  # gets the actual sector file
-    print(infile)
+    # print(infile)
     pathway = str(search_file).split("tess")[0]  # gets the file pathway
     print("\nThe program will use the file pathway that you entered previously and will now ask for a prefix "
           "to each file name.")
@@ -45,7 +48,7 @@ def main(search_file):
     overwriteflag = True
 
     # Open the fits file readonly by default and create an input hdulist
-    inlist = pyfits.open(search_file)
+    inlist = pyfits.open(infile)
     # Assign the input headers
 
     # Master
@@ -109,15 +112,21 @@ def main(search_file):
             bjd = bjd0 + bjd1
             outimage = inimage
 
-            # convert the BJD to HJD
-            time_inp = Time(bjd, format='jd', scale='tdb')
+            # get RA and DEC
             split = infile.split("_")
-            ra = split[1]
-            dec = split[2]
+            ra = conversion([str(float(split[1])/15)])
+            dec = conversion([split[2]])
+            # print(ra, dec)
 
-            jd_t = time_inp.jd
-            # noinspection PyUnresolvedReferences
-            hjd = pyasl.helio_jd(jd_t-2.4e6, float(ra), float(dec))
+            # gather light time travel effects
+            location = EarthLocation.of_site("greenwich")
+            time_inp = Time(bjd, format='jd', scale='tdb', location=location)
+            # ltt_bary, _ = getLightTravelTimes(ra[0], dec[0], time_inp)
+            # BJD_ltt = Time(time_inp.tdb - ltt_bary, format='jd', scale='tdb', location=location)
+
+            # convert to HJD from the BJD above
+            _, ltt_helio = getLightTravelTimes(ra[0], dec[0], BJD_ltt)
+            HJD_ltt = (BJD_ltt + ltt_helio).value
 
             # Create the fits object for this image using the header of the bintable image
             # Use float32 for output type
@@ -134,18 +143,37 @@ def main(search_file):
             outhdr = outlist.header
             outhdr['LST_UPDT'] = file_time
             outhdr['BJD_TDb'] = bjd
-            outhdr['HJD'] = hjd
+            outhdr['HJD'] = HJD_ltt
             outhdr['COMMENT'] = tess_ffi
             # outhdr['history'] = 'Image from ' + infile
 
             # Write the fits file
 
             outfile = pathway + outprefix + 'tess_%05d.fits' % (i,)
-            outlist.writeto(outfile, overwrite=overwriteflag)
+            print(outfile)
+            outlist.writeto(r"" + outfile, overwrite=overwriteflag)
 
     print("Finished checking all images.\n")
     # Close the input  and exit
     inlist.close()
 
 
-# main("D:\\NSVS_11868841\\tess-s0056-1-1_349.489832_19.284108_87x88_astrocut.fits")
+def getLightTravelTimes(ra, dec, time_to_correct):
+    """
+    Get the light travel times to the barycenter
+
+    ra : sThe Right Ascension of the target in hourangle
+    dec : The Declination of the target in degrees
+    time_to_correct : The time of observation to correct. The astropy.Time
+        object must have been initialised with an EarthLocation
+    Returns
+    -------
+    ltt_bary : The light travel time to the barycentre
+    """
+    target = SkyCoord(ra, dec, unit=(u.hourangle, u.deg), frame='icrs')
+    ltt_bary = time_to_correct.light_travel_time(target)
+    ltt_helio = time_to_correct.light_travel_time(target, 'heliocentric')
+    return ltt_bary, ltt_helio
+
+
+# main("tess-s0016-4-3_211.037012_50.344067_88x88_astrocut.fits")

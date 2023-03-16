@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 03/15/2023
+Last Edited: 03/16/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -18,7 +18,7 @@ from numba import jit
 
 def main():
     print("\n\nThe format of these input files should be the of the raw form given from Dr. Robert Berrginton's"
-          " 'find_minimum' C program.\n")
+          " 'find_minimum' C program.")
     print("Run TESS data by itself through the TESS option and filtered SARA/BSUO data through the BSU option.\n"
           "DO NOT combine them in any way unless you have already run them through to get the (O-C) values and"
           "are about to run the 'All Data' option.")
@@ -34,6 +34,7 @@ def main():
                     period = float(input("Please enter the period for your system: "))
                 else:
                     T0, To_err, period = arguments()
+                    print("Example file pathway: C:\\folder1\\folder2\\[file name]")
                 while True:
                     inB = input("Please enter your times of minimum file pathway for the Johnson B filter: ")
                     inV = input("Please enter your times of minimum file pathway for the Johnson V filter: ")
@@ -45,8 +46,7 @@ def main():
                         break
                     except FileNotFoundError:
                         print("You have entered in an incorrect file or file pathway. Please try again.\n")
-                bsuo = BSUO(T0, To_err, period, db, dv, dr)
-                data_fit(bsuo)
+                _ = BSUO(T0, To_err, period, db, dv, dr)
             elif num == 2:
                 first_time = input("Do you already have an Epoch value 'Yes' or 'No': ")
                 if first_time.lower() == "no":
@@ -55,19 +55,20 @@ def main():
                     period = float(input("Please enter the period for your system: "))
                 else:
                     T0, To_err, period = arguments()
+                    print("Example file pathway: C:\\folder1\\folder2\\[file name]")
                 while True:
-                    infile = input("Please enter your combined times of minimum file pathway: ")
+                    infile = input("Please enter your times of minimum file pathway: ")
                     try:
                         df = pd.read_csv(infile, header=None, delim_whitespace=True)
                         break
                     except FileNotFoundError:
                         print("You have entered in an incorrect file or file pathway. Please try again.\n")
-                tess = TESS_OC(T0, To_err, period, df)
-                data_fit(tess)
+                _ = TESS_OC(T0, To_err, period, df)
             elif num == 3:
                 while True:
                     try:
-                        nights = int(input("How many files of data do you have: "))
+                        nights = int(input("How many files will you be using(i.e. if you have BSUO/SARA and TESS data "
+                                           "then you have 2 files): "))
                         break
                     except ValueError:
                         print("Please enter a valid whole number.\n")
@@ -107,8 +108,8 @@ def TESS_OC(T0, To_err, period, df):
         e, OC, OC_err, T0, To_err = calcualte_oc(val, min_strict_err[count], T0, To_err, period)
 
         E_est.append(e)
-        O_C.append("%.5f" % OC)
-        O_C_err.append("%.5f" % OC_err)
+        O_C.append(OC)
+        O_C_err.append(OC_err)
 
     # create a dataframe for all outputs to be places in for easy output
     dp = pd.DataFrame({
@@ -161,8 +162,8 @@ def BSUO(T0, To_err, period, db, dv, dr):
         # call the function to calculate the O-C values
         e, OC, OC_err, T0, To_err = calcualte_oc(minimum, err, T0, To_err, period)
         E_est.append(e)
-        O_C.append("%.5f" % OC)
-        O_C_err.append("%.5f" % OC_err)
+        O_C.append(OC)
+        O_C_err.append(OC_err)
 
     # create a dataframe for all outputs to be places in for easy output
     dp = pd.DataFrame({
@@ -175,6 +176,7 @@ def BSUO(T0, To_err, period, db, dv, dr):
     # output file name to place the above dataframe into for saving
     outfile = input("Please enter the output fil pathway and file name with extension for the ToM "
                     "(i.e. C:\\folder1\\test.txt): ")
+    # noinspection PyTypeChecker
     dp.to_csv(outfile, index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
 
@@ -304,10 +306,10 @@ def calcualte_oc(m, err, T0, T0_err, p):
     e = round(E_act * 2) / 2
     # caluclate the calculated ToM and find the O-C value
     T_calc = T0 + (e * p)
-    OC = "%.4f" % (m - T_calc)
+    OC = "%.5f" % (m - T_calc)
 
     # determine the error of the O-C
-    OC_err = "%.4f" % sqrt(T0_err ** 2 + err ** 2)
+    OC_err = "%.5f" % sqrt(T0_err ** 2 + err ** 2)
 
     return e, OC, OC_err, T0, T0_err
 
@@ -501,3 +503,6 @@ def residuals(x, y, x_label, y_label, degree, model, xs):
 
 # data_fit('254037_OC.txt')
 # data_fit('896797_OC.txt')
+
+if __name__ == '__main__':
+    main()

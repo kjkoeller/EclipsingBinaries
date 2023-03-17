@@ -2,7 +2,7 @@
 [![PyPI version](https://badge.fury.io/py/EclipsingBinaries.svg)](https://badge.fury.io/py/EclipsingBinaries)
 [![GitHub release](https://img.shields.io/github/v/release/kjkoeller/Variable_Star_Research_Package)](https://github.com/kjkoeller/Variable_Star_Research_Package/releases/)
 ![GitHub](https://img.shields.io/github/license/kjkoeller/Variable_Star_Research_Package)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/9cd9a15e47ab4ed7b78071d096ea099d)](https://www.codacy.com/gh/kjkoeller/EclipsingBinaries/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=kjkoeller/EclipsingBinaries&amp;utm_campaign=Badge_Grade)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/9cd9a15e47ab4ed7b78071d096ea099d)](https://www.codacy.com/gh/kjkoeller/EclipsingBinaries/dashboard?utm_source=github.com\&utm_medium=referral\&utm_content=kjkoeller/EclipsingBinaries\&utm_campaign=Badge_Grade)
 [![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
 
 # Binary Star Research Package
@@ -18,7 +18,7 @@ To install type the following,
     pip install EclipsingBinaires
 
 Once installed, in the command line type the following:
-    
+
     EclipsingBinaries
 
 This will run the `menu.py` file and will initiate all other programs for usage.
@@ -27,6 +27,7 @@ Once installed using pip, you can just go to a command line and type `EclipsingB
 To check the version you have,
 
     pip show EclipsingBinaries
+
 this will show numerous things, but you want to look at the version and make sure it is up to date.
 
 If your version is not the most recent version then in order to update type the following,
@@ -92,10 +93,13 @@ Allows the user to create a color light curve for both B-V and V-R bands and gat
 This program automatiaclly reduces calibration images without the need for the user to do any sort of input except where the images are and where they will go. This program, at the moment, does technically reduce science images all the way with bias, dark, and flats, BUT is not fully tested to make sure it is comparable to IRAF legacy.
 
 ### OC\_plot.py
+
 Creates a plot of O-C data that differentiates between primary and secondary eclipses. This program also creates a residual plot from a given fit that the user enters. What this program does not do, is actually solve for Times of Minimum and only utlizes already found values from Dr. Robert C. Berrington's C program.
 
 ### tess\_data\_search.py
+
 Searches the TESS database for sector data for a specific TIC system. Lets the user know if there are no sectors available and if there are, automatically downloads the data to a specified folder that user designates via `tesscut.py`
 
 ### gaia.py
+
 Searches Gaia data for parameters for a given system entered by a user such as: parallax, distance, and effective temperature of the hotter star.

@@ -177,4 +177,4 @@ def getLightTravelTimes(ra, dec, time_to_correct):
     return ltt_bary, ltt_helio
 
 
-main("tess-s0016-4-3_211.037012_50.344067_88x88_astrocut.fits")
+# main("tess-s0016-4-3_211.037012_50.344067_88x88_astrocut.fits")

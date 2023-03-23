@@ -4,7 +4,7 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 03/17/2023
+Last Edited: 03/23/2023
 
 Paper is: https://ui.adsabs.harvard.edu/abs/2019ascl.soft05007B/abstract
 """
@@ -21,8 +21,8 @@ from astropy.coordinates import (
     SkyCoord,
     EarthLocation
     )
-# from apass import conversion # testing purposes
 from .apass import conversion
+# from apass import conversion  # testing purposes
 
 """
 Extract all images from a TESS pixel BINTABLE file
@@ -32,11 +32,11 @@ Detects and does not convert low quality
 """
 
 
-def main(search_file):
+def main(search_file, pathway):
     # print(str(search_file))
     infile = "tess" + str(search_file).split("tess")[1]  # gets the actual sector file
     # print(infile)
-    pathway = str(search_file).split("tess")[0]  # gets the file pathway
+    # pathway = str(search_file).split("tess")[0]  # gets the file pathway
     print("\nThe program will use the file pathway that you entered previously and will now ask for a prefix "
           "to each file name.")
 
@@ -49,7 +49,7 @@ def main(search_file):
     overwriteflag = True
 
     # Open the fits file readonly by default and create an input hdulist
-    inlist = pyfits.open(infile)
+    inlist = pyfits.open(pathway + "/" + infile)
     # Assign the input headers
 
     # Master
@@ -150,8 +150,8 @@ def main(search_file):
 
             # Write the fits file
 
-            outfile = pathway + outprefix + 'tess_%05d.fits' % (i,)
-            print(outfile)
+            outfile = pathway + "/" + outprefix + 'tess_%05d.fits' % (i,)
+            # print(outfile)
             outlist.writeto(r"" + outfile, overwrite=overwriteflag)
 
     print("Finished checking all images.\n")

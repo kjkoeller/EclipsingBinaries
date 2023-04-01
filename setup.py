@@ -45,7 +45,7 @@ setup(
     description="Binary Star Package for Ball State University's Astronomy Research Group",
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://github.com/kjkoeller/Binary_Star_Research_Package',
+    url='https://github.com/kjkoeller/EclipsingBinaries',
     author='Kyle Koeller',
 
     packages=find_packages(),
@@ -57,11 +57,13 @@ setup(
 
     license="MIT",
     classifiers=[
-        'Development Status :: 4 - Beta',
+        'Development Status :: 5 - Product',
         'Natural Language :: English',
         'Operating System :: OS Independent',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
     ],
     install_requires=[
         'astropy>=5.1.1',
@@ -77,6 +79,7 @@ setup(
         'numba>=0.56.3',
         'seaborn>=0.12.2',
         'pyia>=1.3',
+        'pytest>=7.2.2',
     ],
 
     include_package_data=True,

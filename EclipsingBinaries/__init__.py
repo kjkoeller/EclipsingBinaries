@@ -1,1 +1,1 @@
-__version__ = {{ variables.VERSION }}
+__version__ = ${{ env.VERSION }}

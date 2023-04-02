@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 03/16/2023
+Last Edited: 04/02/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -105,7 +105,7 @@ def TESS_OC(T0, To_err, period, df):
     # this for loop, loops through the min_strict list and calculates a variety of values
     for count, val in enumerate(min_strict):
         # call the function to calculate the O-C values
-        e, OC, OC_err, T0, To_err = calcualte_oc(val, min_strict_err[count], T0, To_err, period)
+        e, OC, OC_err, T0, To_err = calculate_oc(val, min_strict_err[count], T0, To_err, period)
 
         E_est.append(e)
         O_C.append(OC)
@@ -160,7 +160,7 @@ def BSUO(T0, To_err, period, db, dv, dr):
         average_err.append(err)
 
         # call the function to calculate the O-C values
-        e, OC, OC_err, T0, To_err = calcualte_oc(minimum, err, T0, To_err, period)
+        e, OC, OC_err, T0, To_err = calculate_oc(minimum, err, T0, To_err, period)
         E_est.append(e)
         O_C.append(OC)
         O_C_err.append(OC_err)
@@ -286,7 +286,7 @@ def arguments():
 
 
 @jit(forceobj=True)
-def calcualte_oc(m, err, T0, T0_err, p):
+def calculate_oc(m, err, T0, T0_err, p):
     """
     Calculates O-C values and errors and find the eclipse number for primary and secondary eclipses
     :param m: ToM

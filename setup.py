@@ -57,7 +57,7 @@ setup(
 
     license="MIT",
     classifiers=[
-        'Development Status :: 5 - Product',
+        'Development Status :: 5 - Production/Stable',
         'Natural Language :: English',
         'Operating System :: OS Independent',
         'Programming Language :: Python',

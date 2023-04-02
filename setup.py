@@ -79,9 +79,17 @@ setup(
         'numba>=0.56.3',
         'seaborn>=0.12.2',
         'pyia>=1.3',
-        'pytest>=7.2.2',
     ],
+    
+    extras_require={
+        'testing': [
+            'pytest>=7.2.2',
+        ],
+    },
 
     include_package_data=True,
+    package_data={
+        'my_package': ['tests/*'],
+    },
 
 )

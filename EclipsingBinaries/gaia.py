@@ -12,8 +12,8 @@ https://arxiv.org/pdf/2012.01916.pdf
 
 from pyia import GaiaData
 import pandas as pd
-# from .vseq_updated import splitter
-from vseq_updated import splitter  # testing
+from .vseq_updated import splitter
+# from vseq_updated import splitter  # testing
 import math as mt
 
 

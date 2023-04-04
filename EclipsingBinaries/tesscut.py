@@ -4,7 +4,7 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 03/23/2023
+Last Edited: 04/04/2023
 
 Paper is: https://ui.adsabs.harvard.edu/abs/2019ascl.soft05007B/abstract
 """
@@ -21,8 +21,8 @@ from astropy.coordinates import (
     SkyCoord,
     EarthLocation
     )
-from .apass import conversion
-# from apass import conversion  # testing purposes
+from .vseq_updated import conversion
+# from vseq_updated import conversion  # testing purposes
 
 """
 Extract all images from a TESS pixel BINTABLE file

@@ -19,8 +19,8 @@ import matplotlib.pyplot as plt
 import warnings
 from PyAstronomy import pyasl
 
-import .gaia as ga
-# import gaia as ga  # testing
+from .gaia import tess_mag as ga
+# from gaia import tess_mag as ga  # testing
 from .vseq_updated import isNan, new_list, conversion, splitter, decimal_limit
 # from vseq_updated import isNaN, conversion, splitter, decimal_limit  # testing
 
@@ -110,7 +110,7 @@ def cousins_r():
 
     ra_decimal = np.array(splitter(ra))
     dec_decimal = np.array(splitter(dec))
-    T_list, T_err_list = ga.tess_mag(ra_decimal, dec_decimal)
+    T_list, T_err_list = ga(ra_decimal, dec_decimal)
 
     # puts all columns into a dataframe for output
     final = pd.DataFrame({
@@ -283,7 +283,7 @@ def create_radec(df, ra, dec, T_list):
     ra_decimal = np.array(splitter(ra_list))
     dec_decimal = np.array(splitter(dec_list))
 
-    # T_list, _ = ga.tess_mag(ra_decimal, dec_decimal)
+    # T_list, _ = ga(ra_decimal, dec_decimal)
 
     next_ra = float(ra_decimal[0])
     next_dec = float(dec_decimal[0])

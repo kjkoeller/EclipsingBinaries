@@ -19,10 +19,10 @@ import matplotlib.pyplot as plt
 import warnings
 from PyAstronomy import pyasl
 
-# import .gaia as ga
-import gaia as ga  # testing
-# from .vseq_updated import isNan, new_list, conversion, splitter, decimal_limit
-from vseq_updated import isNaN, conversion, splitter, decimal_limit  # testing
+import .gaia as ga
+# import gaia as ga  # testing
+from .vseq_updated import isNan, new_list, conversion, splitter, decimal_limit
+# from vseq_updated import isNaN, conversion, splitter, decimal_limit  # testing
 
 
 # turn off this warning that just tells the user,

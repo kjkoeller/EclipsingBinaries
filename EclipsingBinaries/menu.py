@@ -3,7 +3,7 @@ The main program helps centralize all the other programs into one selection rout
 other programs.
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 03/07/2023
+Last Updated: 04/05/2023
 """
 
 """
@@ -24,7 +24,7 @@ from .OConnell import main as oconnell
 from .color_light_curve import color_gui as gui
 from .IRAF_Reduction import main as IRAF
 from .OC_plot import main as data_fit
-from .gaia import main as gaia
+from .gaia import target_star as gaia
 
 
 def main():

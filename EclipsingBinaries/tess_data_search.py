@@ -2,7 +2,7 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 03/23/2023
+Last Updated: 04/06/2023
 """
 
 # import required packages
@@ -12,6 +12,7 @@ import astropy.units as u
 from .tesscut import main as tCut
 # from tesscut import main as tCut  # testing purposes
 from os.path import exists
+import pandas as pd
 
 
 def main():
@@ -35,8 +36,46 @@ def main():
     if system_name.lower() == "close":
         exit()
 
+    dc = pd.read_csv("tess_ccd_info.txt", header=None, sep="\t", skiprows=[0])
+
+    gain = dc[6]  # gain for the individual camera/ccd
+    tess_camera = dc[0]  # camera number
+    tess_ccd = dc[1]  # ccd number
+    # slice = dc[2]  # could be used in the future
+
+    sector_camera = []
+    sector_ccd = []
+    for count, val in enumerate(sector_table["camera"]):
+        sector_camera.append(val)
+        sector_ccd.append(sector_table["ccd"][count])
+
+    # create a tuple form of the sector and TESS camera/ccd data
+    list_gain = []
+    a = list(zip(tess_camera, tess_ccd))  # tess cam and ccd's
+    b = list(zip(sector_camera, sector_ccd))  # sect cam and ccd's
+
+    # compare the TESS and sector information
+    for _, sect in enumerate(b):
+        for y, tess in enumerate(a):
+            if sect == tess:
+                list_gain.append(gain[y])
+
+    # splits up list_gain into lists by every 1, 2, 3, or 4th value since there are 4 slices for each camera and ccd
+    A = list_gain[::4]
+    B = list_gain[1::4]
+    C = list_gain[2::4]
+    D = list_gain[3::4]
+
+    # append the gain values to the sector table list
+    sector_table.add_column(A, name="A gain")
+    sector_table.add_column(B, name="B gain")
+    sector_table.add_column(C, name="C gain")
+    sector_table.add_column(D, name="D gain")
+
+    # sector_table.add_columns(["Gain"])
     # prints off the sector table to let the user know what sectors TESS has observed the object
     while True:
+        print("\n The read noise for the cameras is between 7-11 electrons/pixel.")
         print(sector_table)
         print("\nDo you want to download " + "\033[1m" + "\033[93m" + "ALL" + "\033[00m" +
               " the TESS data?")

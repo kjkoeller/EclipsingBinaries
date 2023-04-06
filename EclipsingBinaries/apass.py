@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 04/04/2023
+Last Updated: 04/05/2023
 """
 
 from astroquery.vizier import Vizier
@@ -21,7 +21,7 @@ from PyAstronomy import pyasl
 
 from .gaia import tess_mag as ga
 # from gaia import tess_mag as ga  # testing
-from .vseq_updated import isNaN, new_list, conversion, splitter, decimal_limit
+from .vseq_updated import isNaN, conversion, splitter, decimal_limit
 # from vseq_updated import isNaN, conversion, splitter, decimal_limit  # testing
 
 
@@ -158,6 +158,7 @@ def catalog_finder():
             30m = 30 arc-minutes
     """
     # 00:28:27.9684836736 78:57:42.657327180
+    # 13:27:50.4728234064 75:39:45.384765984
     ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
     dec_input = input("Enter the DEC of your system (DD:MM:SS.SSSS or -DD:MM:SS.SSSS): ")
     # ra_input = "00:28:27.9684836736"  # testing
@@ -301,20 +302,20 @@ def create_radec(df, ra, dec, T_list):
             if not angle:
                 # checks where the filter is B, V, R, T for output reasons
                 if filt == "B":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(b_mag[count]) + "\n"
+                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(b_mag[count]) + "\n"
                 elif filt == "V":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(v_mag[count]) + "\n"
+                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(v_mag[count]) + "\n"
                 elif filt == "R":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(r_mag[count]) + "\n"
+                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(r_mag[count]) + "\n"
                 elif filt == "T":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(T_list[count]) + "\n"
+                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(T_list[count]) + "\n"
 
             next_ra = float(ra_decimal[count])
             next_dec = float(dec_decimal[count])
 
         output = header + header2
         outputfile = input("Please enter an output file pathway " + "\033[1m" + "\033[93m" + "WITHOUT" + "\033[00m" +
-                           "the extension but with the file name for the " +
+                           " the extension but with the file name for the " +
                            filt + " filter RADEC file, for AIJ (i.e. C:\\folder1\\folder2\[filename]): ")
         file = open(outputfile + ".radec", "w")
         file.write(output)

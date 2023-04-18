@@ -1,0 +1,1 @@
+The purpose of these files is to help test the calibration creation of master images like bias, dark, and each filter flats.

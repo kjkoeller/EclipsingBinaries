@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 04/05/2023
+Last Edited: 04/17/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -15,9 +15,13 @@ import warnings
 from astropy import wcs
 from astropy.stats import mad_std
 from astropy import units as u
+from astropy.nddata import CCDData
+from astropy.io import fits
+from astropy.time import Time
+from astropy.coordinates import SkyCoord, EarthLocation
+
 import ccdproc as ccdp
 import numpy as np
-from astropy.nddata import CCDData
 import matplotlib.pyplot as plt
 
 # turn off this warning that just tells the user,
@@ -29,10 +33,11 @@ sigma_clip_low_thresh = None
 sigma_clip_high_thresh = 3
 sigclip = 5  # sigclip for cosmic ray removal
 rdnoise = 10.83  # * u.electron  # gathered from fits headers manually
-gain = 1.43  # * (u.electron / u.adu)  # gathered from fits headers manually
+gain = 1.43  # * u.electron / u.adu  # gathered from fits headers manually
 overwrite = True  # if the user wants to overwrite already existing files or not, by default it is set to True
-mem_limit = 450e6  # maximum memory limit 4.5 Gb is the recommended which is 450e6 (i.e. 8.0 Gb would be 800e6)
+mem_limit = 1600e6  # maximum memory limit 4.5 Gb is the recommended which is 450e6 (i.e. 8.0 Gb would be 800e6)
 dark_bool = "True"
+location = "bsuo"
 
 
 def main():
@@ -43,14 +48,15 @@ def main():
     """
 
     # allows the user to input where the raw images are and where the calibrated images go to
-    path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the raw images are or type "
-                 "the word 'Close' to leave: ")
+    # path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the raw images are or type "
+    #              "the word 'Close' to leave: ")
+    path = "C:\\Users\\Kyle\\OneDrive\\PhysicsAstro\\Astronomy\\Code\\IRAF\\Calibration2"
     if path.lower() == "close":
         exit()
     # path = "Calibration2"
-    calibrated = input("Please enter a file pathway for a new calibrated folder to not overwrite the original images "
-                       "(C:\\folder1\\folder2\\[calibrated]): ")
-
+    # calibrated = input("Please enter a file pathway for a new calibrated folder to not overwrite the original images "
+    #                    "(C:\\folder1\\folder2\\[calibrated]): ")
+    calibrated = "C:\\test"
     # checks whether the file paths from above are real
     while True:
         try:
@@ -62,7 +68,7 @@ def main():
             path = input("Please enter a file path or folder name (if this code is in the same main folder): ")
             calibrated = input("Please enter a name for a new calibrated folder to not overwrite the original images: ")
 
-    print("\nDo you want to load default options like gain and readnoise? The defaults are for BSUO")
+    print("\nDo you want to load default options like gain and read noise? The defaults are for BSUO")
     while True:
         default_ans = input("To load defaults type 'Default' otherwise type 'New' to enter values: ")
         if default_ans.lower() == "default":
@@ -71,7 +77,7 @@ def main():
             default()
             break
         else:
-            print("Please either enter 'Default' or 'New'\n.")
+            print("Please either enter 'Default' or 'New'.\n")
 
     calibrated_data.mkdir(exist_ok=True)
     files = ccdp.ImageFileCollection(images_path)
@@ -81,6 +87,7 @@ def main():
         master_dark = None
     else:
         master_dark = dark(files, zero, calibrated_data, overscan_region, trim_region)
+
     flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region)
     science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region)
 
@@ -97,6 +104,7 @@ def default():
     global rdnoise
     global sigclip
     global dark_bool
+    global location
 
     sigma_clip_low_thresh = (input("\nEnter a sigma clip low threshold, default is 'None': "))
     if sigma_clip_low_thresh.lower() == "none":
@@ -112,6 +120,7 @@ def default():
         dark_bool = False
     elif dark_bool.lower == "true":
         dark_bool = True
+    location = input("What is your observation location, default is bsuo (ctip, kpno, lapalma")
 
 
 def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_flat):
@@ -128,15 +137,26 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
     :param good_flat: master flat
     :return: depends on the stage of process, but will return a final image for each process
     """
-    # Subtract the overscan, ccd[columns, rows] I think?
+
+    # subtract overscan, trims image, and gain corrects
     if overscan_region.lower() == "none":
         pass
     else:
-        ccd = ccdp.subtract_overscan(ccd, fits_section=overscan_region, median=True, overscan_axis=1)
+        new_ccd = ccdp.ccd_process(ccd, oscan=overscan_region, trim=trim_region, gain=gain * u.electron / u.adu,
+                                   readnoise=rdnoise * u.electron, error=False)
+        # ccd = ccdp.subtract_overscan(ccd, fits_section=overscan_region, median=True, overscan_axis=None)
 
-    # Trim the overscan and gain correct the image
-    ccd = ccdp.trim_image(ccd, fits_section=trim_region)
-    new_ccd = ccdp.gain_correct(ccd, gain=gain)  # gain correct the image
+    # Subtract the overscan, ccd[columns, rows] I think?
+    # # Trim the overscan and gain correct the image
+    # while True:
+    #     try:
+    #         ccd = ccdp.trim_image(ccd, fits_section=trim_region)
+    #         break
+    #     except ValueError:
+    #         print("You have entered the wrong format for the Data Section. Please try again.\n")
+    #         trim_region = input("Please enter the data region. Example '[20:2060, 12:2057]': ")
+    #
+    # new_ccd = ccdp.gain_correct(ccd, gain=gain * u.electron / u.adu)  # gain correct the image
 
     # this if statement checks whether the input is bias, dark, flat, or science reduction
     # bias combining
@@ -144,12 +164,14 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
         return new_ccd
     # dark combining
     elif num == 1:
+        # print(new_ccd.unit, zero.unit)
         # Subtract bias
         sub_ccd = ccdp.subtract_bias(new_ccd, zero)
 
         return sub_ccd
     # flat combining
     elif num == 2:
+        # print(new_ccd.unit, zero.unit)
         # Subtract bias
         sub_ccd = ccdp.subtract_bias(new_ccd, zero)
 
@@ -163,8 +185,10 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
     # science calibration
     elif num == 3:
         # Subtract bias
-        sub_ccd = ccdp.subtract_bias(new_ccd, zero)
-
+        if location.lower() == "bsuo":
+            sub_ccd = ccdp.subtract_bias(new_ccd, zero)
+        else:
+            sub_ccd = ccdp.subtract_bias(new_ccd, zero)
         # Subtract the dark current
         if not dark_bool:
             reduced = sub_ccd
@@ -175,9 +199,9 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
         reduced = ccdp.flat_correct(ccd=reduced, flat=good_flat, min_value=1.0)
 
         # cosmic ray reject above 5 sigmas and gain_apply is set to false because it changes the units of the image
-        new_reduced = ccdp.cosmicray_lacosmic(reduced, gain_apply=False, readnoise=rdnoise, gain=gain, sigclip=sigclip)
+        # new_reduced = ccdp.cosmicray_lacosmic(reduced, gain_apply=False, readnoise=rdnoise, gain=gain, sigclip=sigclip)
 
-        return new_reduced
+        return reduced
 
 
 def bias(files, calibrated_data, path):
@@ -192,11 +216,11 @@ def bias(files, calibrated_data, path):
 
     # plots one of the flat image mean count values across all columns to find the trim and overscan regions
     print("\n\nThe flat image that you enter next should be inside the " + "\033[1m" + "\033[93m" + "FIRST" +
-          "\033[00m" + " folder that you entered above or this will crash.\n")
+          "\033[00m" + " folder that you entered above or this will crash.")
     while True:
         try:
             image = input(
-                "Please enter the name of one of the flat image to be looked at for overscan and trim regions: ")
+                "Please enter the name of one of the flat image to be looked at for overscan and data regions: ")
             cryo_path = Path(path)
             bias_1 = CCDData.read(cryo_path / image, unit='adu')
             break
@@ -205,14 +229,14 @@ def bias(files, calibrated_data, path):
                   "\033[1m" + "\033[93m" + "JUST" + "\033[00m" + " the file name only.\n")
     # bias_1 = CCDData.read(cryo_path / 'bias-0001.fits', unit='adu')  # testing
 
-    print("\n\nFor the overscan region, [rows, columns], and if you want all the columns then you want would enter, \n"
+    print("\n\nFor the overscan region, [columns, rows], and if you want all the columns then you want would enter, \n"
           "[1234:5678, 1234:5678] and this would say rows between those values and all the columns. \n"
-          "This would also work if you wanted all the rows ([: , 1234:5678]).\n")
+          "This would also work if you wanted all the columns ([: , 1234:5678]).\n")
     bias_plot(bias_1)
 
     overscan_region = input("Please enter the overscan region you determined from the figure.\n"
                             "Example '[2073:2115, :]' or if you do not have an overscan region enter 'None': ")
-    trim_region = input("Please enter the trim region. Example '[20:2060, 12:2057]': ")
+    trim_region = input("Please enter the data section. Example '[20:2060, 12:2057]': ")
     print()
 
     print("\nStarting overscan on bias.\n")
@@ -221,10 +245,11 @@ def bias(files, calibrated_data, path):
 
         list_of_words = file_name.split(".")
         new_fname = "{}.fits".format(list_of_words[0])
-        # new_fname = "bias_o_{}.fits".format(list_of_words[3])
-        # new_fname = "bias_o_{}.fits".format(list_of_words[1])  # testing
+
         # Save the result
         new_ccd.write(calibrated_data / new_fname, overwrite=overwrite)
+
+        add_header(calibrated_data, new_fname, "BIAS", "None", None, None, None)
 
         # output that an image is finished for updates to the user
         print("Finished overscan correction for " + str(new_fname))
@@ -239,11 +264,14 @@ def bias(files, calibrated_data, path):
                                  sigma_clip=True, sigma_clip_low_thresh=sigma_clip_low_thresh,
                                  sigma_clip_high_thresh=sigma_clip_high_thresh,
                                  sigma_clip_func=np.ma.median, signma_clip_dev_func=mad_std,
-                                 mem_limit=450e6
+                                 mem_limit=mem_limit
                                  )
 
+    fname = "zero.fits"
     combined_bias.meta['combined'] = True
-    combined_bias.write(calibrated_data / 'zero.fits', overwrite=overwrite)
+    combined_bias.write(calibrated_data / fname, overwrite=overwrite)
+
+    add_header(calibrated_data, fname, "BIAS", "None", None, None, None)
 
     print("\nFinished creating zero.fits\n")
 
@@ -289,9 +317,11 @@ def dark(files, zero, calibrated_path, overscan_region, trim_region):
         # new file name that uses the number from the original image
         list_of_words = file_name.split(".")
         new_fname = "{}.fits".format(list_of_words[0])
-        # new_fname = "dark_o_b_{}.fits".format(list_of_words[3])
+
         # Save the result
         sub_ccd.write(calibrated_path / new_fname, overwrite=overwrite)
+
+        add_header(calibrated_path, new_fname, "DARK", "None", None, None, None)
 
         print("Finished overscan correction and bias subtraction for " + str(new_fname))
 
@@ -306,11 +336,15 @@ def dark(files, zero, calibrated_path, overscan_region, trim_region):
                                  sigma_clip=True, sigma_clip_low_thresh=sigma_clip_low_thresh,
                                  sigma_clip_high_thresh=sigma_clip_high_thresh,
                                  sigma_clip_func=np.ma.median, signma_clip_dev_func=mad_std,
-                                 rdnoise=rdnoise, gain=gain, mem_limit=450e6
+                                 rdnoise=rdnoise * u.electron, gain=gain * u.electron / u.adu, mem_limit=mem_limit
                                  )
 
+    fname = "master_dark.fits"
     combined_dark.meta['combined'] = True
-    combined_dark.write(calibrated_path / 'master_dark.fits', overwrite=overwrite)
+    combined_dark.write(calibrated_path / fname, overwrite=overwrite)
+
+    add_header(calibrated_path, fname, "DARK", "None", None, None, None)
+
     print("Finished creating a master dark.\n")
     return combined_dark
 
@@ -328,7 +362,6 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
     :return: master flat files in each filter
     """
     print("Starting flat calibration.\n")
-    print()
 
     # calibrating and combining the flat frames
     for ccd, file_name in files.ccds(imagetyp='FLAT', return_fname=True, ccd_kwargs={'unit': 'adu'}):
@@ -337,11 +370,11 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
         # new file name with the filter and number from the original file
         list_of_words = file_name.split(".")
         new_fname = "{}.fits".format(list_of_words[0])
-        # new_fname = "flat_o_b_d_{}{}.fits".format(list_of_words[2], list_of_words[4])
-        # new_fname = "flat_o_b_d_{}_{}.fits".format(list_of_words[1], list_of_words[0])  # testing
 
         # Save the result
         final_ccd.write(calibrated_path / new_fname, overwrite=overwrite)
+
+        add_header(calibrated_path, new_fname, "FLAT", "None", None, None, None)
 
         print("Finished overscan correction, bias subtraction, and dark subtraction for " + str(new_fname))
 
@@ -354,10 +387,11 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
     for filt in flat_filters:
         to_combine = ifc.files_filtered(imagetyp="flat", filter=filt, include_path=True)
         combined_flats = ccdp.combine(to_combine,
-                                      method='average',
+                                      method='median',
                                       sigma_clip_high_thresh=sigma_clip_high_thresh,
                                       sigma_clip_func=np.ma.median, signma_clip_dev_func=mad_std,
-                                      rdnoise=rdnoise, gain=gain, mem_limit=450e6
+                                      rdnoise=rdnoise * u.electron, gain=gain * u.electron / u.adu,
+                                      mem_limit=mem_limit
                                       )
 
         combined_flats.meta['combined'] = True
@@ -365,11 +399,11 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
 
         combined_flats.write(calibrated_path / flat_file_name, overwrite=overwrite)
 
+        add_header(calibrated_path, flat_file_name, "FLAT", "None", None, None, None)
+
         print("Finished combining flat " + str(flat_file_name))
 
     print("\nFinished creating the master flats by filter.\n")
-
-    return combined_flats
 
 
 def science_images(files, calibrated_data, zero, combined_dark, trim_region, overscan_region):
@@ -382,20 +416,91 @@ def science_images(files, calibrated_data, zero, combined_dark, trim_region, ove
 
     print("Starting reduction of science images.\n")
 
-    for light, file_name in files.ccds(imagetyp=science_imagetyp, return_fname=True, ccd_kwargs={'unit': 'electron'}):
+    for light, file_name in files.ccds(imagetyp=science_imagetyp, return_fname=True, ccd_kwargs={'unit': 'adu'}):
         good_flat = combined_flats[light.header['filter']]
         reduced = reduce(light, overscan_region, trim_region, 3, zero, combined_dark, good_flat)
 
         list_of_words = file_name.split(".")
         new_fname = "{}.fits".format(list_of_words[0])
-        # new_fname = "{}_o_b_d_f_{}_{}_{}.fits".format(list_of_words[0], list_of_words[2], list_of_words[5], list_of_words[6].replace(".fts", ""))
-        # new_fname = "{}_o_b_d_{}.fits".format(list_of_words[0], list_of_words[1])  # testing
 
         all_reds.append(reduced)
         reduced.write(calibrated_data / new_fname, overwrite=overwrite)
 
+        hjd = light.header["JD-HELIO"]
+        ra = light.header["RA"]
+        dec = light.header["DEC"]
+
+        add_header(calibrated_data, new_fname, science_imagetyp, "None", hjd, ra, dec)
+
         print("Finished calibration of " + str(new_fname))
     print("\nFinished calibrating all science images.")
+
+
+def add_header(pathway, fname, imagetyp, filter_name, hjd, ra, dec):
+    """
+    Adds values to the header of each image reduced
+
+    :param dec: declination of target object
+    :param ra: right ascension of target object
+    :param hjd: time of mid-exposure for each image
+    :param pathway: pathway to the new file
+    :param fname: file name
+    :param imagetyp: image type (bias, flat, dark, light)
+    :param filter_name: filter type (B, V, R)
+    :return: None
+    """
+    # bias_image = get_pkg_data_filename(pathway + "\\" + fname)
+    image_name = pathway / fname
+    fits.setval(image_name, "GAIN", value=gain, comment="Units of e-/ADU")
+    fits.setval(image_name, "RDNOISE", value=rdnoise, comment="UNits of e-")
+    fits.setval(image_name, "OBSERVAT", value=location, comment="Obs. loc.")
+    fits.setval(image_name, "IMAGETYP", value=imagetyp, comment="Image type")
+    # BIASSEC
+    # DATASEC
+    # EPOCH
+    # fits.setval(bias_image, "FILTER", value=filter_name)
+    if imagetyp == "LIGHT":
+        bjd = BJD_TDB(hjd, location, ra, dec)
+        fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
+
+
+def BJD_TDB(hjd, loc, ra, dec):
+    """
+    Converts HJD to BJD_TDB
+
+    :param ra: right ascension of target object
+    :param dec: declination of target object
+    :param hjd: HJD time for the mid-exposure image
+    :param loc: location of the observations
+    :return: Newly calculated BJD_TDB that is light time corrected
+    """
+    # Define the HJD time in JD format
+    hjd = hjd * u.day
+
+    # Convert HJD to TDB
+    if loc.lower() == "ctio" or loc.lower() == "kpno" or loc.lower() == "lapalma":
+        t = Time(hjd.value, format='jd', scale='utc', location=loc)
+        t = t.tdb
+        # obs_location = EarthLocation.from_geodetic(obs_longitude, obs_latitude, obs_height)
+    elif loc.lower() == "bsuo":
+        # Define the location of the Ball State University Observatory (BSUO)
+        obs_latitude = 40.199910 * u.deg  # lat of the BSUO site
+        obs_longitude = -85.411513 * u.deg  # long of the BSUO site
+        obs_height = 292 * u.m  # height above sea level of the BSUO site
+        obs_location = EarthLocation.from_geodetic(obs_longitude, obs_latitude, obs_height)
+        t = Time(hjd, format='jd', scale='utc', location=obs_location)
+        t = t.tdb
+    else:
+        pass
+
+    # Compute the light travel time from the target to the observer
+    coord = SkyCoord(ra=ra, dec=dec, unit=(u.h, u.deg), obstime=t, frame='icrs')
+
+    ltt = Time.light_travel_time(coord, obs_location, kind='barycentric')
+    bjd_corr = t + ltt
+
+    # bjd_tdb_time = t
+    return bjd_corr
 
 
 if __name__ == '__main__':

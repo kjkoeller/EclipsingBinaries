@@ -48,7 +48,7 @@ setup(
     url='https://github.com/kjkoeller/EclipsingBinaries',
     author='Kyle Koeller',
 
-    packages=find_packages(),
+    # packages=find_packages(),
 
     entry_points={'console_scripts': [
         'EclipsingBinaries = EclipsingBinaries.menu:main'
@@ -88,6 +88,9 @@ setup(
     },
 
     include_package_data=True,
+    packages=['EclipsingBinaries'],
+    package_dir=['EclipsingBinaries': 'src/EclipsingBinaries'],
+    
     package_data={
         'EclipsingBinaries': ['tests/*'],
     },

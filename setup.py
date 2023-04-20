@@ -93,6 +93,7 @@ setup(
     
     package_data={
         'EclipsingBinaries': ['tests/*'],
+        'EclipsingBinaries': ['examples/*'],
     },
 
 )

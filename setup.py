@@ -89,7 +89,7 @@ setup(
 
     include_package_data=True,
     packages=['EclipsingBinaries'],
-    package_dir={'EclipsingBinaries': 'src/EclipsingBinaries'},
+    package_dir={'EclipsingBinaries': 'EclipsingBinaries'},
     package_data={
         'EclipsingBinaries': ['tests/*'],
         'EclipsingBinaries': ['examples/*'],

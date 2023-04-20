@@ -49,13 +49,13 @@ def main():
 
     # allows the user to input where the raw images are and where the calibrated images go to
     path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the raw images are or type "
-                "the word 'Close' to leave: ")
+                 "the word 'Close' to leave: ")
     # path = "C:\\Users\\Kyle\\OneDrive\\PhysicsAstro\\Astronomy\\Code\\IRAF\\Calibration2"
     if path.lower() == "close":
         exit()
     # path = "Calibration2"
     calibrated = input("Please enter a file pathway for a new calibrated folder to not overwrite the original images "
-                       "(C:\\folder1\\folder2\\[calibrated]): ")
+                        "(C:\\folder1\\folder2\\[calibrated]): ")
     # calibrated = "C:\\test"
     # checks whether the file paths from above are real
     while True:

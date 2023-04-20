@@ -2,17 +2,18 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 04/06/2023
+Last Updated: 04/20/2023
 """
 
 # import required packages
 import astroquery.exceptions
 from astroquery.mast import Tesscut
-import astropy.units as u
-from .tesscut import main as tCut
-# from tesscut import main as tCut  # testing purposes
+# from .tesscut import main as tCut
+from tesscut import main as tCut  # testing purposes
 from os.path import exists
 import pandas as pd
+
+from astropy import units as u
 
 
 def main():
@@ -94,8 +95,8 @@ def main():
             sector_num = int(input("Which Sector would you like to download: "))
             download(system_name, sector_num)
         elif download_ans.lower() == 'close':
-            print("The program will not exit.\n")
-            exit()
+            print("The program will now exit.\n")
+            break
         else:
             print("\nPlease enter 'Yes' or 'No' only.\n")
 

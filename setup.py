@@ -91,8 +91,6 @@ setup(
     packages=['EclipsingBinaries'],
     package_dir={'EclipsingBinaries': 'EclipsingBinaries'},
     package_data={
-        'EclipsingBinaries': ['tests/*'],
-        'EclipsingBinaries': ['examples/*'],
+        'EclipsingBinaries': ['tests/*', 'examples/*']
     },
-
 )

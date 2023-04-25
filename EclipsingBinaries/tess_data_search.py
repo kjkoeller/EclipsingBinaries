@@ -8,8 +8,8 @@ Last Updated: 04/20/2023
 # import required packages
 import astroquery.exceptions
 from astroquery.mast import Tesscut
-# from .tesscut import main as tCut
-from tesscut import main as tCut  # testing purposes
+from .tesscut import main as tCut
+# from tesscut import main as tCut  # testing purposes
 from os.path import exists
 import pandas as pd
 

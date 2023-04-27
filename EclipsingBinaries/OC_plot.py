@@ -1,12 +1,12 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 04/02/2023
+Last Edited: 04/27/2023
 
 This calculates O-C values and produces an O-C plot.
 """
 
-from math import sqrt
+from math import sqrt, floor
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -303,7 +303,7 @@ def calculate_oc(m, err, T0, T0_err, p):
     # get the exact E value
     E_act = (m - T0) / p
     # estimate for the primary or secondary eclipse by rounding to the nearest 0.5
-    e = round(E_act * 2) / 2
+    e = floor(E_act * 2) / 2
     # caluclate the calculated ToM and find the O-C value
     T_calc = T0 + (e * p)
     OC = "%.5f" % (m - T_calc)

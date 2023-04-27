@@ -2,7 +2,7 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 04/20/2023
+Last Updated: 04/26/2023
 """
 
 # import required packages
@@ -14,6 +14,7 @@ from os.path import exists
 import pandas as pd
 
 from astropy import units as u
+import pkg_resources
 
 
 def main():
@@ -37,7 +38,8 @@ def main():
     if system_name.lower() == "close":
         exit()
 
-    dc = pd.read_csv("tess_ccd_info.txt", header=None, sep="\t", skiprows=[0])
+    filename = pkg_resources.resource_filename(__name__, 'tess_ccd_info.txt')
+    dc = pd.read_csv(filename, header=None, sep="\t", skiprows=[0])
 
     gain = dc[6]  # gain for the individual camera/ccd
     tess_camera = dc[0]  # camera number

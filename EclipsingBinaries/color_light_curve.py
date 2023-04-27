@@ -609,7 +609,7 @@ def color_gui(developer=False):
 # =======================
 
 # If you want to use the gui
-color_gui(False)
+# color_gui(False)
 
 # or just the function itself
 # color_plot('Bfile','Vfile',Epoch,period)

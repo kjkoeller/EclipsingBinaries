@@ -4,7 +4,7 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 03/16/2022
+Last Edited: 04/27/2022
 Editor: Kyle Koeller
 """
 
@@ -136,9 +136,11 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     B = [aBphase, aB_mag, aB_interp_mag]
     V = [aVphase, aV_mag]
 
-    print('T =', vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1)))
+    # print('T =', vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1)))
 
-    return B_V, B, V, quadcolor, colorerr
+    temp = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1))
+
+    return B_V, B, V, quadcolor, colorerr, temp
 
 
 # use this function below
@@ -316,7 +318,7 @@ def color_gui(developer=False):
     # disp=3
     # T=Text(root,height=disp,width=25)
     # T.grid(row=0,column=1)
-    Intro = Label(root, text='Color Light Curve - gui\nversion 0.2.1 (2/19/21)\nby Alec Neal\n')
+    Intro = Label(root, text='Color Light Curve - gui\nversion 0.2.2 (2/19/21)\nby Alec Neal\n')
     Intro.grid(row=0, column=0, columnspan=2)
     # Intro.config(font=('Arial',12))
     # T.insert(END,'Hello world!')
@@ -417,8 +419,12 @@ def color_gui(developer=False):
     temp = Label(root, text='')
     BVL = Label(root, text='')
     BVL.grid(row=len(entries) + 6, column=0, columnspan=2)
+    BVL_temp = Label(root, text='')
+    BVL_temp.grid(row=len(entries) + 7, column=0, columnspan=2)
     VRL = Label(root, text='')
-    VRL.grid(row=len(entries) + 5, column=0, columnspan=2)
+    VRL_temp = Label(root, text='')
+    VRL.grid(row=len(entries) + 4, column=0, columnspan=2)
+    VRL_temp.grid(row=len(entries) + 5, column=0, columnspan=2)
     # B2=gui.Field(root,'B file',2,0)
     fs = 14
 
@@ -426,7 +432,7 @@ def color_gui(developer=False):
         """
         Calls to create the color plot after clicking the plot button.
 
-        This creates plots for both the B-V and the V-R
+        This creates plots for both the B-V and the V-R2458403.58763
         """
         B_V = subtract_LC(Bfile=getit(B), Vfile=getit(V), Epoch=float(getit(Epoch)), period=float(getit(Period)),
                           max_tol=float(getit(MaxT)), lower_lim=float(getit(LL)))
@@ -436,6 +442,7 @@ def color_gui(developer=False):
         Vphase, Vmag = B_V[2][:2:]
         aB_minus_V = B_V[0][3]
         quadcolor, colorerr = B_V[3:5:]
+        eff_temp = B_V[5]
         if getit(R) == '':
             """
             Checks whether the user has entered a R band text file
@@ -470,6 +477,7 @@ def color_gui(developer=False):
             # quadcolor,colorerr=B_V[3:5:]
             # bv.axhline(quadcolor,color='gray',linewidth=None)
             VRL.config(text='', bg=None, relief=None, padx=0, pady=0, borderwidth=0)
+            VRL_temp.config(text='', bg=None, relief=None, padx=0, pady=0, borderwidth=0)
             # canvas.draw()
             # canvas.get_tk_widget().grid(row=0,column=3,rowspan=100,padx=5)
             # if getit(Save) == 'True':
@@ -483,6 +491,7 @@ def color_gui(developer=False):
             Rphase, Rmag = V_R[2][:2:]
             V_interp_mag = V_R[1][2]
             aV_minus_R = V_R[0][3]
+            VR_temp = V_R[5]
             fig = Figure(figsize=(7, 9), dpi=90, tight_layout=True)
             # canvas = FigureCanvasTkAgg(fig, master=root)
             # canvas.destroy()
@@ -521,6 +530,9 @@ def color_gui(developer=False):
 
             VRL.config(text='(V-R) = ' + str(round(VRc, 6)) + ' +/- ' + str(round(VRerr, 6)), bg='white',
                        relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
+            VRL_temp.config(text='T_{\\rm eff, V-R} = ' + str(VR_temp), bg='white', relief='solid', borderwidth=1,
+                            padx=5,
+                            pady=5, font=('None', 14))
             show_color = False
             if show_color:
                 # vr.annotate(r'$V-R_{\rm C}='+str(round(VRc,4))+'\pm'+str(round(VRerr,4))+'$',xy=(0.25,vr.get_ylim()[-1]),ha='center')
@@ -552,14 +564,24 @@ def color_gui(developer=False):
             # if getit(Save) == 'True':
             # plt.savefig(getit(Out),bbox_inches='tight')
 
-        temp.config(text='(B-V) = ' + str(round(quadcolor, 6)) + ' +/- ' + str(round(colorerr, 6)), bg='white',
-                   relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
+        # temp.config(text='(B-V) = ' + str(round(quadcolor, 6)) + ' +/- ' + str(round(colorerr, 6)), bg='white',
+        #            relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
 
         BVL.config(text='(B-V) = ' + str(round(quadcolor, 6)) + ' +/- ' + str(round(colorerr, 6)), bg='white',
                    relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
+        BVL_temp.config(text='T_{\\rm eff, B-V} = ' + str(eff_temp), bg='white', relief='solid', borderwidth=1, padx=5,
+                        pady=5, font=('None', 14))
         CreateToolTip(BVL, text=autowrap(
             'These values are calculated using an average of the (X-Y) values within phase 0.075 of quadrature (phase = +/- 0.25).'
             ' The given error is the standard\ndeviation of these values.', 50))
+
+        CreateToolTip(VRL, text=autowrap(
+            'These values are calculated using an average of the (X-Y) values within phase 0.075 of quadrature (phase = +/- 0.25).'
+            ' The given error is the standard\ndeviation of these values.', 50))
+
+        CreateToolTip(VRL_temp, text=autowrap('This value has not been tested and should not be used without verifying'
+                                              ' by another method. Use the B-V temperature as the true effective '
+                                              'temperature', 50))
 
         # =============================
         canvas = FigureCanvasTkAgg(fig, master=root)  # A tk.DrawingArea.
@@ -587,7 +609,7 @@ def color_gui(developer=False):
 # =======================
 
 # If you want to use the gui
-# color_gui(False)
+color_gui(False)
 
 # or just the function itself
 # color_plot('Bfile','Vfile',Epoch,period)

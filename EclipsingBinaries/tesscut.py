@@ -4,7 +4,7 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 04/04/2023
+Last Edited: 05/07/2023
 
 Paper is: https://ui.adsabs.harvard.edu/abs/2019ascl.soft05007B/abstract
 """
@@ -14,15 +14,12 @@ Paper is: https://ui.adsabs.harvard.edu/abs/2019ascl.soft05007B/abstract
 import numpy as np
 import astropy.io.fits as pyfits
 from time import gmtime, strftime  # for utc
-from astropy.time import Time
-# from PyAstronomy import pyasl
-import astropy.units as u
-from astropy.coordinates import (
-    SkyCoord,
-    EarthLocation
-    )
 from .vseq_updated import conversion
 # from vseq_updated import conversion  # testing purposes
+
+from astropy.time import Time
+from astropy.coordinates import EarthLocation, SkyCoord
+from astropy import units as u
 
 """
 Extract all images from a TESS pixel BINTABLE file
@@ -49,7 +46,7 @@ def main(search_file, pathway):
     overwriteflag = True
 
     # Open the fits file readonly by default and create an input hdulist
-    inlist = pyfits.open(pathway + "/" + infile)
+    inlist = pyfits.open(pathway + "\\" + infile)
     # Assign the input headers
 
     # Master
@@ -113,24 +110,11 @@ def main(search_file, pathway):
             bjd = bjd0 + bjd1
             outimage = inimage
 
-            # get RA and DEC
             split = infile.split("_")
-            ra = conversion([str(float(split[1])/15)])
-            dec = conversion([split[2]])
-            # print(ra, dec)
+            ra = conversion([str(float(split[1]) / 15)])[0]
+            dec = conversion([split[2]])[0]
 
-            # gather light time travel effects
-            location = EarthLocation.of_site("greenwich")
-            time_inp = Time(bjd, format='jd', scale='tdb', location=location)
-            ltt_bary, _ = getLightTravelTimes(ra[0], dec[0], time_inp)
-            BJD_ltt = Time(time_inp.tdb - ltt_bary, format='jd', scale='tdb', location=location)
-
-            # convert to HJD from the BJD above
-            _, ltt_helio = getLightTravelTimes(ra[0], dec[0], BJD_ltt)
-            HJD_ltt = (BJD_ltt + ltt_helio).value
-
-            # Create the fits object for this image using the header of the bintable image
-            # Use float32 for output type
+            hjd = bary_to_helio(ra, dec, bjd, "greenwich")
 
             outlist = pyfits.PrimaryHDU(outimage.astype('float32'), newhdr)
 
@@ -143,8 +127,8 @@ def main(search_file, pathway):
 
             outhdr = outlist.header
             outhdr['LST_UPDT'] = file_time
-            outhdr['BJD_TDb'] = bjd
-            outhdr['HJD'] = HJD_ltt
+            outhdr['BJD_TDB'] = bjd
+            outhdr['HJD'] = hjd.value
             outhdr['COMMENT'] = tess_ffi
             # outhdr['history'] = 'Image from ' + infile
 
@@ -159,22 +143,17 @@ def main(search_file, pathway):
     inlist.close()
 
 
-def getLightTravelTimes(ra, dec, time_to_correct):
-    """
-    Get the light travel times to the barycenter
+def bary_to_helio(ra, dec, bjd, obs_name):
+    bary = Time(bjd, scale='tdb', format='jd')
+    obs = EarthLocation.of_site(obs_name)
+    star = SkyCoord(ra, dec, unit=(u.hour, u.deg))
+    ltt = bary.light_travel_time(star, 'barycentric', location=obs)
+    guess = bary - ltt
+    delta = (guess + guess.light_travel_time(star, 'barycentric', obs)).jd - bary.jd
+    guess -= delta * u.d
 
-    ra : sThe Right Ascension of the target in hourangle
-    dec : The Declination of the target in degrees
-    time_to_correct : The time of observation to correct. The astropy.Time
-        object must have been initialised with an EarthLocation
-    Returns
-    -------
-    ltt_bary : The light travel time to the barycentre
-    """
-    target = SkyCoord(ra, dec, unit=(u.hourangle, u.deg), frame='icrs')
-    ltt_bary = time_to_correct.light_travel_time(target)
-    ltt_helio = time_to_correct.light_travel_time(target, 'heliocentric')
-    return ltt_bary, ltt_helio
+    ltt = guess.light_travel_time(star, 'heliocentric', obs)
+    return guess.utc + ltt
 
 
-# main("tess-s0016-4-3_211.037012_50.344067_88x88_astrocut.fits")
+# main("tess-s0059-3-1_7.116535_78.961849_88x88_astrocut.fits", "C:\\New folder")

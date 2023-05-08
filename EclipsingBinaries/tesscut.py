@@ -20,7 +20,6 @@ from .vseq_updated import conversion
 from astropy.time import Time
 from astropy.coordinates import EarthLocation, SkyCoord
 from astropy import units as u
-import astropy.coordinates as coord
 
 """
 Extract all images from a TESS pixel BINTABLE file

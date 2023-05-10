@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 04/17/2023
+Last Edited: 05/09/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -50,12 +50,12 @@ def main():
     # allows the user to input where the raw images are and where the calibrated images go to
     path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the raw images are or type "
                  "the word 'Close' to leave: ")
-    # path = "C:\\Users\\Kyle\\OneDrive\\PhysicsAstro\\Astronomy\\Code\\IRAF\\Calibration2"
+    # path = "C:\\Users\\Kyle\\OneDrive\\PhysicsAstro\\Astronomy\\Code\\IRAF\\Calibration"
     if path.lower() == "close":
         exit()
     # path = "Calibration2"
     calibrated = input("Please enter a file pathway for a new calibrated folder to not overwrite the original images "
-                        "(C:\\folder1\\folder2\\[calibrated]): ")
+                       "(C:\\folder1\\folder2\\[calibrated]): ")
     # calibrated = "C:\\test"
     # checks whether the file paths from above are real
     while True:
@@ -70,8 +70,8 @@ def main():
 
     print("\nDo you want to load default options like gain and read noise? The defaults are for BSUO")
     while True:
-        # default_ans = input("To load defaults type 'Default' otherwise type 'New' to enter values: ")
-        default_ans = "default"
+        default_ans = input("To load defaults type 'Default' otherwise type 'New' to enter values: ")
+        # default_ans = "default"
         if default_ans.lower() == "default":
             break
         elif default_ans.lower() == "new":
@@ -143,21 +143,12 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
     if overscan_region.lower() == "none":
         pass
     else:
-        new_ccd = ccdp.ccd_process(ccd, oscan=overscan_region, trim=trim_region, gain=gain * u.electron / u.adu,
-                                   readnoise=rdnoise * u.electron, error=False)
-        # ccd = ccdp.subtract_overscan(ccd, fits_section=overscan_region, median=True, overscan_axis=None)
+        # new_ccd = ccdp.ccd_process(ccd, fits_section=overscan_region, trim=trim_region, gain=gain * u.electron / u.adu,
+        #                            readnoise=rdnoise * u.electron, error=False)
+        ccd = ccdp.subtract_overscan(ccd, fits_section=overscan_region, median=True, overscan_axis=None)
 
-    # Subtract the overscan, ccd[columns, rows] I think?
-    # # Trim the overscan and gain correct the image
-    # while True:
-    #     try:
-    #         ccd = ccdp.trim_image(ccd, fits_section=trim_region)
-    #         break
-    #     except ValueError:
-    #         print("You have entered the wrong format for the Data Section. Please try again.\n")
-    #         trim_region = input("Please enter the data region. Example '[20:2060, 12:2057]': ")
-    #
-    # new_ccd = ccdp.gain_correct(ccd, gain=gain * u.electron / u.adu)  # gain correct the image
+    trim_ccd = ccdp.trim_image(ccd, fits_section=trim_region)
+    new_ccd = ccdp.gain_correct(trim_ccd, gain=gain * u.electron / u.adu)  # gain correct the image
 
     # this if statement checks whether the input is bias, dark, flat, or science reduction
     # bias combining
@@ -220,8 +211,9 @@ def bias(files, calibrated_data, path):
           "\033[00m" + " folder that you entered above or this will crash.")
     while True:
         try:
-            image = input(
-                "Please enter the name of one of the flat image to be looked at for overscan and data regions: ")
+            # image = input(
+            #     "Please enter the name of one of the flat image to be looked at for overscan and data regions: ")
+            image = "Flat-Empty-B-Bin2-001-NoGEM.fts"
             cryo_path = Path(path)
             bias_1 = CCDData.read(cryo_path / image, unit='adu')
             break
@@ -250,7 +242,7 @@ def bias(files, calibrated_data, path):
         # Save the result
         new_ccd.write(calibrated_data / new_fname, overwrite=overwrite)
 
-        add_header(calibrated_data, new_fname, "BIAS", "None", None, None, None)
+        add_header(calibrated_data, new_fname, "BIAS", "None", None, None, None, trim_region, overscan_region)
 
         # output that an image is finished for updates to the user
         print("Finished overscan correction for " + str(new_fname))
@@ -272,7 +264,7 @@ def bias(files, calibrated_data, path):
     combined_bias.meta['combined'] = True
     combined_bias.write(calibrated_data / fname, overwrite=overwrite)
 
-    add_header(calibrated_data, fname, "BIAS", "None", None, None, None)
+    add_header(calibrated_data, fname, "BIAS", "None", None, None, None, trim_region, overscan_region)
 
     print("\nFinished creating zero.fits\n")
 
@@ -296,7 +288,7 @@ def bias_plot(ccd):
     plt.xlabel('pixel number')
     plt.ylabel('Counts')
     # plt.title('Count Values for Row 1000')
-    plt.show()
+    # plt.show()
 
 
 def dark(files, zero, calibrated_path, overscan_region, trim_region):
@@ -322,7 +314,7 @@ def dark(files, zero, calibrated_path, overscan_region, trim_region):
         # Save the result
         sub_ccd.write(calibrated_path / new_fname, overwrite=overwrite)
 
-        add_header(calibrated_path, new_fname, "DARK", "None", None, None, None)
+        add_header(calibrated_path, new_fname, "DARK", "None", None, None, None, trim_region, overscan_region)
 
         print("Finished overscan correction and bias subtraction for " + str(new_fname))
 
@@ -344,7 +336,7 @@ def dark(files, zero, calibrated_path, overscan_region, trim_region):
     combined_dark.meta['combined'] = True
     combined_dark.write(calibrated_path / fname, overwrite=overwrite)
 
-    add_header(calibrated_path, fname, "DARK", "None", None, None, None)
+    add_header(calibrated_path, fname, "DARK", "None", None, None, None, trim_region, overscan_region)
 
     print("Finished creating a master dark.\n")
     return combined_dark
@@ -375,7 +367,7 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
         # Save the result
         final_ccd.write(calibrated_path / new_fname, overwrite=overwrite)
 
-        add_header(calibrated_path, new_fname, "FLAT", "None", None, None, None)
+        add_header(calibrated_path, new_fname, "FLAT", "None", None, None, None, trim_region, overscan_region)
 
         print("Finished overscan correction, bias subtraction, and dark subtraction for " + str(new_fname))
 
@@ -400,7 +392,7 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
 
         combined_flats.write(calibrated_path / flat_file_name, overwrite=overwrite)
 
-        add_header(calibrated_path, flat_file_name, "FLAT", "None", None, None, None)
+        add_header(calibrated_path, flat_file_name, "FLAT", "None", None, None, None, trim_region, overscan_region)
 
         print("Finished combining flat " + str(flat_file_name))
 
@@ -431,16 +423,18 @@ def science_images(files, calibrated_data, zero, combined_dark, trim_region, ove
         ra = light.header["RA"]
         dec = light.header["DEC"]
 
-        add_header(calibrated_data, new_fname, science_imagetyp, "None", hjd, ra, dec)
+        add_header(calibrated_data, new_fname, science_imagetyp, "None", hjd, ra, dec, trim_region, overscan_region)
 
         print("Finished calibration of " + str(new_fname))
     print("\nFinished calibrating all science images.")
 
 
-def add_header(pathway, fname, imagetyp, filter_name, hjd, ra, dec):
+def add_header(pathway, fname, imagetyp, filter_name, hjd, ra, dec, trim_region, overscan_region):
     """
     Adds values to the header of each image reduced
 
+    :param overscan_region: BIASSEC for the header
+    :param trim_region: DATASEC for the header
     :param dec: declination of target object
     :param ra: right ascension of target object
     :param hjd: time of mid-exposure for each image
@@ -454,15 +448,22 @@ def add_header(pathway, fname, imagetyp, filter_name, hjd, ra, dec):
     image_name = pathway / fname
     fits.setval(image_name, "GAIN", value=gain, comment="Units of e-/ADU")
     fits.setval(image_name, "RDNOISE", value=rdnoise, comment="UNits of e-")
-    fits.setval(image_name, "OBSERVAT", value=location, comment="Obs. loc.")
+    fits.setval(image_name, "OBSERVAT", value=location, comment="Obs. Loc.")
     fits.setval(image_name, "IMAGETYP", value=imagetyp, comment="Image type")
-    # BIASSEC
-    # DATASEC
-    # EPOCH
+    fits.setval(image_name, "DATASEC", value=trim_region, comment="Trim data section")
+    fits.setval(image_name, "BIASSEC", value=overscan_region, comment="Overscan section")
+    fits.setval(image_name, "EPOCH", value="J2000.0")
     # fits.setval(bias_image, "FILTER", value=filter_name)
     if imagetyp == "LIGHT":
-        bjd = BJD_TDB(hjd, location, ra, dec)
-        fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
+        if location.lower() == "bsuo":
+            # location of BSUO
+            obs_location = {
+                'lon': -85.411896,  # degrees
+                'lat': 40.199879,  # degrees
+                'elevation': 0.2873  # kilometers
+            }
+            bjd = BJD_TDB(hjd, obs_location, ra, dec)
+            fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
 
 
 def BJD_TDB(hjd, loc, ra, dec):
@@ -475,33 +476,18 @@ def BJD_TDB(hjd, loc, ra, dec):
     :param loc: location of the observations
     :return: Newly calculated BJD_TDB that is light time corrected
     """
-    # Define the HJD time in JD format
-    hjd = hjd * u.day
+    helio = Time(hjd, scale='utc', format='jd')
+    obs = EarthLocation.from_geodetic(loc["lon"], loc["lat"], loc["elevation"])
+    star = SkyCoord(ra, dec, unit=(u.hour, u.deg))
+    ltt = helio.light_travel_time(star, 'heliocentric', location=obs)
+    guess = helio - ltt
+    # if we assume guess is correct - how far is heliocentric time away from true value?
+    delta = (guess + guess.light_travel_time(star, 'heliocentric', obs)).jd - helio.jd
+    # apply this correction
+    guess -= delta * u.d
 
-    # Convert HJD to TDB
-    if loc.lower() == "ctio" or loc.lower() == "kpno" or loc.lower() == "lapalma":
-        t = Time(hjd.value, format='jd', scale='utc', location=loc)
-        t = t.tdb
-        # obs_location = EarthLocation.from_geodetic(obs_longitude, obs_latitude, obs_height)
-    elif loc.lower() == "bsuo":
-        # Define the location of the Ball State University Observatory (BSUO)
-        obs_latitude = 40.199910 * u.deg  # lat of the BSUO site
-        obs_longitude = -85.411513 * u.deg  # long of the BSUO site
-        obs_height = 292 * u.m  # height above sea level of the BSUO site
-        obs_location = EarthLocation.from_geodetic(obs_longitude, obs_latitude, obs_height)
-        t = Time(hjd, format='jd', scale='utc', location=obs_location)
-        t = t.tdb
-    else:
-        pass
-
-    # Compute the light travel time from the target to the observer
-    coord = SkyCoord(ra=ra, dec=dec, unit=(u.h, u.deg), obstime=t, frame='icrs')
-
-    ltt = Time.light_travel_time(coord, obs_location, kind='barycentric')
-    bjd_corr = t + ltt
-
-    # bjd_tdb_time = t
-    return bjd_corr
+    ltt = guess.light_travel_time(star, 'barycentric', obs)
+    return guess.tdb + ltt
 
 
 if __name__ == '__main__':

@@ -7,7 +7,13 @@
 
 # Binary Star Research Package
 
-A Python project for Ball State University's Variable Star Research Group. Check the wiki (https://github.com/kjkoeller/EclipsingBinaries/wiki) for more detailed descriptions than the ones below and for usage details of each program.
+A Python project for Ball State University's Variable Star Research Group. Check the [Wiki](https://github.com/kjkoeller/EclipsingBinaries/wiki) for more detailed descriptions than the ones below and for usage details of each program.
+
+***
+
+## Sponsor
+
+If you would like to sponsor this project go [here](https://github.com/sponsors/kjkoeller) and click the sponsor button.
 
 ***
 

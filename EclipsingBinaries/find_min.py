@@ -4,7 +4,7 @@ Created:  07/03/2021
 Original Author: Alec Neal
 
 Last Edits Done By: Kyle Koeller
-Last Edited: 03/03/2023
+Last Edited: 05/14/2023
 """
 
 # import vseq  # testing purposes
@@ -156,6 +156,7 @@ def KvW(fracHJD, flux, discard=0.1, resolution=100, para_range=None, plot=False,
     Z /= 2
     if need_error:
         if Z <= 1:
+            # print(Z)
             print('Too few observations!')
         sigt_kw = np.sqrt(S_at_tkw / (a * (Z - 1)))
 
@@ -442,6 +443,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
 def press(event):
     global rb
     global lb
+    global day
     if event.key == "d":
         # right boundary line
         lb = lb
@@ -459,13 +461,20 @@ def press(event):
     elif event.key == "w":
         # writes to a file
         pass
-    elif event.key == "escape":
+    elif event.key == "escape" or event.key == "q":
         # exits the program
         exit()
-    elif event.key == "f":
-        pass
+    elif event.key == "n":
+        # goes to the next "day"
+        day += 1
+        plot_obs(["896797_B.txt"], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
+                 para_range=None, norm_method="norm")
+    elif event.key == "h":
+        print("\nPress 'a' for right boundary, 'd' for left boundary, 'n' for the next day, 'w' to write to a file, "
+              "or the 'ESC' or 'q' keys to close the figure.\n")
     else:
-        print("\nPress 'a' for right boundary, 'd' for left boundary, or the 'ESC' key to close the figure.\n")
+        print("\nPress 'a' for right boundary, 'd' for left boundary, 'n' for the next day, 'w' to write to a file, "
+              "or the 'ESC' or 'q' keys to close the figure.\n")
 
 
 def zoom_factory(ax, base_scale=2.):
@@ -502,6 +511,14 @@ def zoom_factory(ax, base_scale=2.):
 
 
 def main():
+    """
+    Main function for the program. This function will ask the user for the number of filters they have, and then call
+    the appropriate function to plot the data with the appropriate number of filters.
+
+    Returns
+    -------
+
+    """
     num_filters = input("How many filters do you have (i.e. 1-3) or type 'Close' to close the program: ")
     print()
     if num_filters == '1':

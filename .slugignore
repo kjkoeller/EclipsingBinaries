@@ -1,0 +1,4 @@
+# files/folders to ignore for Heroku/Django
+
+tests/*
+examples/*

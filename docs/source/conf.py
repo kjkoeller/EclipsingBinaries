@@ -6,8 +6,8 @@ project = 'EclipsingBinaries'
 copyright = '2023, Kyle Koeller'
 author = 'Kyle Koeller'
 
-release = '2.8.4a7'
-version = '2.8.4'
+release = '2.8'
+version = '2.8.4a7'
 
 # -- General configuration
 

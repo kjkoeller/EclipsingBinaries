@@ -362,7 +362,7 @@ def overlay(df, tar_ra, tar_dec):
     zscale = ZScaleInterval()
 
     # Calculate vmin and vmax for the image display
-    vmin, vmax = zscale.get_limits(image_data)
+    vmin, vmax = zscale.get_limits(image)
 
     # plot the image and the overlays
     wcs = WCS(header)

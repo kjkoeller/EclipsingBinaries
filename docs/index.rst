@@ -8,7 +8,7 @@ EclipsingBinaries
 =======
 
 .. Important::
-   If you use `EclipsingBinaries`_ for a project that leads to a publications,
+   This document page is still a work in project and there may be things missing so please bare    with me as the pages get created and documented.
    
 Getting Started
 ---------------
@@ -17,7 +17,6 @@ Getting Started
    :maxdepth: 1
       
       installation
-      overview
       getting_started
       license
 

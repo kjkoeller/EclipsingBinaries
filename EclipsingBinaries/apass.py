@@ -3,17 +3,20 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 04/05/2023
+Last Updated: 05/19/2023
 """
 
 from astroquery.vizier import Vizier
 import numpy as np
 import pandas as pd
+
 import astropy.units as u
 import astropy.coordinates as coord
 from astropy.wcs import WCS
 from astropy import wcs
 from astropy.io import fits
+from astropy.visualization import ZScaleInterval
+
 from numba import jit
 import matplotlib.pyplot as plt
 import warnings
@@ -355,12 +358,18 @@ def overlay(df, tar_ra, tar_dec):
     # text for the caption below the graph
     txt = "Number represents index value given in the final output catalog file."
 
+    # Calculate the zscale interval for the image
+    zscale = ZScaleInterval()
+
+    # Calculate vmin and vmax for the image display
+    vmin, vmax = zscale.get_limits(image)
+
     # plot the image and the overlays
     wcs = WCS(header)
     fig = plt.figure(figsize=(12, 8))
     fig.text(.5, 0.02, txt, ha='center')
     ax = plt.subplot(projection=wcs)
-    plt.imshow(image, origin='lower', cmap='cividis', aspect='equal', vmin=300, vmax=1500)
+    plt.imshow(image, origin='lower', cmap='cividis', aspect='equal', vmin=vmin, vmax=vmax)
     plt.xlabel('RA')
     plt.ylabel('Dec')
 

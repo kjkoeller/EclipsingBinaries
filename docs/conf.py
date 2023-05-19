@@ -9,6 +9,9 @@ author = 'Kyle Koeller'
 release = '2.8'
 version = '2.8.4a7'
 
+# The master toctree document.
+master_doc = 'index'
+
 # -- General configuration
 
 extensions = [

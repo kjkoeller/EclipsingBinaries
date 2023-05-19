@@ -16,7 +16,7 @@ Getting Started
 .. toctree::
    :maxdepth: 1
       
-      install
+      installation
       overview
       getting_started
       license

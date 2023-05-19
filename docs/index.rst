@@ -14,7 +14,7 @@ Getting Started
 ---------------
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
       
       installation
       getting_started
@@ -24,7 +24,7 @@ Using `EclipsingBinaries`
 ------------------------
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
       
       Menu
       Night_Filters

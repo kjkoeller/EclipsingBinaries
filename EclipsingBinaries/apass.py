@@ -3,26 +3,29 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 04/05/2023
+Last Updated: 05/19/2023
 """
 
 from astroquery.vizier import Vizier
 import numpy as np
 import pandas as pd
+
 import astropy.units as u
 import astropy.coordinates as coord
 from astropy.wcs import WCS
 from astropy import wcs
 from astropy.io import fits
+from astropy.visualization import ZScaleInterval
+
 from numba import jit
 import matplotlib.pyplot as plt
 import warnings
 from PyAstronomy import pyasl
 
-from .gaia import tess_mag as ga
-# from gaia import tess_mag as ga  # testing
-from .vseq_updated import isNaN, conversion, splitter, decimal_limit
-# from vseq_updated import isNaN, conversion, splitter, decimal_limit  # testing
+# from .gaia import main as ga
+from gaia import main as ga  # testing
+# from .vseq_updated import isNan, new_list, conversion, splitter, decimal_limit
+from vseq_updated import isNan, new_list, conversion, splitter, decimal_limit  # testing
 
 
 # turn off this warning that just tells the user,
@@ -41,14 +44,14 @@ def comparison_selector():
     :return: A list of stars that are the most likely to be on the AIJ list of stars
     """
 
-    apass_file, input_ra, input_dec, T_list = cousins_r()
+    apass_file, input_ra, input_dec = cousins_r()
     df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
 
-    print("Finished Saving\n\n\n")
-    print("The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
-          "with their respective errors.\n")
+    print("Finished Saving\n")
+    print("The output file you have entered has RA and DEC for stars and their B, V, and Cousins R magnitudes with "
+          "their respective errors.\n")
 
-    create_radec(df, input_ra, input_dec, T_list)
+    create_radec(df, input_ra, input_dec)
 
     overlay(df, input_ra, input_dec)
 
@@ -94,6 +97,9 @@ def cousins_r():
     e_Rc = []
     count = 0
 
+    #  = 10.551 + (((0.278 * 0.682) - 0.219 - 10.919 + 10.395) / 1.321)
+    # total_Rc(test)
+
     # loop that goes through each value in B to get the total amount of values to be calculated
     for i in B:
         root, val = calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
@@ -108,10 +114,6 @@ def cousins_r():
             e_Rc.append(format(root, ".2f"))
         count += 1
 
-    ra_decimal = np.array(splitter(ra))
-    dec_decimal = np.array(splitter(dec))
-    T_list, T_err_list = ga(ra_decimal, dec_decimal)
-
     # puts all columns into a dataframe for output
     final = pd.DataFrame({
         # need to keep RA and DEC in order to compare with catalog comparison or with the radec file
@@ -122,9 +124,7 @@ def cousins_r():
         "VMag": V,
         "e_VMag": e_V,
         "Rc": Rc,
-        "e_Rc": e_Rc,
-        "TMag": T_list,
-        "e_TMag": T_err_list
+        "e_Rc": e_Rc
     })
     print(
         "\nThis output file contains all the calculated Cousins R magnitudes along with error and "
@@ -136,7 +136,7 @@ def cousins_r():
     final.to_csv(output_file, index=True, sep="\t")
     print("\nCompleted Save.\n")
 
-    return output_file, input_ra, input_dec, T_list
+    return output_file, input_ra, input_dec
 
 
 def catalog_finder():
@@ -158,11 +158,9 @@ def catalog_finder():
             30m = 30 arc-minutes
     """
     # 00:28:27.9684836736 78:57:42.657327180
-    # 13:27:50.4728234064 75:39:45.384765984
+    # 78:57:42.657327180
     ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
     dec_input = input("Enter the DEC of your system (DD:MM:SS.SSSS or -DD:MM:SS.SSSS): ")
-    # ra_input = "00:28:27.9684836736"  # testing
-    # dec_input = "78:57:42.657327180"  # testing
 
     ra_input2 = splitter([ra_input])
     dec_input2 = splitter([dec_input])
@@ -243,29 +241,27 @@ def catalog_finder():
 
     # saves the dataframe to a text file and prints that dataframe out to easily see what was copied to the text file
     print(
-        "\n\nThis output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and\n"
+        "\nThis output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and "
         "should not be used for anything else other than calculation confirmation if needed later on.\n")
     text_file = input("Enter a text file pathway and name for the output comparisons "
                       "(ex: C:\\folder1\\APASS_254037.txt): ")
-    # text_file = "APASS_254037.txt"  # testing
     df.to_csv(text_file, index=None)
     print("\nCompleted save.\n")
 
     return text_file, ra_input2[0], dec_input2[0]
 
 
-def create_radec(df, ra, dec, T_list):
+def create_radec(df, ra, dec):
     """
     Creates a RADEC file for all 3 filters (Johnson B, V, and Cousins R
 
     :param df: input catalog DataFrame
     :param ra: user entered RA for system
     :param dec: user entered DEC for system
-    :param T_list: TESS magnitudes for comparison stars
 
-    :return: None but saves the RADEC files to user specified locations
+    :return: None but saves the RADEC file to user specified locations
     """
-    filters = ["B", "V", "R", "T"]
+    filters = ["B", "V", "R"]
     header = "#RA in decimal or sexagesimal HOURS\n " \
              "#Dec in decimal or sexagesimal DEGREES\n" \
              "#Ref Star=0,1,missing (0=target star, 1=ref star, missing->first ap=target, others=ref)\n" \
@@ -284,13 +280,8 @@ def create_radec(df, ra, dec, T_list):
     ra_decimal = np.array(splitter(ra_list))
     dec_decimal = np.array(splitter(dec_list))
 
-    # T_list, _ = ga(ra_decimal, dec_decimal)
-
     next_ra = float(ra_decimal[0])
     next_dec = float(dec_decimal[0])
-
-    print("The 'T' filter is the calibrated TESS magnitudes calculated from Gaia magnitudes. Please go to the GitHub "
-          "page for more information.\n")
 
     # to write lines to the file in order create new RADEC files for each filter
     for fcount, filt in enumerate(filters):
@@ -299,24 +290,21 @@ def create_radec(df, ra, dec, T_list):
             # checks where the RA and DEC given by the user at the beginning is in the file to make sure there is no
             # duplication
             angle = angle_dist(float(ra), float(dec), next_ra, next_dec)
-            if not angle:
-                # checks where the filter is B, V, R, T for output reasons
+            if angle is False:
+                # checks where the filter is B, V, R for output reasons
                 if filt == "B":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(b_mag[count]) + "\n"
+                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(b_mag[count]) + "\n"
                 elif filt == "V":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(v_mag[count]) + "\n"
+                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(v_mag[count]) + "\n"
                 elif filt == "R":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(r_mag[count]) + "\n"
-                elif filt == "T":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(T_list[count]) + "\n"
+                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + " 1, 1, " + str(r_mag[count]) + "\n"
 
             next_ra = float(ra_decimal[count])
             next_dec = float(dec_decimal[count])
 
         output = header + header2
-        outputfile = input("Please enter an output file pathway " + "\033[1m" + "\033[93m" + "WITHOUT" + "\033[00m" +
-                           " the extension but with the file name for the " +
-                           filt + " filter RADEC file, for AIJ (i.e. C:\\folder1\\folder2\[filename]): ")
+        outputfile = input("Please enter an output file pathway without the extension but with the file name for the "
+                           "" + filt + " filter (i.e. C:\\folder1\\folder2\[filename]): ")
         file = open(outputfile + ".radec", "w")
         file.write(output)
         file.close()
@@ -335,8 +323,7 @@ def overlay(df, tar_ra, tar_dec):
     :return: None but displays a science image with over-layed APASS objects
     """
     # NSVS_254037-S001-R004-C001-Empty-R-B2.fts
-    fits_file = input("Enter file pathway to one of your science image files for creating an overlay or "
-                      "comparison stars: ")
+    fits_file = input("Enter file pathway to one of your image files: ")
 
     # get the image data for plotting purposes
     header_data_unit_list = fits.open(fits_file)
@@ -355,12 +342,18 @@ def overlay(df, tar_ra, tar_dec):
     # text for the caption below the graph
     txt = "Number represents index value given in the final output catalog file."
 
+    # Calculate the zscale interval for the image
+    zscale = ZScaleInterval()
+
+    # Calculate vmin and vmax for the image display
+    vmin, vmax = zscale.get_limits(image_data)
+
     # plot the image and the overlays
     wcs = WCS(header)
     fig = plt.figure(figsize=(12, 8))
     fig.text(.5, 0.02, txt, ha='center')
     ax = plt.subplot(projection=wcs)
-    plt.imshow(image, origin='lower', cmap='cividis', aspect='equal', vmin=300, vmax=1500)
+    plt.imshow(image, origin='lower', cmap='cividis', aspect='equal', vmin=vmin, vmax=vmax)
     plt.xlabel('RA')
     plt.ylabel('Dec')
 
@@ -437,8 +430,7 @@ def angle_dist(x1, y1, x2, y2):
     """
     # noinspection PyUnresolvedReferences
     radial = pyasl.getAngDist(x1, y1, x2, y2)
-    if radial <= 0.01:
-        # print(x1, y1, x2, y2)
+    if radial <= 0.025:
         return True
     else:
         return False

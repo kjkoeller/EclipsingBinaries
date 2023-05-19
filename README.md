@@ -1,4 +1,5 @@
 [![Python 3.8, 3.9, 3.10](https://github.com/kjkoeller/Binary_Star_Research_Package/actions/workflows/python-package.yml/badge.svg)](https://github.com/kjkoeller/Binary_Star_Research_Package/actions/workflows/python-package.yml)
+[![Documentation Status](https://readthedocs.org/projects/eclipsingbinaries/badge/?version=latest)](https://eclipsingbinaries.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/EclipsingBinaries.svg)](https://badge.fury.io/py/EclipsingBinaries)
 [![GitHub release](https://img.shields.io/github/v/release/kjkoeller/Variable_Star_Research_Package)](https://github.com/kjkoeller/Variable_Star_Research_Package/releases/)
 ![GitHub](https://img.shields.io/github/license/kjkoeller/Variable_Star_Research_Package)
@@ -7,7 +8,13 @@
 
 # Binary Star Research Package
 
-A Python project for Ball State University's Variable Star Research Group. Check the wiki (https://github.com/kjkoeller/EclipsingBinaries/wiki) for more detailed descriptions than the ones below and for usage details of each program.
+A Python project for Ball State University's Variable Star Research Group. Check the [Wiki](https://github.com/kjkoeller/EclipsingBinaries/wiki) for more detailed descriptions than the ones below and for usage details of each program.
+
+***
+
+## Sponsor
+
+If you would like to sponsor this project go [here](https://github.com/sponsors/kjkoeller) and click the sponsor button.
 
 ***
 

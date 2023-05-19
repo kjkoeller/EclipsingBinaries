@@ -10,7 +10,7 @@ release = '2.8'
 version = '2.8.4a8'
 
 # The master toctree document.
-master_doc = 'index'
+root_doc = 'index'
 
 # -- General configuration
 

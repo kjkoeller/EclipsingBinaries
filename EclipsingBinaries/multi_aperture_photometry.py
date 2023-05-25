@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 05/19/2023
+Last Updated: 05/24/2023
 """
 
 # Python imports
@@ -20,11 +20,11 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 # from astropy.nddata import CCDData
 # from astropy.stats import sigma_clipped_stats
-from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry
+from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
 from astropy.wcs import WCS
 import astropy.units as u
 from astropy import wcs
-from astropy.visualization import ZScaleInterval
+# from astropy.visualization import ZScaleInterval
 
 # turn off this warning that just tells the user,
 # "The warning raised when the contents of the FITS header have been modified to be standards compliant."
@@ -32,10 +32,10 @@ warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
 
 def main():
-    # path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
-    #             "the word 'Close' to leave: ")
+    path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
+                "the word 'Close' to leave: ")
 
-    path = "H:\\BSUO data\\2022.09.23-reduced"  # For testing purposes
+    # path = "H:\\BSUO data\\2022.09.23-reduced"  # For testing purposes
 
     if path.lower() == "close":
         exit()
@@ -98,71 +98,61 @@ def multi_aperture_photometry(image_list, path):
 
     for icount, image_file in enumerate(image_list):
         image_data, header = fits.getdata(path / image_file, header=True)
-        wcs = WCS(header)
+        wcs_ = WCS(header)
 
         # ccd = CCDData(image_data, wcs=wcs, unit='adu')
 
         # Convert RA and DEC to pixel positions
         sky_coords = SkyCoord(ra, dec, unit=(u.h, u.deg), frame='icrs')
-        pixel_coords = wcs.world_to_pixel(sky_coords)
+        pixel_coords = wcs_.world_to_pixel(sky_coords)
 
-        target_position = pixel_coords[0]
-        comparison_positions = pixel_coords[1:]
+        target_position = list(pixel_coords[0])
+        comparison_positions = list(pixel_coords[1:])
 
         hjd.append(header['HJD-OBS'])
         bjd.append(header['BJD-OBS'])
 
-        if icount == 0:
-            # Create the apertures and annuli
-            target_aperture = [CircularAperture(position, r=aperture_radius) for position in target_position]
-            comparison_apertures = CircularAperture(comparison_positions, r=aperture_radius)
-            target_annulus = CircularAnnulus(target_position, *annulus_radii)
-
-            comparison_annuli = CircularAnnulus(comparison_positions, *annulus_radii)
-
-            # Create the plot with WCS projection
-            fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': wcs})
-
-            # Calculate the zscale interval for the image
-            zscale = ZScaleInterval()
-
-            # Calculate vmin and vmax for the image display
-            vmin, vmax = zscale.get_limits(image_data)
-
-            plt.imshow(image_data, origin='lower', cmap='cividis', aspect='equal', vmin=vmin, vmax=vmax)
-
-            # Display the plot
-            plt.show()
-        else:
-            # Create the apertures and annuli
-            target_aperture = CircularAperture(target_position, r=aperture_radius)
-            comparison_apertures = CircularAperture(comparison_positions, r=aperture_radius)
-            target_annulus = CircularAnnulus(target_position, *annulus_radii)
-            comparison_annuli = CircularAnnulus(comparison_positions, *annulus_radii)
+        # Create the apertures and annuli
+        target_aperture = CircularAperture(target_position, r=aperture_radius)
+        comparison_apertures = CircularAperture(comparison_positions, r=aperture_radius)
+        target_annulus = CircularAnnulus(target_position, *annulus_radii)
+        comparison_annuli = CircularAnnulus(comparison_positions, *annulus_radii)
 
         # Perform aperture photometry
         target_phot_table = aperture_photometry(image_data, target_aperture)
-        comparison_phot_tables = [aperture_photometry(image_data, aperture) for aperture in comparison_apertures]
+        comparison_phot_tables = aperture_photometry(image_data, comparison_apertures)
 
         # Perform annulus photometry to estimate the background
-        target_annulus_table = aperture_photometry(image_data, target_annulus)
-        comparison_annuli_tables = [aperture_photometry(image_data, annulus) for annulus in comparison_annuli]
+        target_bkg_mean = ApertureStats(image_data, target_annulus).mean
+        comparison_bkg_mean = ApertureStats(image_data, comparison_annuli).mean
+        # target_annulus_table = aperture_photometry(image_data, target_annulus)
+        # comparison_annuli_tables = aperture_photometry(image_data, comparison_annuli)
 
         # Calculate the background mean and standard deviation
-        target_background_mean = target_annulus_table['aperture_sum'][0] / target_annulus.area
-        target_background_stddev = np.sqrt(target_background_mean)
+        # target_background_mean = target_annulus_table['aperture_sum'][0] / target_annulus.area
+        target_background_stddev = np.sqrt(target_bkg_mean)
 
-        comparison_background_means = [table['aperture_sum'][0] / annulus.area
-                                       for table, annulus in zip(comparison_annuli_tables, comparison_annuli)]
-        comparison_background_stddevs = [np.sqrt(mean) for mean in comparison_background_means]
+        # comparison_background_means = [table['aperture_sum'][0] / annulus.area
+        #                                for table, annulus in zip(comparison_annuli_tables, comparison_annuli)]
+        comparison_background_stddevs = [np.sqrt(mean) for mean in comparison_bkg_mean]
 
         # Subtract the background: Calculate net integrated counts
-        print(target_phot_table['aperture_sum'][0], target_aperture.area*target_background_mean)
-        target_sum = target_phot_table['aperture_sum'][0] - target_aperture.area * target_background_mean
-        comparison_sums = [table['aperture_sum'][0] - aperture.area * mean
-                           for table, aperture, mean in
-                           zip(comparison_phot_tables, comparison_apertures, comparison_background_means)]
-        # print(target_sum, comparison_sums)
+        target_area = target_aperture.area_overlap(image_data)
+        comparison_area = comparison_apertures.area_overlap(image_data)
+
+        # Calculate the total background
+        target_bkg = target_bkg_mean * target_area
+        comparison_bkg = comparison_bkg_mean * comparison_area
+
+        # Calculate the background subtracted counts
+        target_sum = target_phot_table['aperture_sum'] - target_bkg
+        comparison_sums = comparison_phot_tables['aperture_sum'] - comparison_bkg
+
+        # target_sum = target_phot_table['aperture_sum'][0] - target_aperture.area * target_background_mean
+        # comparison_sums = [table['aperture_sum'][0] - aperture.area * mean
+        #                    for table, aperture, mean in
+        #                    zip(comparison_phot_tables, comparison_apertures, comparison_background_means)]
+
         target_magnitude = (np.log(sum(2.512**(-magnitudes_comp)))/np.log(2.512)) + 2.5*np.log10(target_sum/comparison_sums)
         target_flux_rel = target_sum / comparison_sums
 
@@ -172,11 +162,11 @@ def multi_aperture_photometry(image_list, path):
         # Calculate the standard deviation of the fractional count lost to digitization
         digitization_stddev = 1 / np.sqrt(12)
 
-        N_t = np.sqrt(gain*target_sum + n_pix*((1 + (n_pix/n_b))*(gain*target_background_mean + F_dark + read_noise**2 +
+        N_t = np.sqrt(gain*target_sum + n_pix*((1 + (n_pix/n_b))*(gain*target_bkg_mean + F_dark + read_noise**2 +
                                                                  (gain**2)*digitization_stddev**2)))/gain  # noise in the target aperture
 
         comparison_background_means_sq = [(table['aperture_sum'][0] / annulus.area)**2
-                                       for table, annulus in zip(comparison_annuli_tables, comparison_annuli)]
+                                       for table, annulus in zip(comparison_bkg_mean, comparison_annuli)]
         N_e = np.sqrt(comparison_background_means_sq)  # noise in the background annulus for each comparison added in quadrature
         # target_flux_rel_err = (target_flux_rel/comparison_sums) * np.sqrt((N_t**2)/target_sum**2 + (N_e**2)/comparison_sums**2)
 

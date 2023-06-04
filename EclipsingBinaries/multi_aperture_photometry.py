@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 05/24/2023
+Last Updated: 06/03/2023
 """
 
 # Python imports
@@ -32,10 +32,10 @@ warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
 
 def main():
-    path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
-                "the word 'Close' to leave: ")
+    # path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
+    #             "the word 'Close' to leave: ")
 
-    # path = "H:\\BSUO data\\2022.09.23-reduced"  # For testing purposes
+    path = "D:\\BSUO data\\2022.09.23-reduced"  # For testing purposes
 
     if path.lower() == "close":
         exit()
@@ -91,7 +91,7 @@ def multi_aperture_photometry(image_list, path):
     bjd = []
 
     # Start interactive mode
-    # plt.ion()
+    plt.ion()
 
     # Create a figure and axis
     fig, ax = plt.subplots()
@@ -118,77 +118,38 @@ def multi_aperture_photometry(image_list, path):
         target_annulus = CircularAnnulus(target_position, *annulus_radii)
         comparison_annuli = CircularAnnulus(comparison_positions, *annulus_radii)
 
-        # Perform aperture photometry
         target_phot_table = aperture_photometry(image_data, target_aperture)
         comparison_phot_tables = aperture_photometry(image_data, comparison_apertures)
 
         # Perform annulus photometry to estimate the background
         target_bkg_mean = ApertureStats(image_data, target_annulus).mean
         comparison_bkg_mean = ApertureStats(image_data, comparison_annuli).mean
-        # target_annulus_table = aperture_photometry(image_data, target_annulus)
-        # comparison_annuli_tables = aperture_photometry(image_data, comparison_annuli)
-
-        # Calculate the background mean and standard deviation
-        # target_background_mean = target_annulus_table['aperture_sum'][0] / target_annulus.area
-        target_background_stddev = np.sqrt(target_bkg_mean)
-
-        # comparison_background_means = [table['aperture_sum'][0] / annulus.area
-        #                                for table, annulus in zip(comparison_annuli_tables, comparison_annuli)]
-        comparison_background_stddevs = [np.sqrt(mean) for mean in comparison_bkg_mean]
-
-        # Subtract the background: Calculate net integrated counts
-        target_area = target_aperture.area_overlap(image_data)
-        comparison_area = comparison_apertures.area_overlap(image_data)
 
         # Calculate the total background
-        target_bkg = target_bkg_mean * target_area
-        comparison_bkg = comparison_bkg_mean * comparison_area
+        if np.isnan(target_bkg_mean) or np.isinf(target_bkg_mean) or np.isnan(comparison_bkg_mean) or np.isinf(comparison_bkg_mean):
+            target_bkg_mean = 0
+            comparison_bkg_mean = 0
+
+        target_bkg = ApertureStats(image_data, target_aperture, local_bkg=target_bkg_mean).sum
+        comparison_bkg = ApertureStats(image_data, comparison_apertures, local_bkg=comparison_bkg_mean).sum
+        # target_bkg = target_bkg_mean * target_area
+        # comparison_bkg = comparison_bkg_mean * comparison_area
 
         # Calculate the background subtracted counts
-        target_sum = target_phot_table['aperture_sum'] - target_bkg
-        comparison_sums = comparison_phot_tables['aperture_sum'] - comparison_bkg
+        target_flx = target_phot_table['aperture_sum'] - target_bkg
+        comparisons_flx = comparison_phot_tables['aperture_sum'] - comparison_bkg
 
-        # target_sum = target_phot_table['aperture_sum'][0] - target_aperture.area * target_background_mean
-        # comparison_sums = [table['aperture_sum'][0] - aperture.area * mean
-        #                    for table, aperture, mean in
-        #                    zip(comparison_phot_tables, comparison_apertures, comparison_background_means)]
+        target_flx_err = np.sqrt(target_phot_table['aperture_sum'])
 
-        target_magnitude = (np.log(sum(2.512**(-magnitudes_comp)))/np.log(2.512)) + 2.5*np.log10(target_sum/comparison_sums)
-        target_flux_rel = target_sum / comparison_sums
+        target_magnitude = 25 - 2.5*np.log10(target_flx)
+        target_magnitude_error = (2.5/np.log(10)) * (target_flx_err/target_flx)
 
-        n_pix = target_aperture.area  # number of pixels in the aperture
-        n_b = CircularAnnulus((0, 0), r_in=r_in, r_out=r_out).area  # number of pixels in the background annulus
-
-        # Calculate the standard deviation of the fractional count lost to digitization
-        digitization_stddev = 1 / np.sqrt(12)
-
-        N_t = np.sqrt(gain*target_sum + n_pix*((1 + (n_pix/n_b))*(gain*target_bkg_mean + F_dark + read_noise**2 +
-                                                                 (gain**2)*digitization_stddev**2)))/gain  # noise in the target aperture
-
-        comparison_background_means_sq = [(table['aperture_sum'][0] / annulus.area)**2
-                                       for table, annulus in zip(comparison_bkg_mean, comparison_annuli)]
-        N_e = np.sqrt(comparison_background_means_sq)  # noise in the background annulus for each comparison added in quadrature
-        # target_flux_rel_err = (target_flux_rel/comparison_sums) * np.sqrt((N_t**2)/target_sum**2 + (N_e**2)/comparison_sums**2)
-
-        # Calculate the errors
-        target_error = np.sqrt(
-            target_sum / gain + target_aperture.area * target_background_stddev ** 2 + target_aperture.area ** 2 * read_noise ** 2)
-        comparison_errors = [
-            np.sqrt(comp_sums / gain + aperture.area * stddev ** 2 + aperture.area ** 2 * read_noise ** 2)
-            for comp_sums, aperture, stddev in zip(comparison_sums, comparison_apertures, comparison_background_stddevs)]
-
-        # Calculate the magnitude and error of the target star
-        # target_magnitude = -2.5 * np.log10(target_sum / np.mean(comparison_sums))
-
-        # Calculate the error in the magnitude
-        target_magnitude_error = (2.5 / np.log(10)) * np.sqrt((target_error / target_sum) ** 2 + np.mean(
-            [error ** 2 / star_sum ** 2 for error, star_sum in zip(comparison_errors, comparison_sums)]) / len(comparison_sums))
-
-        # print('Target magnitude: ', target_magnitude, '+/-', target_magnitude_error)
+        # target_magnitude = (np.log(sum(2.512**(-magnitudes_comp)))/np.log(2.512)) + 2.5*np.log10(target_sum/comparison_sums)
+        # target_flux_rel = target_sum / comparison_sums
 
         # Append the calculated magnitude and error to the lists
         magnitudes.append(target_magnitude[0])
-        mag_err.append(target_magnitude_error)
+        mag_err.append(target_magnitude_error[0])
 
         # Clear the axis
         ax.clear()
@@ -205,7 +166,7 @@ def multi_aperture_photometry(image_list, path):
         fig.canvas.draw()
 
         # Pause for a bit to allow the figure to update
-        time.sleep(0.1)
+        time.sleep(0.2)
 
     # Disable interactive mode
     plt.ioff()

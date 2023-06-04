@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 06/03/2023
+Last Updated: 06/04/2023
 """
 
 # Python imports
@@ -47,12 +47,12 @@ def main():
     image_list = files.files_filtered(imagetyp=science_imagetyp, filter="Empty/V")
     print(type(image_list))
 
-    multi_aperture_photometry(image_list, images_path)
+    single_MAP(image_list, images_path)
 
 
-def multi_aperture_photometry(image_list, path):
+def single_MAP(image_list, path):
     """
-    Perform aperture photometry on a list of images.
+    Perform multi-aperture photometry on a list of images for a single target
 
     Parameters
     ----------
@@ -95,6 +95,7 @@ def multi_aperture_photometry(image_list, path):
 
     # Create a figure and axis
     fig, ax = plt.subplots()
+    plt.show()
 
     for icount, image_file in enumerate(image_list):
         image_data, header = fits.getdata(path / image_file, header=True)
@@ -114,38 +115,27 @@ def multi_aperture_photometry(image_list, path):
 
         # Create the apertures and annuli
         target_aperture = CircularAperture(target_position, r=aperture_radius)
-        comparison_apertures = CircularAperture(comparison_positions, r=aperture_radius)
         target_annulus = CircularAnnulus(target_position, *annulus_radii)
-        comparison_annuli = CircularAnnulus(comparison_positions, *annulus_radii)
 
         target_phot_table = aperture_photometry(image_data, target_aperture)
-        comparison_phot_tables = aperture_photometry(image_data, comparison_apertures)
 
         # Perform annulus photometry to estimate the background
         target_bkg_mean = ApertureStats(image_data, target_annulus).mean
-        comparison_bkg_mean = ApertureStats(image_data, comparison_annuli).mean
 
         # Calculate the total background
-        if np.isnan(target_bkg_mean) or np.isinf(target_bkg_mean) or np.isnan(comparison_bkg_mean) or np.isinf(comparison_bkg_mean):
+        if np.isnan(target_bkg_mean) or np.isinf(target_bkg_mean):
             target_bkg_mean = 0
             comparison_bkg_mean = 0
 
         target_bkg = ApertureStats(image_data, target_aperture, local_bkg=target_bkg_mean).sum
-        comparison_bkg = ApertureStats(image_data, comparison_apertures, local_bkg=comparison_bkg_mean).sum
-        # target_bkg = target_bkg_mean * target_area
-        # comparison_bkg = comparison_bkg_mean * comparison_area
 
         # Calculate the background subtracted counts
         target_flx = target_phot_table['aperture_sum'] - target_bkg
-        comparisons_flx = comparison_phot_tables['aperture_sum'] - comparison_bkg
 
         target_flx_err = np.sqrt(target_phot_table['aperture_sum'])
 
         target_magnitude = 25 - 2.5*np.log10(target_flx)
         target_magnitude_error = (2.5/np.log(10)) * (target_flx_err/target_flx)
-
-        # target_magnitude = (np.log(sum(2.512**(-magnitudes_comp)))/np.log(2.512)) + 2.5*np.log10(target_sum/comparison_sums)
-        # target_flux_rel = target_sum / comparison_sums
 
         # Append the calculated magnitude and error to the lists
         magnitudes.append(target_magnitude[0])
@@ -166,13 +156,11 @@ def multi_aperture_photometry(image_list, path):
         fig.canvas.draw()
 
         # Pause for a bit to allow the figure to update
-        time.sleep(0.2)
+        time.sleep(0.1)
+        plt.pause(0.0001)
 
     # Disable interactive mode
     plt.ioff()
-
-    # Show the final figure
-    plt.show()
 
 
 if __name__ == '__main__':

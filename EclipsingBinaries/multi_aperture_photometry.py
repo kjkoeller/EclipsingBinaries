@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 06/04/2023
+Last Updated: 06/12/2023
 """
 
 # Python imports
@@ -284,15 +284,16 @@ def multiple_MAP(image_list, path):
         # Calculate the total noise
         sigma_f = 0.289  # quoted from Collins 2017 https://iopscience.iop.org/article/10.3847/1538-3881/153/2/77/pdf
         F_s = 0.01  # number of sky background counts per pixel in ADU
-        
+
         N_comp = np.sqrt(gain*comparison_flx + n_pix_comp*(1 + (n_pix_comp/n_b_comp))*(gain*F_s + F_dark + read_noise**2 + gain**2 + sigma_f**2)) / gain
         N_tar = np.sqrt(gain*target_flx + n_pix_tar*(1 + (n_pix_tar/n_b_tar))*(gain*F_s + F_dark + read_noise**2 + gain**2 + sigma_f**2)) / gain
-        
+
         # calculate the total comparison ensemble noise
         N_e_comp = np.sqrt(np.sum(N_comp**2))
         
-        # target_magnitude = 25 - 2.5 * np.log10(target_flx)
-        # target_magnitude_error = (2.5 / np.log(10)) * (target_flx_err / target_flx)
+        # calculate the total target magnitude and error
+        target_magnitude = [0]
+        target_magnitude_error = [0]
 
         # Append the calculated magnitude and error to the lists
         magnitudes.append(target_magnitude[0])

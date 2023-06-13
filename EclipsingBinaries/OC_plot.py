@@ -1,12 +1,12 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 04/27/2023
+Last Edited: 06/12/2023
 
 This calculates O-C values and produces an O-C plot.
 """
 
-from math import sqrt, floor
+from math import sqrt
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,70 +16,74 @@ import seaborn as sns
 from numba import jit
 
 
-def main():
-    print("\n\nThe format of these input files should be the of the raw form given from Dr. Robert Berrginton's"
-          " 'find_minimum' C program.")
-    print("Run TESS data by itself through the TESS option and filtered SARA/BSUO data through the BSU option.\n"
-          "DO NOT combine them in any way unless you have already run them through to get the (O-C) values and"
-          "are about to run the 'All Data' option.")
-    print("Enter the corresponding number to what you would like to do.\n")
-    while True:
+def main(period=None, loop=0, num=None, nights=None):
+    if loop == 0:
+        print("\n\nThe format of these input files should be the of the raw form given from Dr. Robert Berrginton's"
+              " 'find_minimum' C program.")
+        print("Run TESS data by itself through the TESS option and filtered SARA/BSUO data through the BSU option.\n"
+              "DO NOT combine them in any way unless you have already run them through to get the (O-C) values and"
+              "are about to run the 'All Data' option.")
+        print("Enter the corresponding number to what you would like to do.\n")
         try:
             num = int(input("Would you like to use BSUO data(1), TESS data(2), All Data(3), or Close Program(4): "))
-            if num == 1:
-                first_time = input("Do you already have an Epoch value 'Yes' or 'No': ")
-                if first_time.lower() == "no":
-                    T0 = 0
-                    To_err = 0
-                    period = float(input("Please enter the period for your system: "))
-                else:
-                    T0, To_err, period = arguments()
-                    print("Example file pathway: C:\\folder1\\folder2\\[file name]")
-                while True:
-                    inB = input("Please enter your times of minimum file pathway for the Johnson B filter: ")
-                    inV = input("Please enter your times of minimum file pathway for the Johnson V filter: ")
-                    inR = input("Please enter your times of minimum file pathway for the Cousins R filter: ")
-                    try:
-                        db = pd.read_csv(inB, header=None, delim_whitespace=True)
-                        dv = pd.read_csv(inV, header=None, delim_whitespace=True)
-                        dr = pd.read_csv(inR, header=None, delim_whitespace=True)
-                        break
-                    except FileNotFoundError:
-                        print("You have entered in an incorrect file or file pathway. Please try again.\n")
-                _ = BSUO(T0, To_err, period, db, dv, dr)
-            elif num == 2:
-                first_time = input("Do you already have an Epoch value 'Yes' or 'No': ")
-                if first_time.lower() == "no":
-                    T0 = 0
-                    To_err = 0
-                    period = float(input("Please enter the period for your system: "))
-                else:
-                    T0, To_err, period = arguments()
-                    print("Example file pathway: C:\\folder1\\folder2\\[file name]")
-                while True:
-                    infile = input("Please enter your times of minimum file pathway: ")
-                    try:
-                        df = pd.read_csv(infile, header=None, delim_whitespace=True)
-                        break
-                    except FileNotFoundError:
-                        print("You have entered in an incorrect file or file pathway. Please try again.\n")
-                _ = TESS_OC(T0, To_err, period, df)
-            elif num == 3:
-                while True:
-                    try:
-                        nights = int(input("How many files will you be using(i.e. if you have BSUO/SARA and TESS data "
-                                           "then you have 2 files): "))
-                        break
-                    except ValueError:
-                        print("Please enter a valid whole number.\n")
-                total = all_data(nights)
-                data_fit(total)
-            elif num == 4:
-                break
-                exit()
-            else:
-                print("Please enter either 1, 2, 3, or 4.\n")
         except ValueError:
+            print("Please enter either 1, 2, 3, or 4.\n")
+
+    while True:
+        if num == 1:
+            first_time = input("Do you already have an Epoch value 'Yes', 'No', or 'Close' to close the program: ")
+            if first_time.lower() == "no":
+                T0 = 0
+                To_err = 0
+                period = float(input("Please enter the period for your system: "))
+            elif first_time.lower() == "yes":
+                T0, To_err, period = arguments()
+                print("Example file pathway: C:\\folder1\\folder2\\[file name]")
+            else:
+                exit()
+            while True:
+                inB = input("Please enter your times of minimum file pathway for the Johnson B filter: ")
+                inV = input("Please enter your times of minimum file pathway for the Johnson V filter: ")
+                inR = input("Please enter your times of minimum file pathway for the Cousins R filter: ")
+                try:
+                    db = pd.read_csv(inB, header=None, delim_whitespace=True)
+                    dv = pd.read_csv(inV, header=None, delim_whitespace=True)
+                    dr = pd.read_csv(inR, header=None, delim_whitespace=True)
+                    break
+                except FileNotFoundError:
+                    print("You have entered in an incorrect file or file pathway. Please try again.\n")
+            _ = BSUO(T0, To_err, period, db, dv, dr)
+        elif num == 2:
+            first_time = input("Do you already have an Epoch value 'Yes' or 'No': ")
+            if first_time.lower() == "no":
+                T0 = 0
+                To_err = 0
+                period = float(input("Please enter the period for your system: "))
+            else:
+                T0, To_err, period = arguments()
+                print("Example file pathway: C:\\folder1\\folder2\\[file name]")
+            while True:
+                infile = input("Please enter your times of minimum file pathway: ")
+                try:
+                    df = pd.read_csv(infile, header=None, delim_whitespace=True)
+                    break
+                except FileNotFoundError:
+                    print("You have entered in an incorrect file or file pathway. Please try again.\n")
+            _ = TESS_OC(T0, To_err, period, df)
+        elif num == 3:
+            while True:
+                try:
+                    nights = int(input("How many files will you be using(i.e. if you have BSUO/SARA and TESS data "
+                                       "then you have 2 files): "))
+                    break
+                except ValueError:
+                    print("Please enter a valid whole number.\n")
+            period = float(input("Please enter the period of your system: "))
+            all_data(nights, period, loop)
+        elif num == 4:
+            break
+            exit()
+        else:
             print("Please enter either 1, 2, 3, or 4.\n")
 
 
@@ -105,7 +109,7 @@ def TESS_OC(T0, To_err, period, df):
     # this for loop, loops through the min_strict list and calculates a variety of values
     for count, val in enumerate(min_strict):
         # call the function to calculate the O-C values
-        e, OC, OC_err, T0, To_err = calculate_oc(val, min_strict_err[count], T0, To_err, period)
+        e, OC, OC_err, T0, To_err = calcualte_oc(val, min_strict_err[count], T0, To_err, period)
 
         E_est.append(e)
         O_C.append(OC)
@@ -160,7 +164,7 @@ def BSUO(T0, To_err, period, db, dv, dr):
         average_err.append(err)
 
         # call the function to calculate the O-C values
-        e, OC, OC_err, T0, To_err = calculate_oc(minimum, err, T0, To_err, period)
+        e, OC, OC_err, T0, To_err = calcualte_oc(minimum, err, T0, To_err, period)
         E_est.append(e)
         O_C.append(OC)
         O_C_err.append(OC_err)
@@ -183,8 +187,17 @@ def BSUO(T0, To_err, period, db, dv, dr):
     return outfile
 
 
-def all_data(nights):
-    count = 1
+def all_data(nights, period, loop):
+    """
+    Merges all the data into a singular file for ease of use
+
+    :param nights: number of files there are for the first time through
+    :param period: period of the system
+    :param loop: number of loops through the program either o or 1
+
+    :return: None
+    """
+    count = 0
 
     minimum_list = []
     e_list = []
@@ -192,9 +205,10 @@ def all_data(nights):
     o_c_err_list = []
 
     while True:
-        print("\n\nPlease make sure that the very first line for each and every file that you have starts with the following\n"
-              "'Minimums	Epoch	O-C	O-C_Error'\n"
-              "With each space entered as a space.\n")
+        print(
+            "\n\nPlease make sure that the very first line for each and every file that you have starts with the following\n"
+            "'Minimums	Epoch	O-C	O-C_Error'\n"
+            "With each space entered as a space.\n")
         fname = input("Please enter a file name and pathway (i.e. C:\\folder1\\folder2\\[file name]): ")
         df = pd.read_csv(fname, header=None, skiprows=[0], delim_whitespace=True)
         minimum = np.array(df[0])
@@ -207,7 +221,7 @@ def all_data(nights):
             e_list.append(e[num])
             o_c_list.append("%.5f" % o_c[num])
             o_c_err_list.append("%.5f" % o_c_err[num])
-        if count == nights:
+        if count + 1 == nights:
             break
         else:
             count += 1
@@ -240,7 +254,8 @@ def all_data(nights):
 
     minimum_lines = []
     for i in range(len(minimum)):
-        line = str("%.5f" % minimum[i]) + ' & ' + str(e[i]) + ' & $' + str("%.5f" % o_c[i]) + ' \pm ' + str( "%.5f" %o_c_err[i]) + '$ ' + "\\\ \n"
+        line = str("%.5f" % minimum[i]) + ' & ' + str(e[i]) + ' & $' + str("%.5f" % o_c[i]) + ' \pm ' + str(
+            "%.5f" % o_c_err[i]) + '$ ' + "\\\ \n"
         minimum_lines.append(line)
 
     output = table_header
@@ -265,7 +280,7 @@ def all_data(nights):
 
     outfile += ".txt"
 
-    return outfile
+    data_fit(outfile, period, loop, nights)
 
 
 def arguments():
@@ -286,7 +301,7 @@ def arguments():
 
 
 @jit(forceobj=True)
-def calculate_oc(m, err, T0, T0_err, p):
+def calcualte_oc(m, err, T0, T0_err, p):
     """
     Calculates O-C values and errors and find the eclipse number for primary and secondary eclipses
     :param m: ToM
@@ -303,8 +318,8 @@ def calculate_oc(m, err, T0, T0_err, p):
     # get the exact E value
     E_act = (m - T0) / p
     # estimate for the primary or secondary eclipse by rounding to the nearest 0.5
-    e = floor(E_act * 2) / 2
-    # caluclate the calculated ToM and find the O-C value
+    e = round(E_act * 2) / 2
+    # calculate the calculated ToM and find the O-C value
     T_calc = T0 + (e * p)
     OC = "%.5f" % (m - T_calc)
 
@@ -314,10 +329,14 @@ def calculate_oc(m, err, T0, T0_err, p):
     return e, OC, OC_err, T0, T0_err
 
 
-def data_fit(input_file):
+def data_fit(input_file, period, loop, nights):
     """
     Create a linear fit by hand and then use scipy to create a polynomial fit given an equation along with their
     respective residual plots
+
+    :param nights: number of files the user has
+    :param loop: number of loops the program has gone through either 0 or 1
+    :param period: period of the system
     :param input_file: input file from either TESS or BSUO
 
     :return: None
@@ -329,6 +348,8 @@ def data_fit(input_file):
     x = df["Epoch"]
     y = df["O-C"]
     y_err = df["O-C_Error"]
+
+    weights = 1/(y_err**2)
 
     # these next parts are mainly for O-C data as I just want to plot primary minima's and not both primary/secondary
     x1_prim = []
@@ -376,7 +397,8 @@ def data_fit(input_file):
     # opens a file with this name to begin writing to the file
     output_test = None
     while not output_test:
-        output_file = input("What is the output file name and pathway for the regression tables (either .txt or .tex): ")
+        output_file = input(
+            "\nWhat is the output file name and pathway for the regression tables (either .txt or .tex): ")
         if output_file.endswith((".txt", ".tex")):
             output_test = True
         else:
@@ -391,7 +413,7 @@ def data_fit(input_file):
     degree = 2
     degree_list = ["Linear", "Quadratic"]
     # noinspection PyUnboundLocalVariable
-    for i in range(1, degree+1):
+    for i in range(1, degree + 1):
         """
         Inside the model variable:
         'np.polynomial.polynomial.polyfit(x, y, i)' gathers the coefficients of the line fit
@@ -401,7 +423,7 @@ def data_fit(input_file):
         model = Polynomial(np.polynomial.polynomial.polyfit(x1_prim, y1_prim, i))
 
         # plot the main graph with both fits (linear and poly) onto the same graph
-        plt.plot(xs, model(xs), color="black", label=degree_list[i-1] + " fit",
+        plt.plot(xs, model(xs), color="black", label=degree_list[i - 1] + " fit",
                  linestyle=line_style[line_count])
         line_count += 1
 
@@ -409,12 +431,17 @@ def data_fit(input_file):
         # pretty much however many degrees in the polynomial there are, there will be that many I values
         if i >= 2:
             i_string = i_string + " + I(x**" + str(i) + ")"
-            mod = smf.ols(formula='y ~ x' + i_string, data=df)
+            mod = smf.wls(formula='y ~ x' + i_string, data=df, weights=weights)
             res = mod.fit()
             f.write(res.summary().as_latex())
         elif i == 1:
-            mod = smf.ols(formula='y ~ x', data=df)
+            mod = smf.wls(formula='y ~ x', data=df, weights=weights)
             res = mod.fit()
+            if loop == 0:
+                period_add = res.params[1]
+                new_period = period + period_add
+                print("The amount added to the period to get the adjusted period is " + str(period_add) + " days.")
+                print("The new period then becomes " + str(new_period) + " days.")
             f.write(res.summary().as_latex())
 
     f.write(endtex)
@@ -427,12 +454,17 @@ def data_fit(input_file):
     plt.errorbar(x1_sec, y1_sec, yerr=y_err_new_sec, fmt="s", color="green", label="Secondary")
     # allows the legend to be moved wherever the user wants the legend to be placed rather than in a fixed location
     print("\n\nNOTE:")
-    print("You can drag the legend to move it wherever you would like, the default is the top right. Just click and drag"
-          " to move around the figure.\n")
+    print(
+        "You can drag the legend to move it wherever you would like, the default is the top right. Just click and drag"
+        " to move around the figure.\n")
     plt.legend(loc="upper right", fontsize=fontsize).set_draggable(True)
 
     x_label = "Epoch"
     y_label = "O-C (days)"
+
+    if loop == 0:
+        print("\nThe figure just plotted is with the original period. The program will start over using a "
+              "new period based on the linear fit.\n")
 
     # noinspection PyUnboundLocalVariable
     plt.xlabel(x_label, fontsize=fontsize)
@@ -442,6 +474,10 @@ def data_fit(input_file):
     plt.yticks(fontsize=fontsize)
     plt.grid()
     plt.show()
+
+    if loop == 0:
+        loop += 1
+        main(new_period, loop, nights)
 
     # residuals(x1_prim, y1_prim, x_label, y_label, degree, model, xs)
 
@@ -479,12 +515,6 @@ def residuals(x, y, x_label, y_label, degree, model, xs):
     # creates the figure subplot for appending next
     fig, (ax1, ax2) = plt.subplots(rows, cols)
     # adds gridlines to both subplots
-    """
-    a[0].grid(visible=True, which='major', color='black', linewidth=1.0)
-    a[0].grid(visible=True, which='minor', color='black', linewidth=0.5)
-    a[1].grid(visible=True, which='major', color='black', linewidth=1.0)
-    a[1].grid(visible=True, which='minor', color='black', linewidth=0.5)
-    """
     ax1.grid()
     ax2.grid()
     # creates the model line fit
@@ -501,7 +531,7 @@ def residuals(x, y, x_label, y_label, degree, model, xs):
     plt.show()
 
 
-# data_fit('254037_OC.txt')
+# data_fit('254037_OC.txt', 0.31297, 1, 2)
 # data_fit('896797_OC.txt')
 
 if __name__ == '__main__':

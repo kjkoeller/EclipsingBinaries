@@ -1,12 +1,12 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 06/12/2023
+Last Edited: 06/13/2023
 
 This calculates O-C values and produces an O-C plot.
 """
 
-from math import sqrt
+from math import sqrt, floor
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,6 +14,7 @@ from numpy.polynomial import Polynomial
 import statsmodels.formula.api as smf
 import seaborn as sns
 from numba import jit
+import time
 
 
 def main(period=None, loop=0, num=None, nights=None):
@@ -109,7 +110,7 @@ def TESS_OC(T0, To_err, period, df):
     # this for loop, loops through the min_strict list and calculates a variety of values
     for count, val in enumerate(min_strict):
         # call the function to calculate the O-C values
-        e, OC, OC_err, T0, To_err = calcualte_oc(val, min_strict_err[count], T0, To_err, period)
+        e, OC, OC_err, T0, To_err = calculate_oc(val, min_strict_err[count], T0, To_err, period)
 
         E_est.append(e)
         O_C.append(OC)
@@ -164,7 +165,7 @@ def BSUO(T0, To_err, period, db, dv, dr):
         average_err.append(err)
 
         # call the function to calculate the O-C values
-        e, OC, OC_err, T0, To_err = calcualte_oc(minimum, err, T0, To_err, period)
+        e, OC, OC_err, T0, To_err = calculate_oc(minimum, err, T0, To_err, period)
         E_est.append(e)
         O_C.append(OC)
         O_C_err.append(OC_err)
@@ -194,7 +195,6 @@ def all_data(nights, period, loop):
     :param nights: number of files there are for the first time through
     :param period: period of the system
     :param loop: number of loops through the program either o or 1
-
     :return: None
     """
     count = 0
@@ -205,10 +205,9 @@ def all_data(nights, period, loop):
     o_c_err_list = []
 
     while True:
-        print(
-            "\n\nPlease make sure that the very first line for each and every file that you have starts with the following\n"
-            "'Minimums	Epoch	O-C	O-C_Error'\n"
-            "With each space entered as a space.\n")
+        print("\n\nPlease make sure that the very first line for each and every file that you have starts with the following\n"
+              "'Minimums	Epoch	O-C	O-C_Error'\n"
+              "With each space entered as a space.\n")
         fname = input("Please enter a file name and pathway (i.e. C:\\folder1\\folder2\\[file name]): ")
         df = pd.read_csv(fname, header=None, skiprows=[0], delim_whitespace=True)
         minimum = np.array(df[0])
@@ -254,8 +253,8 @@ def all_data(nights, period, loop):
 
     minimum_lines = []
     for i in range(len(minimum)):
-        line = str("%.5f" % minimum[i]) + ' & ' + str(e[i]) + ' & $' + str("%.5f" % o_c[i]) + ' \pm ' + str(
-            "%.5f" % o_c_err[i]) + '$ ' + "\\\ \n"
+        line = str("%.5f" % minimum[i]) + ' & ' + str(e[i]) + ' & $' + str("%.5f" % o_c[i]) + ' \pm ' + \
+               str("%.5f" % o_c_err[i]) + '$ ' + "\\\ \n"
         minimum_lines.append(line)
 
     output = table_header
@@ -301,7 +300,7 @@ def arguments():
 
 
 @jit(forceobj=True)
-def calcualte_oc(m, err, T0, T0_err, p):
+def calculate_oc(m, err, T0, T0_err, p):
     """
     Calculates O-C values and errors and find the eclipse number for primary and secondary eclipses
     :param m: ToM
@@ -318,7 +317,7 @@ def calcualte_oc(m, err, T0, T0_err, p):
     # get the exact E value
     E_act = (m - T0) / p
     # estimate for the primary or secondary eclipse by rounding to the nearest 0.5
-    e = round(E_act * 2) / 2
+    e = floor(E_act * 2) / 2
     # calculate the calculated ToM and find the O-C value
     T_calc = T0 + (e * p)
     OC = "%.5f" % (m - T_calc)
@@ -349,7 +348,8 @@ def data_fit(input_file, period, loop, nights):
     y = df["O-C"]
     y_err = df["O-C_Error"]
 
-    weights = 1/(y_err**2)
+    # weights for least squares fitting
+    weights = 1 / (y_err ** 2)
 
     # these next parts are mainly for O-C data as I just want to plot primary minima's and not both primary/secondary
     x1_prim = []
@@ -397,8 +397,7 @@ def data_fit(input_file, period, loop, nights):
     # opens a file with this name to begin writing to the file
     output_test = None
     while not output_test:
-        output_file = input(
-            "\nWhat is the output file name and pathway for the regression tables (either .txt or .tex): ")
+        output_file = input("\nWhat is the output file name and pathway for the regression tables (either .txt or .tex): ")
         if output_file.endswith((".txt", ".tex")):
             output_test = True
         else:
@@ -453,10 +452,9 @@ def data_fit(input_file, period, loop, nights):
     plt.errorbar(x1_prim, y1_prim, yerr=y_err_new_prim, fmt="o", color="blue", label="Primary")
     plt.errorbar(x1_sec, y1_sec, yerr=y_err_new_sec, fmt="s", color="green", label="Secondary")
     # allows the legend to be moved wherever the user wants the legend to be placed rather than in a fixed location
-    print("\n\nNOTE:")
-    print(
-        "You can drag the legend to move it wherever you would like, the default is the top right. Just click and drag"
-        " to move around the figure.\n")
+    print("\n\n\033[1m" + "\033[93m" + "NOTE" + "\033[00m" + ":")
+    print("You can drag the legend to move it wherever you would like, the default is the top right. Just click and drag"
+          " to move around the figure.\n")
     plt.legend(loc="upper right", fontsize=fontsize).set_draggable(True)
 
     x_label = "Epoch"
@@ -473,6 +471,7 @@ def data_fit(input_file, period, loop, nights):
     plt.ylabel(y_label, fontsize=fontsize)
     plt.yticks(fontsize=fontsize)
     plt.grid()
+    time.sleep(1)
     plt.show()
 
     if loop == 0:
@@ -515,6 +514,12 @@ def residuals(x, y, x_label, y_label, degree, model, xs):
     # creates the figure subplot for appending next
     fig, (ax1, ax2) = plt.subplots(rows, cols)
     # adds gridlines to both subplots
+    """
+    a[0].grid(visible=True, which='major', color='black', linewidth=1.0)
+    a[0].grid(visible=True, which='minor', color='black', linewidth=0.5)
+    a[1].grid(visible=True, which='major', color='black', linewidth=1.0)
+    a[1].grid(visible=True, which='minor', color='black', linewidth=0.5)
+    """
     ax1.grid()
     ax2.grid()
     # creates the model line fit

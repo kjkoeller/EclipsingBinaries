@@ -7,8 +7,8 @@ Last Edits Done By: Kyle Koeller
 Last Edited: 06/15/2023
 """
 
-from vseq_updated import calc, FT, io, plot  # testing purposes
-# from .vseq_updated import calc, FT, io, plot
+# from vseq_updated import calc, FT, io, plot  # testing purposes
+from .vseq_updated import calc, FT, io, plot
 from os import environ, path
 import matplotlib.pyplot as plt
 import numpy as np

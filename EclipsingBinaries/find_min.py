@@ -4,11 +4,11 @@ Created:  07/03/2021
 Original Author: Alec Neal
 
 Last Edits Done By: Kyle Koeller
-Last Edited: 05/14/2023
+Last Edited: 06/14/2023
 """
 
-# import vseq  # testing purposes
-from . import vseq_updated as vseq
+from .vseq_updated import calc, FT, io, plot  # testing purposes
+# import .vseq_updated as vseq
 from os import environ, path
 import matplotlib.pyplot as plt
 import numpy as np
@@ -65,7 +65,7 @@ def best_root(coef, lb, rb, filter_files):
     # print(allroots)
     goodroots = []
     for root in range(len(allroots)):
-        if lb < allroots[root] < rb and -1e-2 < vseq.calc.poly.result(dcoef, allroots[root]) < 1e-2:
+        if lb < allroots[root] < rb and -1e-2 < calc.poly.result(dcoef, allroots[root]) < 1e-2:
             goodroots.append(allroots[root])
     root_est = (lb + rb) / 2
     try:
@@ -138,12 +138,12 @@ def KvW(fracHJD, flux, discard=0.1, resolution=100, para_range=None, plot=False,
         paraS.append(Slist[best_index - n])
 
     np.seterr(divide='ignore')
-    parabola = vseq.calc.poly.regr_polyfit(np.array(paraHJD), np.array(paraS), 2)
+    parabola = calc.poly.regr_polyfit(np.array(paraHJD), np.array(paraS), 2)
     coef, err, R2, results = parabola[:4]
     a, b, c = coef[::-1]
     if c - b ** 2 / (4 * a) < 0 or calc_S(fracHJD, flux, -b / (2 * a), npairs=npairs)[0] > paraS[0]:
         with np.errstate(divide='ignore'):
-            p2 = vseq.calc.poly.regr_polyfit(paraHJD[:3], paraS[:3], 2)
+            p2 = calc.poly.regr_polyfit(paraHJD[:3], paraS[:3], 2)
         # coef, err, R2, results = parabola[:4]
         a2, b2, c2 = p2[0][::-1]
         if c2 - b2 ** 2 / (4 * a2) < 0 or calc_S(fracHJD, flux, -b2 / (2 * a2), npairs=npairs)[0] > paraS[0]:
@@ -157,7 +157,7 @@ def KvW(fracHJD, flux, discard=0.1, resolution=100, para_range=None, plot=False,
     if need_error:
         if Z <= 1:
             # print(Z)
-            print('Too few observations!')
+            print('\033[1m' + '\033[95m' + 'Too few observations!' + '\033[0m')
         sigt_kw = np.sqrt(S_at_tkw / (a * (Z - 1)))
 
         print('S(T_BF) =', paraS[0])
@@ -173,7 +173,7 @@ def KvW(fracHJD, flux, discard=0.1, resolution=100, para_range=None, plot=False,
             ax.set_xlim(min(paraHJD) - HJDrange * 0.025, max(paraHJD) + HJDrange * 0.025)
 
         ax.plot(guesses, np.array(Slist), 'ok', ms=5)
-        polyx, polyy = vseq.calc.poly.polylist(coef, min(paraHJD), max(paraHJD), 100)
+        polyx, polyy = calc.poly.polylist(coef, min(paraHJD), max(paraHJD), 100)
         ax.plot(polyx, polyy, 'b', lw=1)
         # plt.plot(paraHJD,results,'b',lw=1,label=r'${S}^{\prime}$')
         ax.axvline(T_kw, color='b', label=r'$T_{\rm KW}=' + str(round(T_kw, 6)) + '$', linewidth=1, ls='--')
@@ -206,15 +206,15 @@ def sim_min(filter_HJD, filter_flux, filter_fluxerr, order, sims, filter_files):
     filter_results = []
     HJD_inbounds = []
     for band in range(filters):
-        poly = vseq.calc.poly.regr_polyfit(filter_HJD[band], filter_flux[band], order)
+        poly = calc.poly.regr_polyfit(filter_HJD[band], filter_flux[band], order)
         filter_results.append(poly[3])
         HJD_inbounds += list(filter_HJD[band])
         for sim in range(sims):
-            all_sims[sim] += list(vseq.FT.sim_ob_flux(filter_results[band], filter_fluxerr[band], lower=-10, upper=10))
+            all_sims[sim] += list(FT.sim_ob_flux(filter_results[band], filter_fluxerr[band], lower=-10, upper=10))
     rootlist = []
     # kweelist = []
     for sim in tqdm(range(sims), position=0):
-        rootlist.append(best_root(vseq.calc.poly.regr_polyfit(HJD_inbounds, all_sims[sim], order)[0], min(HJD_inbounds),
+        rootlist.append(best_root(calc.poly.regr_polyfit(HJD_inbounds, all_sims[sim], order)[0], min(HJD_inbounds),
                                   max(HJD_inbounds), filter_files))
         # kweelist.append(KvW(HJD_inbounds,all_sims[sim])[0]) # uncomment to sim kwee
     rooterr = statistics.stdev(rootlist)
@@ -243,7 +243,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
     master_span = []
 
     for band in range(filters):
-        HJD_mag_magerr = vseq.io.importFile_pd(filter_files[band])
+        HJD_mag_magerr = io.importFile_pd(filter_files[band])
         HJD = HJD_mag_magerr[0]
         mag = HJD_mag_magerr[1]
         magerr = HJD_mag_magerr[2]
@@ -253,7 +253,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
         master_magerr.append(magerr)
         master_dates.append([])
         for n in range(len(master_HJD[band])):
-            master_dates[band].append(vseq.calc.astro.convert.JD_to_Greg(np.floor(master_HJD[band][n]) + 0.75))
+            master_dates[band].append(calc.astro.convert.JD_to_Greg(np.floor(master_HJD[band][n]) + 0.75))
             # master_dates[band].append(np.floor(master_HJD[band][n]))
         count_nights = Counter(master_dates[band])
         count_uniques = np.unique(master_dates[band])
@@ -300,7 +300,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
             all_fluxerr[night] += list(master_fluxerrnight[band][night])
 
     intday = int(all_HJD[day][0])
-    fracHJD = vseq.calc.frac(np.array(all_HJD[day]))
+    fracHJD = calc.frac(np.array(all_HJD[day]))
 
     global last_lb
     global last_rb
@@ -313,7 +313,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
         parameters = {'axes.labelsize': fontsize}
         plt.rcParams.update(parameters)
 
-        [Splot, MIN], fig = vseq.plot.multiplot(figsize=(5, 4), height_ratios=[1, 4], sharex=False, sharey=False,
+        [Splot, MIN], fig = plot.multiplot(figsize=(5, 4), height_ratios=[1, 4], sharex=False, sharey=False,
                                                 hspace=0)
         MIN.errorbar(fracHJD, all_flux[day], all_fluxerr[day], fmt='ok', ms=3, capsize=3, elinewidth=0.6, ecolor='gray',
                      capthick=0.6)  # ,'ok',ms=3)
@@ -328,7 +328,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
                 flux_inbounds.append(all_flux[day][n])
                 fluxerr_inbounds.append(all_fluxerr[day][n])
         try:
-            poly = vseq.calc.poly.regr_polyfit(HJD_inbounds, flux_inbounds, order)
+            poly = calc.poly.regr_polyfit(HJD_inbounds, flux_inbounds, order)
         except ValueError:
             print("\nThe boundary you last entered was incorrect, please try again. \n")
             plot_obs(filter_files, day=day, lb=last_lb, rb=last_rb, order=order, resolution=resolution, npairs=npairs,
@@ -339,7 +339,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
             print("\nEntered in an incorrect boundary value. Please try again.\n")
             plot_obs(filter_files, day=day, lb=last_lb, rb=last_rb, order=order, resolution=resolution, npairs=npairs,
                      para_range=None, norm_method="norm")
-        print('R2 =', R2)
+        print('\n\nR2 =', R2)
         coef_deriv = []
 
         for n in range(1, len(coef)):
@@ -352,7 +352,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
             flux_band_in.append([])
             fluxerr_band_in.append([])
             for n in range(len(master_HJDnight[band][day])):
-                tempfrac = vseq.calc.frac(np.array(master_HJDnight[band][day]))
+                tempfrac = calc.frac(np.array(master_HJDnight[band][day]))
                 if lb < tempfrac[n] < rb:
                     HJD_band_in[band].append(tempfrac[n])
                     flux_band_in[band].append(master_fluxnight[band][day][n])
@@ -385,7 +385,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
         # MIN.axvline(bestroot, color='r',
         #            label=r'$T_{\rm LSQ^' + str(order) + '}=' + str(round(intday * 0 + bestroot, 6)) + '\pm' + str(
         #                round(idkerror, 6)) + '$')
-        poly_x, poly_y = vseq.calc.poly.polylist(coef, min(HJD_inbounds), max(HJD_inbounds), 100)
+        poly_x, poly_y = calc.poly.polylist(coef, min(HJD_inbounds), max(HJD_inbounds), 100)
         MIN.plot(poly_x, poly_y, 'r-', lw=1, zorder=10)
         Splot.xaxis.set_label_position("top")
         Splot.xaxis.tick_top()
@@ -409,8 +409,8 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
         MIN.annotate('' + filter_files[0] + '', xy=(MIN.get_xlim()[0] + 0.001, MIN.get_ylim()[1] - 0.005), va='top',
                      ha='left', fontsize=fontsize)
 
-        vseq.plot.sm_format(MIN, xtop=False, yright=False, ydirection='out', xdirection='out', X=Xtick, numbersize=6)
-        vseq.plot.sm_format(Splot, xbottom=False, yright=False, ydirection='out', xdirection='out', bottomspine=False,
+        plot.sm_format(MIN, xtop=False, yright=False, ydirection='out', xdirection='out', X=Xtick, numbersize=6)
+        plot.sm_format(Splot, xbottom=False, yright=False, ydirection='out', xdirection='out', bottomspine=False,
                             y=1000000, numbersize=6)
         plt.grid(alpha=0.35)
         plt.savefig('MIN-program_demo.pdf', bbox_inches='tight')
@@ -419,10 +419,10 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
         plt.show()
     else:
         ax = plt.figure(figsize=(9, 7), dpi=256).subplots()
-        vseq.plot.sm_format(ax, xformatter=False, numbersize=7, Xsize=0, xsize=0, tickwidth=1)
+        plot.sm_format(ax, xformatter=False, numbersize=7, Xsize=0, xsize=0, tickwidth=1)
         scaling = 1
         # fracHJD=vseq.calc.frac(np.array(all_HJD[day]))*scaling
-        fracHJD = vseq.calc.frac(np.array(all_HJD[day])) * scaling
+        fracHJD = calc.frac(np.array(all_HJD[day])) * scaling
 
         # plt.plot(fracHJD,all_flux[day],'ok',ms=3)
         plt.errorbar(fracHJD, all_flux[day], all_fluxerr[day], fmt='ok', ms=3, capsize=3, elinewidth=0.6, ecolor='gray',
@@ -529,6 +529,7 @@ def main():
             else:
                 print("\nOne of the files you have entered does not exist, please try all three again.\n")
                 continue
+        print("\nPress 'h' for help.\n")
         plot_obs([filter1], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
                  para_range=None, norm_method='norm')
     elif num_filters == '2':
@@ -540,6 +541,7 @@ def main():
             else:
                 print("\nOne of the files you have entered does not exist, please try all three again.\n")
                 continue
+        print("\nPress 'h' for help.\n")
         plot_obs([filter1, filter2], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
                  para_range=None, norm_method='norm')
     elif num_filters == '3':
@@ -552,6 +554,7 @@ def main():
             else:
                 print("\nOne of the files you have entered does not exist, please try all three again.\n")
                 continue
+        print("\nPress 'h' for help.\n")
         plot_obs([filter1, filter2, filter3], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
                  para_range=None, norm_method='norm')
     elif num_filters.lower() == "close":

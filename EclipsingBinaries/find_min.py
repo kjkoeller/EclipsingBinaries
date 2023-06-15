@@ -4,11 +4,11 @@ Created:  07/03/2021
 Original Author: Alec Neal
 
 Last Edits Done By: Kyle Koeller
-Last Edited: 05/14/2023
+Last Edited: 06/14/2023
 """
 
-# import vseq  # testing purposes
-from . import vseq_updated as vseq
+# import vseq_updated as vseq  # testing purposes
+import .vseq_updated as vseq
 from os import environ, path
 import matplotlib.pyplot as plt
 import numpy as np
@@ -157,7 +157,7 @@ def KvW(fracHJD, flux, discard=0.1, resolution=100, para_range=None, plot=False,
     if need_error:
         if Z <= 1:
             # print(Z)
-            print('Too few observations!')
+            print('\033[1m' + '\033[95m' + 'Too few observations!' + '\033[0m')
         sigt_kw = np.sqrt(S_at_tkw / (a * (Z - 1)))
 
         print('S(T_BF) =', paraS[0])
@@ -339,7 +339,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
             print("\nEntered in an incorrect boundary value. Please try again.\n")
             plot_obs(filter_files, day=day, lb=last_lb, rb=last_rb, order=order, resolution=resolution, npairs=npairs,
                      para_range=None, norm_method="norm")
-        print('R2 =', R2)
+        print('\n\nR2 =', R2)
         coef_deriv = []
 
         for n in range(1, len(coef)):
@@ -529,6 +529,7 @@ def main():
             else:
                 print("\nOne of the files you have entered does not exist, please try all three again.\n")
                 continue
+        print("\nPress 'h' for help.\n")
         plot_obs([filter1], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
                  para_range=None, norm_method='norm')
     elif num_filters == '2':
@@ -540,6 +541,7 @@ def main():
             else:
                 print("\nOne of the files you have entered does not exist, please try all three again.\n")
                 continue
+        print("\nPress 'h' for help.\n")
         plot_obs([filter1, filter2], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
                  para_range=None, norm_method='norm')
     elif num_filters == '3':
@@ -552,6 +554,7 @@ def main():
             else:
                 print("\nOne of the files you have entered does not exist, please try all three again.\n")
                 continue
+        print("\nPress 'h' for help.\n")
         plot_obs([filter1, filter2, filter3], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
                  para_range=None, norm_method='norm')
     elif num_filters.lower() == "close":

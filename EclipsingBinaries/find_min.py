@@ -4,11 +4,11 @@ Created:  07/03/2021
 Original Author: Alec Neal
 
 Last Edits Done By: Kyle Koeller
-Last Edited: 06/14/2023
+Last Edited: 06/15/2023
 """
 
-from .vseq_updated import calc, FT, io, plot  # testing purposes
-# import .vseq_updated as vseq
+from vseq_updated import calc, FT, io, plot  # testing purposes
+# from .vseq_updated import calc, FT, io, plot
 from os import environ, path
 import matplotlib.pyplot as plt
 import numpy as np
@@ -110,6 +110,22 @@ def calc_S(fracHJD, flux, guess_min, npairs=None):
 
 def KvW(fracHJD, flux, discard=0.1, resolution=100, para_range=None, plot=False,
         need_error=False, ax=None, npairs=20, entire_S=False):
+    """
+    KvW is the Kwee-van Woerden method for finding the minimum of a light curve.
+
+    fracHJD: list of fractional HJDs
+    flux: list of fluxes
+    discard: fraction of the light curve to discard from the edges
+    resolution: number of guesses to try
+    para_range: range of guesses to try
+    plot: whether or not to plot the results
+    need_error: whether or not to return the error
+    ax: axis to plot on
+    npairs: number of pairs to use
+    entire_S: whether or not to return the entire S list
+
+    returns: best guess and corresponding error of the Kwee van Woerdan method
+    """
     guess_range = (max(fracHJD) - min(fracHJD))
     guesses = np.linspace(guess_range * discard + min(fracHJD), guess_range * (1 - discard) + min(fracHJD), resolution)
     guesses = np.linspace(sorted(fracHJD)[1], sorted(fracHJD)[-2], resolution)
@@ -195,7 +211,7 @@ def KvW(fracHJD, flux, discard=0.1, resolution=100, para_range=None, plot=False,
         #                     r', $K=' + str(Kstr) + '~(' + str(int(Z * 2)) + ')$', fontsize=7)
         ax.text(xt, yt, '$R^2=' + str(round(R2, 5)) + '$, $K=' + str(Kstr) + '~(' + str(int(Z * 2)) + ')$', fontsize=7)
 
-    return T_kw, sigt_kw
+    return T_kw, sigt_kw, Z
 
 
 def sim_min(filter_HJD, filter_flux, filter_fluxerr, order, sims, filter_files):
@@ -318,8 +334,8 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
         MIN.errorbar(fracHJD, all_flux[day], all_fluxerr[day], fmt='ok', ms=3, capsize=3, elinewidth=0.6, ecolor='gray',
                      capthick=0.6)  # ,'ok',ms=3)
 
-        fig.canvas.mpl_connect('key_press_event', press)
-        fig.canvas.get_tk_widget().focus_force()
+        fig.canvas.mpl_connect('key_press_event', lambda event: press(event, Z))
+        # fig.canvas.get_tk_widget().focus_force()
 
         HJD_inbounds, flux_inbounds, fluxerr_inbounds = [], [], []
         for n in range(len(all_HJD[day])):
@@ -363,7 +379,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
 
         # ===================================================================================================
         try:
-            t_kw, sigt_kw = KvW(HJD_inbounds, flux_inbounds, resolution=resolution, para_range=para_range, discard=discard,
+            t_kw, sigt_kw, Z = KvW(HJD_inbounds, flux_inbounds, resolution=resolution, para_range=para_range, discard=discard,
                                 need_error=True, ax=Splot, npairs=npairs, entire_S=entire_S)
         except IndexError:
             print("Please try entering in that last key board press you entered. An error ocurred.\n")
@@ -440,7 +456,21 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
     return 'Done'
 
 
-def press(event):
+def press(event, Z):
+    """
+    Pressing a key will do something
+
+    Parameters
+    ----------
+    event : matplotlib event
+        The event that is triggered by pressing a key
+    Z : list
+        List of the data to be plotted
+
+    Returns
+    -------
+    None
+    """
     global rb
     global lb
     global day
@@ -504,7 +534,7 @@ def zoom_factory(ax, base_scale=2.):
 
     fig = ax.get_figure() # get the figure of interest
     # attach the call back
-    fig.canvas.mpl_connect('scroll_event',zoom_fun)
+    fig.canvas.mpl_connect('scroll_event', zoom_fun)
 
     # return the function
     return zoom_fun

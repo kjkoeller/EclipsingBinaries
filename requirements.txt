@@ -1,7 +1,7 @@
 astropy>=5.1.1
 astroquery>=0.4.6
 ccdproc>=2.4.0
-matplotlib>=3.3.1
+matplotlib>=3.5.1
 numpy>=1.19.1
 pandas>=1.1.0
 PyAstronomy>=0.18.0

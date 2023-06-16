@@ -5,9 +5,11 @@
 from setuptools import setup, find_packages  # Always prefer setuptools over distutils
 import sys
 import codecs
-import os.path
+import os
 
 from pathlib import Path
+
+print("Current working directory:", os.getcwd())
 
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()

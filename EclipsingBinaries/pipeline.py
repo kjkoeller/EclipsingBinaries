@@ -18,9 +18,18 @@ def monitor_directory():
     parser = argparse.ArgumentParser(description="Monitor a directory for new files.")
 
     # add the arguments
-    parser.add_argument("folder_path", type=str, help="The path of the directory to monitor.")
+    parser.add_argument("raw_folder_path", type=str, help="The path of the folder where the images are going to.")
+    parser.add_argument("new_folder_path", type="str", help="The path of the folder where the reduced images "
+                                                            "and all files will go.")
     parser.add_argument("--time_threshold", type=int, default=3600,
-                        help="The time threshold in seconds. If no new file is added within this time, an alert is raised. Default is 3600 seconds (1 hour).")
+                        help="The time threshold in seconds. If no new file is added within this time, an alert is "
+                             "raised. Default is 3600 seconds (1 hour).")
+    parser.add_argument("--location", type=str, default="BSUO",
+                        help="The location of the telescope (BSUO, SARA-KP, SARA-RM, SARA-CT). Default is BSUO.")
+    parser.add_argument("--ra", type=str, default="00:00:00",
+                        help="The right ascension of the target. Default is 00:00:00.")
+    parser.add_argument("--dec", type=str, default="00:00:00",
+                        help="The declination of the target (if negative -00:00:00). Default is 00:00:00.")
 
     # parse the arguments
     args = parser.parse_args()
@@ -59,4 +68,4 @@ def monitor_directory():
             start_time = time()
             current_latest_file = latest_file
 
-    main(path=args.folder_path, pipeline=True)
+    main(path=args.raw_folder_path, calibrated=args.new_folder_path, pipeline=True, location=args.location)

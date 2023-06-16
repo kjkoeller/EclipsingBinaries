@@ -52,7 +52,7 @@ setup(
 
     entry_points={'console_scripts': [
         'EclipsingBinaries = EclipsingBinaries.menu:main',
-        # 'EB_pipeline = EclipsingBinaries.pipeline:monitor_directory'
+        'EB_pipeline = EclipsingBinaries.pipeline:monitor_directory'
     ],
     },
 

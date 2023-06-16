@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 06/15/2023
+Last Edited: 06/16/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -40,12 +40,14 @@ dark_bool = "True"
 location = "bsuo"
 
 
-def main(path="", pipeline=False):
+def main(path="", calibrated="", pipeline=False, location=""):
     """
     This function calls all other functions in order of the calibration.
 
     :param path: the path to the raw images
+    :param calibrated: the path to the calibrated images
     :param pipeline: if the user wants to use the pipeline or not
+    :param location: the location of the telescope
 
     :return: outputs all calibration images into a new reduced folder designated by the user.
     """
@@ -96,10 +98,6 @@ def main(path="", pipeline=False):
         flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region)
         science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region)
     else:
-        calibrated = input(
-            "Please enter a file pathway for a new calibrated folder to not overwrite the original images "
-            "(C:\\folder1\\folder2\\[calibrated]): ")
-        # calibrated = "C:\\test"
         # checks whether the file paths from above are real
         while True:
             try:
@@ -111,6 +109,10 @@ def main(path="", pipeline=False):
                 path = input("Please enter a file path or folder name (if this code is in the same main folder): ")
                 calibrated = input(
                     "Please enter a name for a new calibrated folder to not overwrite the original images: ")
+                
+        if location.lower != "bsuo":
+            # add in sections for SARA telescopes specifically and then use the default function for anything else
+            pass
 
         calibrated_data.mkdir(exist_ok=True)
         files = ccdp.ImageFileCollection(images_path)

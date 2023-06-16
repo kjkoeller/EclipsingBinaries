@@ -59,4 +59,4 @@ def monitor_directory():
             start_time = time()
             current_latest_file = latest_file
 
-    main(path=folder_path, pipeline=True)
+    main(path=args.folder_path, pipeline=True)

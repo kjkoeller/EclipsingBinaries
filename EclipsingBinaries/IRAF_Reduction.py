@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 06/15/2023
+Last Edited: 05/09/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -40,84 +40,57 @@ dark_bool = "True"
 location = "bsuo"
 
 
-def main(path="", pipeline=False):
+def main():
     """
     This function calls all other functions in order of the calibration.
-
-    :param path: the path to the raw images
-    :param pipeline: if the user wants to use the pipeline or not
 
     :return: outputs all calibration images into a new reduced folder designated by the user.
     """
 
-    if not pipeline:
-        # allows the user to input where the raw images are and where the calibrated images go to
-        path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the raw images are or type "
-                     "the word 'Close' to leave: ")
-        # path = "C:\\Users\\Kyle\\OneDrive\\PhysicsAstro\\Astronomy\\Code\\IRAF\\Calibration"
-        if path.lower() == "close":
-            exit()
-        # path = "Calibration2"
-        calibrated = input("Please enter a file pathway for a new calibrated folder to not overwrite the original images "
-                           "(C:\\folder1\\folder2\\[calibrated]): ")
-        # calibrated = "C:\\test"
-        # checks whether the file paths from above are real
-        while True:
-            try:
-                images_path = Path(path)
-                calibrated_data = Path(calibrated)
-                break
-            except FileNotFoundError:
-                print("Files were not found. Please try again.\n")
-                path = input("Please enter a file path or folder name (if this code is in the same main folder): ")
-                calibrated = input("Please enter a name for a new calibrated folder to not overwrite the original images: ")
+    # allows the user to input where the raw images are and where the calibrated images go to
+    path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the raw images are or type "
+                 "the word 'Close' to leave: ")
+    # path = "C:\\Users\\Kyle\\OneDrive\\PhysicsAstro\\Astronomy\\Code\\IRAF\\Calibration"
+    if path.lower() == "close":
+        exit()
+    # path = "Calibration2"
+    calibrated = input("Please enter a file pathway for a new calibrated folder to not overwrite the original images "
+                       "(C:\\folder1\\folder2\\[calibrated]): ")
+    # calibrated = "C:\\test"
+    # checks whether the file paths from above are real
+    while True:
+        try:
+            images_path = Path(path)
+            calibrated_data = Path(calibrated)
+            break
+        except FileNotFoundError:
+            print("Files were not found. Please try again.\n")
+            path = input("Please enter a file path or folder name (if this code is in the same main folder): ")
+            calibrated = input("Please enter a name for a new calibrated folder to not overwrite the original images: ")
 
-        print("\nDo you want to load default options like gain and read noise? The defaults are for BSUO")
-        while True:
-            default_ans = input("To load defaults type 'Default' otherwise type 'New' to enter values: ")
-            # default_ans = "default"
-            if default_ans.lower() == "default":
-                break
-            elif default_ans.lower() == "new":
-                default()
-                break
-            else:
-                print("Please either enter 'Default' or 'New'.\n")
-
-        calibrated_data.mkdir(exist_ok=True)
-        files = ccdp.ImageFileCollection(images_path)
-
-        zero, overscan_region, trim_region = bias(files, calibrated_data, path)
-        if not dark_bool:
-            master_dark = None
+    print("\nDo you want to load default options like gain and read noise? The defaults are for BSUO")
+    while True:
+        default_ans = input("To load defaults type 'Default' otherwise type 'New' to enter values: ")
+        # default_ans = "default"
+        if default_ans.lower() == "default":
+            break
+        elif default_ans.lower() == "new":
+            default()
+            break
         else:
-            master_dark = dark(files, zero, calibrated_data, overscan_region, trim_region)
+            print("Please either enter 'Default' or 'New'.\n")
 
-        flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region)
-        science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region)
+    calibrated_data.mkdir(exist_ok=True)
+    files = ccdp.ImageFileCollection(images_path)
+
+    zero, overscan_region, trim_region = bias(files, calibrated_data, path)
+    if not dark_bool:
+        master_dark = None
     else:
-        calibrated = input(
-            "Please enter a file pathway for a new calibrated folder to not overwrite the original images "
-            "(C:\\folder1\\folder2\\[calibrated]): ")
-        # calibrated = "C:\\test"
-        # checks whether the file paths from above are real
-        while True:
-            try:
-                images_path = Path(path)
-                calibrated_data = Path(calibrated)
-                break
-            except FileNotFoundError:
-                print("Files were not found. Please try again.\n")
-                path = input("Please enter a file path or folder name (if this code is in the same main folder): ")
-                calibrated = input(
-                    "Please enter a name for a new calibrated folder to not overwrite the original images: ")
+        master_dark = dark(files, zero, calibrated_data, overscan_region, trim_region)
 
-        calibrated_data.mkdir(exist_ok=True)
-        files = ccdp.ImageFileCollection(images_path)
-
-        zero, overscan_region, trim_region = bias(files, calibrated_data, path)
-        flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region)
-        science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region)
+    flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region)
+    science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region)
 
 
 def default():

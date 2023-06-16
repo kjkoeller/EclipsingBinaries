@@ -51,7 +51,7 @@ setup(
     # packages=find_packages(),
 
     entry_points={'console_scripts': [
-        'EclipsingBinaries = EclipsingBinaries.menu:main'
+        'EclipsingBinaries = EclipsingBinaries.menu:main',
         'EB_pipeline=EclipsingBinaries.pipeline:monitor_directory'
     ],
     },

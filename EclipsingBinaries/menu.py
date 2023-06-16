@@ -1,9 +1,10 @@
 """
 The main program helps centralize all the other programs into one selection routine that can be run and call all
 other programs.
+
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 05/14/2023
+Last Updated: 06/15/2023
 """
 
 import pandas as pd
@@ -36,7 +37,7 @@ def main():
           " https://github.com/kjkoeller/EclipsingBinaries/")
     print("\nWhich program do you want to run?\n\n")
 
-    options = ["IRAF Reduction", "Find Minimum", "TESS Database Search/Download", "AIJ Comparison Star Selector",
+    options = ["IRAF Reduction", "Find Minimum (WIP)", "TESS Database Search/Download", "AIJ Comparison Star Selector",
                "BSUO or SARA/TESS Night Filters", "O-C Plotting", "Gaia Search", "O'Connel Effect", "Color Light Curve",
                "Close Program"]
     numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]

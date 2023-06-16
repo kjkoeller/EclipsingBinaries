@@ -37,7 +37,7 @@ def check_python_version():
 
 
 def debug_print_init_contents():
-    print(read("EclipsingBinaries/__init__.py"))
+    print(f"::debug::{read('EclipsingBinaries/__init__.py')}")
 
 debug_print_init_contents()
 

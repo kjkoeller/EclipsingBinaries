@@ -5,11 +5,9 @@
 from setuptools import setup, find_packages  # Always prefer setuptools over distutils
 import sys
 import codecs
-import os
+import os.path
 
 from pathlib import Path
-
-print("Current working directory:", os.getcwd())
 
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
@@ -38,11 +36,6 @@ def check_python_version():
         sys.exit("Python {}.{}+ is required.".format(*MINIMUM_PYTHON_VERSION))
 
 
-def debug_print_init_contents():
-    print(f"::debug::{read('EclipsingBinaries/__init__.py')}")
-
-debug_print_init_contents()
-
 check_python_version()
 version = get_version("EclipsingBinaries/__init__.py")
 
@@ -59,7 +52,6 @@ setup(
 
     entry_points={'console_scripts': [
         'EclipsingBinaries = EclipsingBinaries.menu:main'
-        # 'EB_pipeline = EclipsingBinaries.pipeline:monitor_directory'
     ],
     },
 

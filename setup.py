@@ -36,6 +36,11 @@ def check_python_version():
         sys.exit("Python {}.{}+ is required.".format(*MINIMUM_PYTHON_VERSION))
 
 
+def debug_print_init_contents():
+    print(read("EclipsingBinaries/__init__.py"))
+
+debug_print_init_contents()
+
 check_python_version()
 version = get_version("EclipsingBinaries/__init__.py")
 

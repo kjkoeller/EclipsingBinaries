@@ -21,7 +21,7 @@ def monitor_directory():
     parser.add_argument("raw_folder_path", type=str, help="The path of the folder where the images are going to.")
     parser.add_argument("new_folder_path", type="str", help="The path of the folder where the reduced images "
                                                             "and all files will go.")
-    parser.add_argument("--time_threshold", type=int, default=3600,
+    parser.add_argument("--time_threshold", type=int, default=10,
                         help="The time threshold in seconds. If no new file is added within this time, an alert is "
                              "raised. Default is 3600 seconds (1 hour).")
     parser.add_argument("--location", type=str, default="BSUO",
@@ -62,7 +62,8 @@ def monitor_directory():
             # if no new file has been added
             elapsed_time = time() - start_time
             if elapsed_time > args.time_threshold:
-                print("No new file has been added for the past hour!\n")
+                print("No new file has been added for the past " + str(args.time_threshold) + " seconds!\n")
+                break
         else:
             # if a new file has been added
             start_time = time()

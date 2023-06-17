@@ -5,6 +5,7 @@ Author: Kyle Koeller
 Created: 06/15/2023
 Last Edited: 06/16/2023
 """
+
 from os import path, listdir
 from time import time, sleep
 import argparse
@@ -19,7 +20,7 @@ def monitor_directory():
 
     # add the arguments
     parser.add_argument("raw_folder_path", type=str, help="The path of the folder where the images are going to.")
-    parser.add_argument("new_folder_path", type="str", help="The path of the folder where the reduced images "
+    parser.add_argument("new_folder_path", type=str, help="The path of the folder where the reduced images "
                                                             "and all files will go.")
     parser.add_argument("--time_threshold", type=int, default=3600,
                         help="The time threshold in seconds. If no new file is added within this time, an alert is "
@@ -50,19 +51,23 @@ def monitor_directory():
             return None
 
     # store the current latest file
-    current_latest_file = get_latest_file(folder_path=args.folder_path)
+    current_latest_file = get_latest_file(folder_path=args.raw_folder_path)
 
     start_time = time()
 
+    print("\n\nMonitoring directory for new files...\n")
     while True:
         sleep(1)  # pause for 1 second
-        latest_file = get_latest_file(args.folder_path)
+        latest_file = get_latest_file(args.raw_folder_path)
+
+        print("Latest file: " + latest_file)
 
         if latest_file == current_latest_file:
             # if no new file has been added
             elapsed_time = time() - start_time
             if elapsed_time > args.time_threshold:
-                print("No new file has been added for the past hour!\n")
+                print("No new file has been added for the past " + str(args.time_threshold) + " seconds!\n")
+                break
         else:
             # if a new file has been added
             start_time = time()

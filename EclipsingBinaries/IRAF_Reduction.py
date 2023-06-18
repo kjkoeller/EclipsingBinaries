@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 06/16/2023
+Last Edited: 06/17/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -40,7 +40,7 @@ dark_bool = "True"
 location = "bsuo"
 
 
-def main(path="", calibrated="", pipeline=False, location=""):
+def main(path="", calibrated="", pipeline=False, location="", dark_bool=True):
     """
     This function calls all other functions in order of the calibration.
 
@@ -48,6 +48,7 @@ def main(path="", calibrated="", pipeline=False, location=""):
     :param calibrated: the path to the calibrated images
     :param pipeline: if the user wants to use the pipeline or not
     :param location: the location of the telescope
+    :param dark_bool: if the user wants to use dark frames or not
 
     :return: outputs all calibration images into a new reduced folder designated by the user.
     """
@@ -89,7 +90,7 @@ def main(path="", calibrated="", pipeline=False, location=""):
         calibrated_data.mkdir(exist_ok=True)
         files = ccdp.ImageFileCollection(images_path)
 
-        zero, overscan_region, trim_region = bias(files, calibrated_data, path)
+        zero, overscan_region, trim_region = bias(files, calibrated_data, path, pipeline)
         if not dark_bool:
             master_dark = None
         else:
@@ -109,7 +110,7 @@ def main(path="", calibrated="", pipeline=False, location=""):
                 path = input("Please enter a file path or folder name (if this code is in the same main folder): ")
                 calibrated = input(
                     "Please enter a name for a new calibrated folder to not overwrite the original images: ")
-                
+
         if location.lower != "bsuo":
             # add in sections for SARA telescopes specifically and then use the default function for anything else
             pass
@@ -117,7 +118,12 @@ def main(path="", calibrated="", pipeline=False, location=""):
         calibrated_data.mkdir(exist_ok=True)
         files = ccdp.ImageFileCollection(images_path)
 
-        zero, overscan_region, trim_region = bias(files, calibrated_data, path)
+        zero, overscan_region, trim_region = bias(files, calibrated_data, path, pipeline)
+        if not dark_bool:
+            master_dark = None
+        else:
+            master_dark = dark(files, zero, calibrated_data, overscan_region, trim_region)
+
         flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region)
         science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region)
 
@@ -150,7 +156,7 @@ def default():
         dark_bool = False
     elif dark_bool.lower == "true":
         dark_bool = True
-    location = input("What is your observation location, default is bsuo (ctip, kpno, lapalma")
+    location = input("What is your observation location, default is bsuo (ctio, kpno, lapalma")
 
 
 def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_flat):
@@ -225,41 +231,47 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
         return reduced
 
 
-def bias(files, calibrated_data, path):
+def bias(files, calibrated_data, path, pipeline):
     """
     Calibrates the bias images
 
     :param path: the raw images folder path
     :param files: file location where all raw images are
     :param calibrated_data: file location where the new images go
+    :param pipeline: true or false for pipeline usage
+
     :return: the combined bias image and the trim and overscan regions
     """
 
     # plots one of the flat image mean count values across all columns to find the trim and overscan regions
-    print("\n\nThe flat image that you enter next should be inside the " + "\033[1m" + "\033[93m" + "FIRST" +
-          "\033[00m" + " folder that you entered above or this will crash.")
-    while True:
-        try:
-            # image = input(
-            #     "Please enter the name of one of the flat image to be looked at for overscan and data regions: ")
-            image = "Flat-Empty-B-Bin2-001-NoGEM.fts"
-            cryo_path = Path(path)
-            bias_1 = CCDData.read(cryo_path / image, unit='adu')
-            break
-        except FileNotFoundError:
-            print("\nThe file you entered could not be found, please try entering " 
-                  "\033[1m" + "\033[93m" + "JUST" + "\033[00m" + " the file name only.\n")
-    # bias_1 = CCDData.read(cryo_path / 'bias-0001.fits', unit='adu')  # testing
+    if not pipeline:
+        print("\n\nThe flat image that you enter next should be inside the " + "\033[1m" + "\033[93m" + "FIRST" +
+              "\033[00m" + " folder that you entered above or this will crash.")
+        while True:
+            try:
+                image = input(
+                    "Please enter the name of one of the flat image to be looked at for overscan and data regions: ")
+                # image = "Flat-Empty-B-Bin2-001-NoGEM.fts"  # testing
+                cryo_path = Path(path)
+                bias_1 = CCDData.read(cryo_path / image, unit='adu')
+                break
+            except FileNotFoundError:
+                print("\nThe file you entered could not be found, please try entering " 
+                      "\033[1m" + "\033[93m" + "JUST" + "\033[00m" + " the file name only.\n")
+        # bias_1 = CCDData.read(cryo_path / 'bias-0001.fits', unit='adu')  # testing
 
-    print("\n\nFor the overscan region, [columns, rows], and if you want all the columns then you want would enter, \n"
-          "[1234:5678, 1234:5678] and this would say rows between those values and all the columns. \n"
-          "This would also work if you wanted all the columns ([: , 1234:5678]).\n")
-    bias_plot(bias_1)
+        print("\n\nFor the overscan region, [columns, rows], and if you want all the columns then you want would enter, \n"
+              "[1234:5678, 1234:5678] and this would say rows between those values and all the columns. \n"
+              "This would also work if you wanted all the columns ([: , 1234:5678]).\n")
+        bias_plot(bias_1)
 
-    overscan_region = input("Please enter the overscan region you determined from the figure.\n"
-                            "Example '[2073:2115, :]' or if you do not have an overscan region enter 'None': ")
-    trim_region = input("Please enter the data section. Example '[20:2060, 12:2057]': ")
-    print()
+        overscan_region = input("Please enter the overscan region you determined from the figure.\n"
+                                "Example '[2073:2115, :]' or if you do not have an overscan region enter 'None': ")
+        trim_region = input("Please enter the data section. Example '[20:2060, 12:2057]': ")
+        print()
+    else:
+        overscan_region = "[2073:2115, :]"
+        trim_region = "[20:2060, 12:2057]"
 
     print("\nStarting overscan on bias.\n")
     for ccd, file_name in files.ccds(imagetyp='BIAS', return_fname=True, ccd_kwargs={'unit': 'adu'}):
@@ -492,6 +504,9 @@ def add_header(pathway, fname, imagetyp, filter_name, hjd, ra, dec, trim_region,
                 'elevation': 0.2873  # kilometers
             }
             bjd = BJD_TDB(hjd, obs_location, ra, dec)
+            fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
+        else:
+            bjd = BJD_TDB(hjd, location, ra, dec)
             fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
 
 

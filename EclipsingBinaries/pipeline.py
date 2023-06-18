@@ -3,7 +3,7 @@ This script checks for new files in a directory every second for the start of a 
 
 Author: Kyle Koeller
 Created: 06/15/2023
-Last Edited: 06/16/2023
+Last Edited: 06/17/2023
 """
 
 from os import path, listdir
@@ -19,17 +19,17 @@ def monitor_directory():
     parser = argparse.ArgumentParser(description="Monitor a directory for new files.")
 
     # add the arguments
-    parser.add_argument("raw_folder_path", type=str, help="The path of the folder where the images are going to.")
-    parser.add_argument("new_folder_path", type=str, help="The path of the folder where the reduced images "
-                                                            "and all files will go.")
-    parser.add_argument("--time_threshold", type=int, default=10,
+    parser.add_argument("-i", type=str, help="The path of the folder where the images are going to.")
+    parser.add_argument("-o", type=str, help="The path of the folder where the reduced images "
+                                             "and all files will go.")
+    parser.add_argument("-time_threshold", type=int, default=10,
                         help="The time threshold in seconds. If no new file is added within this time, an alert is "
                              "raised. Default is 3600 seconds (1 hour).")
-    parser.add_argument("--location", type=str, default="BSUO",
-                        help="The location of the telescope (BSUO, SARA-KP, SARA-RM, SARA-CT). Default is BSUO.")
-    parser.add_argument("--ra", type=str, default="00:00:00",
+    parser.add_argument("-location", type=str, default="BSUO",
+                        help="The location of the telescope (BSUO, CTIO, LaPalma, KPNO). Default is BSUO.")
+    parser.add_argument("-ra", type=str, default="00:00:00",
                         help="The right ascension of the target. Default is 00:00:00.")
-    parser.add_argument("--dec", type=str, default="00:00:00",
+    parser.add_argument("-dec", type=str, default="00:00:00",
                         help="The declination of the target (if negative -00:00:00). Default is 00:00:00.")
 
     # parse the arguments
@@ -51,14 +51,14 @@ def monitor_directory():
             return None
 
     # store the current latest file
-    current_latest_file = get_latest_file(folder_path=args.raw_folder_path)
+    current_latest_file = get_latest_file(folder_path=args.i)
 
     start_time = time()
 
     print("\n\nMonitoring directory for new files...\n")
     while True:
         sleep(1)  # pause for 1 second
-        latest_file = get_latest_file(args.raw_folder_path)
+        latest_file = get_latest_file(args.i)
 
         print("Latest file: " + latest_file)
 
@@ -73,4 +73,5 @@ def monitor_directory():
             start_time = time()
             current_latest_file = latest_file
 
-    main(path=args.raw_folder_path, calibrated=args.new_folder_path, pipeline=True, location=args.location)
+    print("Starting data reduction.\n")
+    main(path=args.i, calibrated=args.o, pipeline=True, location=args.location)

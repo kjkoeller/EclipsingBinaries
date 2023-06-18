@@ -19,20 +19,19 @@ def monitor_directory():
     parser = argparse.ArgumentParser(description="Monitor a directory for new files and start a data pipeline.")
 
     # add the arguments
-    parser.add_argument("input", metavar="i", type=str, help="The path of the folder where the images are going to.",
-                        required=True)
-    parser.add_argument("output", metavar="o", type=str, help="The path of the folder where the reduced images "
-                                                              "and all files will go.", required=True)
-    parser.add_argument("--time_threshold", type=int, default=3600,
+    parser.add_argument("input", metavar="Input File", type=str, help="The path of the folder where the images are going to.")
+    parser.add_argument("output", metavar="Output File", type=str, help="The path of the folder where the reduced images "
+                                                                        "and all files will go.")
+    parser.add_argument("--time", metavar="Time Threshold", type=int, default=3600,
                         help="The time threshold in seconds. If no new file is added within this time, an alert is "
                              "raised. Default is 3600 seconds (1 hour).")
-    parser.add_argument("--location", type=str, default="BSUO",
+    parser.add_argument("--loc", metavar="Location", type=str, default="BSUO",
                         help="The location of the telescope (BSUO, CTIO, LaPalma, KPNO). Default is BSUO.")
     parser.add_argument("--ra", type=str, default="00:00:00",
                         help="The right ascension of the target. Default is 00:00:00.", required=True)
     parser.add_argument("--dec", type=str, default="00:00:00",
                         help="The declination of the target (if negative -00:00:00). Default is 00:00:00.", required=True)
-    parser.add_argument("--name", type=str, default="target",
+    parser.add_argument("--name", metavar="Object Name", type=str, default="target",
                         help="The name of the target. Default is target.")
 
     # parse the arguments
@@ -63,19 +62,19 @@ def monitor_directory():
         sleep(1)  # pause for 1 second
         latest_file = get_latest_file(args.input)
 
-        print("Latest file: " + latest_file)
-
         if latest_file == current_latest_file:
             # if no new file has been added
             elapsed_time = time() - start_time
-            if elapsed_time > args.time_threshold:
-                print("No new file has been added for the past " + str(args.time_threshold) + " seconds!\n")
+            if elapsed_time > args.time:
+                print("No new file has been added for the past " + str(args.time) + " seconds!\n")
                 break
         else:
             # if a new file has been added
+            print("Latest file: " + latest_file)
             start_time = time()
             current_latest_file = latest_file
 
     print("Starting data reduction.\n")
-    main(path=args.input, calibrated=args.output, pipeline=True, location=args.location)
+    main(path=args.input, calibrated=args.output, pipeline=True, location=args.loc)
+    print("Starting comparison star selection.\n")
     comparison_selector(ra=args.ra, dec=args.dec, pipeline=True, folder_path=args.output, obj_name=args.name)

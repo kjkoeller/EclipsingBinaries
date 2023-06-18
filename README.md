@@ -41,6 +41,14 @@ If your version is not the most recent version then in order to update type the 
 
     pip install --upgrade EclipsingBinaries
 
+### Pipeline
+
+To use the pipeline functionality type the following:
+
+    EB_pipeline -h
+
+This will print out all the options that are available to edit and change. The `-i` and the `-o` are required for the script to run. Otherwise, the script will crash.
+
 ***
 
 ## Dependencies

@@ -60,9 +60,9 @@ def comparison_selector(ra, dec, pipeline, folder_path, obj_name):
     create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
 
     if not pipeline:
-        pass
-    else:
         overlay(df, input_ra, input_dec)
+    else:
+        pass
 
 
 def cousins_r(ra, dec, pipeline, folder_path, obj_name):
@@ -184,13 +184,13 @@ def catalog_finder(ra, dec, pipeline, folder_path, obj_name):
     :return: outputs a file with the columns and column filters that you have chosen
     """
     if not pipeline:
-        ra_input = ra
-        dec_input = dec
-    else:
         ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
         dec_input = input("Enter the DEC of your system (DD:MM:SS.SSSS or -DD:MM:SS.SSSS): ")
         # ra_input = "00:28:27.9684836736"  # testing
         # dec_input = "78:57:42.657327180"  # testing
+    else:
+        ra_input = ra
+        dec_input = dec
 
     ra_input2 = splitter([ra_input])
     dec_input2 = splitter([dec_input])
@@ -349,11 +349,12 @@ def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name):
 
         output = header + header2
         if not pipeline:
-            outputfile = folder_path + "\\" + obj_name + "_" + filt
+            outputfile = input(
+                "Please enter an output file pathway " + "\033[1m" + "\033[93m" + "WITHOUT" + "\033[00m" +
+                " the extension but with the file name for the " +
+                filt + " filter RADEC file, for AIJ (i.e. C:\\folder1\\folder2\[filename]): ")
         else:
-            outputfile = input("Please enter an output file pathway " + "\033[1m" + "\033[93m" + "WITHOUT" + "\033[00m" +
-                               " the extension but with the file name for the " +
-                               filt + " filter RADEC file, for AIJ (i.e. C:\\folder1\\folder2\[filename]): ")
+            outputfile = folder_path + "\\" + obj_name + "_" + filt
         file = open(outputfile + ".radec", "w")
         file.write(output)
         file.close()

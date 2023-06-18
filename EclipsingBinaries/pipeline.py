@@ -22,7 +22,7 @@ def monitor_directory():
     parser.add_argument("-i", type=str, help="The path of the folder where the images are going to.")
     parser.add_argument("-o", type=str, help="The path of the folder where the reduced images "
                                              "and all files will go.")
-    parser.add_argument("-time_threshold", type=int, default=10,
+    parser.add_argument("-time_threshold", type=int, default=3600,
                         help="The time threshold in seconds. If no new file is added within this time, an alert is "
                              "raised. Default is 3600 seconds (1 hour).")
     parser.add_argument("-location", type=str, default="BSUO",

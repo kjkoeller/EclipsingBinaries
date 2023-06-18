@@ -10,7 +10,7 @@ from os import path, listdir
 from time import time, sleep
 import argparse
 
-# from IRAF_Reduction import main  # testing purposes
+from .apass import comparison_selector
 from .IRAF_Reduction import main
 
 
@@ -29,9 +29,11 @@ def monitor_directory():
     parser.add_argument("--location", type=str, default="BSUO",
                         help="The location of the telescope (BSUO, CTIO, LaPalma, KPNO). Default is BSUO.")
     parser.add_argument("--ra", type=str, default="00:00:00",
-                        help="The right ascension of the target. Default is 00:00:00.")
+                        help="The right ascension of the target. Default is 00:00:00.", required=True)
     parser.add_argument("--dec", type=str, default="00:00:00",
-                        help="The declination of the target (if negative -00:00:00). Default is 00:00:00.")
+                        help="The declination of the target (if negative -00:00:00). Default is 00:00:00.", required=True)
+    parser.add_argument("--name", type=str, default="target",
+                        help="The name of the target. Default is target.")
 
     # parse the arguments
     args = parser.parse_args()
@@ -76,3 +78,4 @@ def monitor_directory():
 
     print("Starting data reduction.\n")
     main(path=args.input, calibrated=args.output, pipeline=True, location=args.location)
+    comparison_selector(ra=args.ra, dec=args.dec, pipeline=True, folder_path=args.output, obj_name=args.name)

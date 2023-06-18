@@ -16,20 +16,21 @@ from .IRAF_Reduction import main
 
 def monitor_directory():
     # create the parser
-    parser = argparse.ArgumentParser(description="Monitor a directory for new files.")
+    parser = argparse.ArgumentParser(description="Monitor a directory for new files and start a data pipeline.")
 
     # add the arguments
-    parser.add_argument("-i", type=str, help="The path of the folder where the images are going to.")
-    parser.add_argument("-o", type=str, help="The path of the folder where the reduced images "
-                                             "and all files will go.")
-    parser.add_argument("-time_threshold", type=int, default=3600,
+    parser.add_argument("input", metavar="i", type=str, help="The path of the folder where the images are going to.",
+                        required=True)
+    parser.add_argument("output", metavar="o", type=str, help="The path of the folder where the reduced images "
+                                                              "and all files will go.", required=True)
+    parser.add_argument("--time_threshold", type=int, default=3600,
                         help="The time threshold in seconds. If no new file is added within this time, an alert is "
                              "raised. Default is 3600 seconds (1 hour).")
-    parser.add_argument("-location", type=str, default="BSUO",
+    parser.add_argument("--location", type=str, default="BSUO",
                         help="The location of the telescope (BSUO, CTIO, LaPalma, KPNO). Default is BSUO.")
-    parser.add_argument("-ra", type=str, default="00:00:00",
+    parser.add_argument("--ra", type=str, default="00:00:00",
                         help="The right ascension of the target. Default is 00:00:00.")
-    parser.add_argument("-dec", type=str, default="00:00:00",
+    parser.add_argument("--dec", type=str, default="00:00:00",
                         help="The declination of the target (if negative -00:00:00). Default is 00:00:00.")
 
     # parse the arguments
@@ -51,14 +52,14 @@ def monitor_directory():
             return None
 
     # store the current latest file
-    current_latest_file = get_latest_file(folder_path=args.i)
+    current_latest_file = get_latest_file(folder_path=args.input)
 
     start_time = time()
 
     print("\n\nMonitoring directory for new files...\n")
     while True:
         sleep(1)  # pause for 1 second
-        latest_file = get_latest_file(args.i)
+        latest_file = get_latest_file(args.input)
 
         print("Latest file: " + latest_file)
 
@@ -74,4 +75,4 @@ def monitor_directory():
             current_latest_file = latest_file
 
     print("Starting data reduction.\n")
-    main(path=args.i, calibrated=args.o, pipeline=True, location=args.location)
+    main(path=args.input, calibrated=args.output, pipeline=True, location=args.location)

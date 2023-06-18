@@ -53,16 +53,16 @@ def comparison_selector(ra, dec, pipeline, folder_path, obj_name):
     apass_file, input_ra, input_dec, T_list = cousins_r(ra, dec, pipeline, folder_path, obj_name)
     df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
 
-    print("Finished Saving\n\n\n")
+    print("Finished Saving\n\n")
     print("The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
           "with their respective errors.\n")
 
     create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
 
     if not pipeline:
-        pass
-    else:
         overlay(df, input_ra, input_dec)
+    else:
+        pass
 
 
 def cousins_r(ra, dec, pipeline, folder_path, obj_name):
@@ -128,6 +128,7 @@ def cousins_r(ra, dec, pipeline, folder_path, obj_name):
 
     ra_decimal = np.array(splitter(ra))
     dec_decimal = np.array(splitter(dec))
+    print("Starting Gaia Search for TESS Magnitudes\n")
     T_list, T_err_list = ga(ra_decimal, dec_decimal)
 
     # puts all columns into a dataframe for output
@@ -144,12 +145,15 @@ def cousins_r(ra, dec, pipeline, folder_path, obj_name):
         "TMag": T_list,
         "e_TMag": T_err_list
     })
-    print(
-        "\nThis output file contains all the calculated Cousins R magnitudes along with error and "
-        "both Johnson bands and respective errors.\n")
-    # saves the dataframe to an entered output file
-    output_file = input("Enter an output file name and location for the finalized catalog file "
-                        "(ex: C:\\folder1\\folder2\\APASS_254037_Catalog.txt): ")
+    if not pipeline:
+        print(
+            "\nThis output file contains all the calculated Cousins R magnitudes along with error and "
+            "both Johnson bands and respective errors.\n")
+        # saves the dataframe to an entered output file
+        output_file = input("Enter an output file name and location for the finalized catalog file "
+                            "(ex: C:\\folder1\\folder2\\APASS_254037_Catalog.txt): ")
+    else:
+        output_file = folder_path + "\\" + obj_name + "_APASS_Catalog.txt"
     # noinspection PyTypeChecker
     final.to_csv(output_file, index=True, sep="\t")
     print("\nCompleted Save.\n")
@@ -184,13 +188,13 @@ def catalog_finder(ra, dec, pipeline, folder_path, obj_name):
     :return: outputs a file with the columns and column filters that you have chosen
     """
     if not pipeline:
-        ra_input = ra
-        dec_input = dec
-    else:
         ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
         dec_input = input("Enter the DEC of your system (DD:MM:SS.SSSS or -DD:MM:SS.SSSS): ")
         # ra_input = "00:28:27.9684836736"  # testing
         # dec_input = "78:57:42.657327180"  # testing
+    else:
+        ra_input = ra
+        dec_input = dec
 
     ra_input2 = splitter([ra_input])
     dec_input2 = splitter([dec_input])
@@ -270,8 +274,6 @@ def catalog_finder(ra, dec, pipeline, folder_path, obj_name):
     })
 
     if not pipeline:
-        test_file = folder_path + "\\APASS_catalog_" + obj_name + ".txt"
-    else:
         # saves the dataframe to a text file and prints that dataframe out to easily see what was copied to the text file
         print(
             "\n\nThis output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and\n"
@@ -279,6 +281,9 @@ def catalog_finder(ra, dec, pipeline, folder_path, obj_name):
         text_file = input("Enter a text file pathway and name for the output comparisons "
                           "(ex: C:\\folder1\\APASS_254037.txt): ")
         # text_file = "APASS_254037.txt"  # testing
+    else:
+        text_file = folder_path + "\\APASS_" + obj_name + ".txt"
+
     df.to_csv(text_file, index=None)
     print("\nCompleted save.\n")
 
@@ -349,11 +354,12 @@ def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name):
 
         output = header + header2
         if not pipeline:
-            outputfile = folder_path + "\\" + obj_name + "_" + filt
+            outputfile = input(
+                "Please enter an output file pathway " + "\033[1m" + "\033[93m" + "WITHOUT" + "\033[00m" +
+                " the extension but with the file name for the " +
+                filt + " filter RADEC file, for AIJ (i.e. C:\\folder1\\folder2\[filename]): ")
         else:
-            outputfile = input("Please enter an output file pathway " + "\033[1m" + "\033[93m" + "WITHOUT" + "\033[00m" +
-                               " the extension but with the file name for the " +
-                               filt + " filter RADEC file, for AIJ (i.e. C:\\folder1\\folder2\[filename]): ")
+            outputfile = folder_path + "\\" + obj_name + "_" + filt
         file = open(outputfile + ".radec", "w")
         file.write(output)
         file.close()

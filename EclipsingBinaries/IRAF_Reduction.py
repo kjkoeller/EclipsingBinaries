@@ -52,7 +52,6 @@ def main(path="", calibrated="", pipeline=False, location="", dark_bool=True):
 
     :return: outputs all calibration images into a new reduced folder designated by the user.
     """
-
     if not pipeline:
         # allows the user to input where the raw images are and where the calibrated images go to
         path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the raw images are or type "
@@ -75,17 +74,26 @@ def main(path="", calibrated="", pipeline=False, location="", dark_bool=True):
                 path = input("Please enter a file path or folder name (if this code is in the same main folder): ")
                 calibrated = input("Please enter a name for a new calibrated folder to not overwrite the original images: ")
 
-        print("\nDo you want to load default options like gain and read noise? The defaults are for BSUO")
-        while True:
-            default_ans = input("To load defaults type 'Default' otherwise type 'New' to enter values: ")
-            # default_ans = "default"
-            if default_ans.lower() == "default":
-                break
-            elif default_ans.lower() == "new":
-                default()
-                break
-            else:
-                print("Please either enter 'Default' or 'New'.\n")
+        if location.lower() == "kpno":
+            kpno()
+        elif location.lower() == "ctio":
+            ctio()
+        elif lapalma():
+            lapalma()
+        elif location.lower() == "bsuo":
+            pass
+        else:
+            print("\nDo you want to load default options like gain and read noise? The defaults are for BSUO")
+            while True:
+                default_ans = input("To load defaults type 'Default' otherwise type 'New' to enter values: ")
+                # default_ans = "default"
+                if default_ans.lower() == "default":
+                    break
+                elif default_ans.lower() == "new":
+                    new_default()
+                    break
+                else:
+                    print("Please either enter 'Default' or 'New'.\n")
 
         calibrated_data.mkdir(exist_ok=True)
         files = ccdp.ImageFileCollection(images_path)
@@ -111,8 +119,13 @@ def main(path="", calibrated="", pipeline=False, location="", dark_bool=True):
                 calibrated = input(
                     "Please enter a name for a new calibrated folder to not overwrite the original images: ")
 
-        if location.lower != "bsuo":
-            # add in sections for SARA telescopes specifically and then use the default function for anything else
+        if location.lower() == "kpno":
+            kpno()
+        elif location.lower() == "ctio":
+            ctio()
+        elif lapalma():
+            lapalma()
+        elif location.lower() == "bsuo":
             pass
 
         calibrated_data.mkdir(exist_ok=True)
@@ -128,7 +141,52 @@ def main(path="", calibrated="", pipeline=False, location="", dark_bool=True):
         science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region)
 
 
-def default():
+def kpno():
+    """
+    Kitt Peak National Observatory default values
+
+    :return: None
+    """
+    global gain
+    global rdnoise
+    global dark_bool
+
+    gain = 2.3
+    rdnoise = 6.0
+    dark_bool = True
+
+
+def ctio():
+    """
+    Cerro Tololo Inter-American Observatory default values
+
+    :return: None
+    """
+    global gain
+    global rdnoise
+    global dark_bool
+
+    gain = 2.0
+    rdnoise = 9.7
+    dark_bool = True
+
+
+def lapalma():
+    """
+    La Palma default values
+
+    :return: None
+    """
+    global gain
+    global rdnoise
+    global dark_bool
+
+    gain = 1.0
+    rdnoise = 6.3
+    dark_bool = True
+
+
+def new_default():
     """
     Generates new values that the user can enter
 

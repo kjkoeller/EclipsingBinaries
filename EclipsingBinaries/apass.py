@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 05/19/2023
+Last Updated: 06/17/2023
 """
 
 from astroquery.vizier import Vizier
@@ -33,7 +33,7 @@ from .vseq_updated import isNaN, conversion, splitter, decimal_limit
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
 
-def comparison_selector():
+def comparison_selector(ra, dec, pipeline, folder_path, obj_name):
     """
     This code compares AIJ found stars (given an RA and DEC) to APASS stars to get their respective Johnson B, V, and
     Cousins R values and their respective errors.
@@ -41,24 +41,39 @@ def comparison_selector():
     This code is not 100% accurate and will still need the human eye to compare the final list to the AIJ given list. As
     this code can only get down to such an accuracy to be effective in gathering stars to be usable.
 
+    :param ra: The right ascension of the target
+    :param dec: The declination of the target
+    :param pipeline: The pipeline that is being used
+    :param folder_path: The path of the folder where the images are going to
+    :param obj_name: The name of the target object
+
     :return: A list of stars that are the most likely to be on the AIJ list of stars
     """
 
-    apass_file, input_ra, input_dec, T_list = cousins_r()
+    apass_file, input_ra, input_dec, T_list = cousins_r(ra, dec, pipeline, folder_path, obj_name)
     df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
 
     print("Finished Saving\n\n\n")
     print("The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
           "with their respective errors.\n")
 
-    create_radec(df, input_ra, input_dec, T_list)
+    create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
 
-    overlay(df, input_ra, input_dec)
+    if not pipeline:
+        pass
+    else:
+        overlay(df, input_ra, input_dec)
 
 
-def cousins_r():
+def cousins_r(ra, dec, pipeline, folder_path, obj_name):
     """
     Calculates the Cousins R_c value for a given B, V, g', and r' from APASS
+
+    :param ra: The right ascension of the target
+    :param dec: The declination of the target
+    :param pipeline: The pipeline that is being used
+    :param folder_path: The path of the folder where the images are going to
+    :param obj_name: The name of the target object
 
     :return: Outputs a file to be used for R_c values
     """
@@ -69,7 +84,7 @@ def cousins_r():
     e_beta = 0.03
     gamma = 0.219
 
-    input_file, input_ra, input_dec = catalog_finder()
+    input_file, input_ra, input_dec = catalog_finder(ra, dec, pipeline, folder_path, obj_name)
     df = pd.read_csv(input_file, header=None, skiprows=[0], sep=",")
 
     # writes the columns from the input file
@@ -142,7 +157,7 @@ def cousins_r():
     return output_file, input_ra, input_dec, T_list
 
 
-def catalog_finder():
+def catalog_finder(ra, dec, pipeline, folder_path, obj_name):
     """
     This looks at a region of the sky at the decimal coordinates of an object and gathers the "column" data with
     "column filters"
@@ -159,13 +174,23 @@ def catalog_finder():
     "ra"/"dec"- must be in decimal notation
     "width"- set to the notation that is currently set as, but you may change the number being used
             30m = 30 arc-minutes
+
+    :param ra: decimal notation of the RA of the object
+    :param dec: decimal notation of the DEC of the object
+    :param pipeline: the pipeline that is being used (ex: "TESS")
+    :param folder_path: the path to the folder that you want to save the file to
+    :param obj_name: the name of the object that you are looking at
+
+    :return: outputs a file with the columns and column filters that you have chosen
     """
-    # 00:28:27.9684836736 78:57:42.657327180
-    # 13:27:50.4728234064 75:39:45.384765984
-    ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
-    dec_input = input("Enter the DEC of your system (DD:MM:SS.SSSS or -DD:MM:SS.SSSS): ")
-    # ra_input = "00:28:27.9684836736"  # testing
-    # dec_input = "78:57:42.657327180"  # testing
+    if not pipeline:
+        ra_input = ra
+        dec_input = dec
+    else:
+        ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
+        dec_input = input("Enter the DEC of your system (DD:MM:SS.SSSS or -DD:MM:SS.SSSS): ")
+        # ra_input = "00:28:27.9684836736"  # testing
+        # dec_input = "78:57:42.657327180"  # testing
 
     ra_input2 = splitter([ra_input])
     dec_input2 = splitter([dec_input])
@@ -244,20 +269,23 @@ def catalog_finder():
         "e_r'mag": e_rmag_new
     })
 
-    # saves the dataframe to a text file and prints that dataframe out to easily see what was copied to the text file
-    print(
-        "\n\nThis output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and\n"
-        "should not be used for anything else other than calculation confirmation if needed later on.\n")
-    text_file = input("Enter a text file pathway and name for the output comparisons "
-                      "(ex: C:\\folder1\\APASS_254037.txt): ")
-    # text_file = "APASS_254037.txt"  # testing
+    if not pipeline:
+        test_file = folder_path + "\\APASS_catalog_" + obj_name + ".txt"
+    else:
+        # saves the dataframe to a text file and prints that dataframe out to easily see what was copied to the text file
+        print(
+            "\n\nThis output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and\n"
+            "should not be used for anything else other than calculation confirmation if needed later on.\n")
+        text_file = input("Enter a text file pathway and name for the output comparisons "
+                          "(ex: C:\\folder1\\APASS_254037.txt): ")
+        # text_file = "APASS_254037.txt"  # testing
     df.to_csv(text_file, index=None)
     print("\nCompleted save.\n")
 
     return text_file, ra_input2[0], dec_input2[0]
 
 
-def create_radec(df, ra, dec, T_list):
+def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name):
     """
     Creates a RADEC file for all 3 filters (Johnson B, V, and Cousins R
 
@@ -265,6 +293,9 @@ def create_radec(df, ra, dec, T_list):
     :param ra: user entered RA for system
     :param dec: user entered DEC for system
     :param T_list: TESS magnitudes for comparison stars
+    :param pipeline: True if pipeline, False if not
+    :param folder_path: folder path for saving RADEC files
+    :param obj_name: object name for saving RADEC files
 
     :return: None but saves the RADEC files to user specified locations
     """
@@ -317,9 +348,12 @@ def create_radec(df, ra, dec, T_list):
             next_dec = float(dec_decimal[count])
 
         output = header + header2
-        outputfile = input("Please enter an output file pathway " + "\033[1m" + "\033[93m" + "WITHOUT" + "\033[00m" +
-                           " the extension but with the file name for the " +
-                           filt + " filter RADEC file, for AIJ (i.e. C:\\folder1\\folder2\[filename]): ")
+        if not pipeline:
+            outputfile = folder_path + "\\" + obj_name + "_" + filt
+        else:
+            outputfile = input("Please enter an output file pathway " + "\033[1m" + "\033[93m" + "WITHOUT" + "\033[00m" +
+                               " the extension but with the file name for the " +
+                               filt + " filter RADEC file, for AIJ (i.e. C:\\folder1\\folder2\[filename]): ")
         file = open(outputfile + ".radec", "w")
         file.write(output)
         file.close()

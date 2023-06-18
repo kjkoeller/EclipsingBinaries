@@ -76,5 +76,5 @@ def monitor_directory():
 
     print("Starting data reduction.\n")
     main(path=args.input, calibrated=args.output, pipeline=True, location=args.loc)
-    print("Starting comparison star selection.\n")
+    print("\n\nStarting comparison star selection.")
     comparison_selector(ra=args.ra, dec=args.dec, pipeline=True, folder_path=args.output, obj_name=args.name)

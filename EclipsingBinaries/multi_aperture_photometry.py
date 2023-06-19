@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 06/12/2023
+Last Updated: 06/18/2023
 """
 
 # Python imports
@@ -24,6 +24,7 @@ from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photo
 from astropy.wcs import WCS
 import astropy.units as u
 from astropy import wcs
+
 # from astropy.visualization import ZScaleInterval
 
 # turn off this warning that just tells the user,
@@ -31,14 +32,31 @@ from astropy import wcs
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
 
-def main():
-    # path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
-    #             "the word 'Close' to leave: ")
+def main(path="", pipeline=False):
+    """
+    Main function for aperture photometry
 
-    path = "D:\\BSUO data\\2022.09.29-reduced"  # For testing purposes
+    Parameters
+    ----------
+    path : str
+        Path to the folder containing the images.
 
-    if path.lower() == "close":
-        exit()
+    pipeline : bool
+        If True, then the program is being run from the pipeline and will not ask for user input.
+    Returns
+    -------
+    N/A
+    """
+    if not pipeline:
+        path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
+                     "the word 'Close' to leave: ")
+
+        # path = "D:\\BSUO data\\2022.09.29-reduced"  # For testing purposes
+
+        if path.lower() == "close":
+            exit()
+    else:
+        pass
 
     science_imagetyp = 'LIGHT'
 
@@ -46,10 +64,10 @@ def main():
     files = ccdp.ImageFileCollection(images_path)
     image_list = files.files_filtered(imagetyp=science_imagetyp, filter="Empty/V")
 
-    single_MAP(image_list, images_path)
+    multiple_AP(image_list, images_path)
 
 
-def single_MAP(image_list, path):
+def single_AP(image_list, path):
     """
     Perform multi-aperture photometry on a list of images for a single target
 
@@ -130,8 +148,8 @@ def single_MAP(image_list, path):
 
         target_flx_err = np.sqrt(target_phot_table['aperture_sum'])
 
-        target_magnitude = 25 - 2.5*np.log10(target_flx)
-        target_magnitude_error = (2.5/np.log(10)) * (target_flx_err/target_flx)
+        target_magnitude = 25 - 2.5 * np.log10(target_flx)
+        target_magnitude_error = (2.5 / np.log(10)) * (target_flx_err / target_flx)
 
         # Append the calculated magnitude and error to the lists
         magnitudes.append(target_magnitude[0])
@@ -159,33 +177,21 @@ def single_MAP(image_list, path):
     plt.ioff()
 
 
-def multiple_MAP(image_list, path):
+def multiple_AP(image_list, path):
     """
-    Perform multi-aperture photometry on a list of images for multiple targets
+    Perform multi-aperture photometry on a list of images for a single target
+
     Parameters
     ----------
-    image_list
-    path
+    path : path
+        Path to the folder containing the images.
+    image_list : table
+        Table of images to perform aperture photometry on.
 
     Returns
     -------
-
+    None
     """
-
-    """
-        Perform multi-aperture photometry on a list of images for a single target
-
-        Parameters
-        ----------
-        path : path
-            Path to the folder containing the images.
-        image_list : table
-            Table of images to perform aperture photometry on.
-
-        Returns
-        -------
-        None
-        """
 
     # Define the aperture parameters
     # Define the aperture and annulus radii
@@ -257,9 +263,11 @@ def multiple_MAP(image_list, path):
 
         # Calculate the background subtracted counts
         target_flx = target_phot_table['aperture_sum'] - target_bkg
+        target_flux_err = np.sqrt(target_phot_table['aperture_sum'] + target_aperture.area * read_noise**2)
         comparison_flx = comparison_phot_table['aperture_sum'] - comparison_bkg
+        comp_flux_err = np.sqrt(comparison_phot_table['aperture_sum'] + comparison_aperture.area * read_noise ** 2)
 
-        # calculate the relative flux for each comparison star
+        # calculate the relative flux for each comparison star and the target star
         rel_flx_T1 = target_flx / sum(comparison_flx)
         count = 0
         for i in comparison_flx:
@@ -272,7 +280,7 @@ def multiple_MAP(image_list, path):
         n_b_comp = np.sum(n_b_mask_comp)
 
         n_b_mask_tar = target_annulus.to_mask(method="center")
-        n_b_tar = np.sum(n_b_mask_tar)
+        n_b_tar = np.sum(n_b_mask_tar.data)
 
         # find the number of pixels used in the aperture
         n_pix_mask_comp = comparison_aperture.to_mask(method="center")
@@ -285,15 +293,22 @@ def multiple_MAP(image_list, path):
         sigma_f = 0.289  # quoted from Collins 2017 https://iopscience.iop.org/article/10.3847/1538-3881/153/2/77/pdf
         F_s = 0.01  # number of sky background counts per pixel in ADU
 
-        N_comp = np.sqrt(gain*comparison_flx + n_pix_comp*(1 + (n_pix_comp/n_b_comp))*(gain*F_s + F_dark + read_noise**2 + gain**2 + sigma_f**2)) / gain
-        N_tar = np.sqrt(gain*target_flx + n_pix_tar*(1 + (n_pix_tar/n_b_tar))*(gain*F_s + F_dark + read_noise**2 + gain**2 + sigma_f**2)) / gain
+        N_comp = np.sqrt(gain * comparison_flx + n_pix_comp * (1 + (n_pix_comp / n_b_comp)) *
+                         (gain * F_s + F_dark + read_noise ** 2 + gain ** 2 + sigma_f ** 2)) / gain
+        N_tar = np.sqrt(gain * target_flx + n_pix_tar * (1 + (n_pix_tar / n_b_tar)) *
+                        (gain * F_s + F_dark + read_noise ** 2 + gain ** 2 + sigma_f ** 2)) / gain
 
         # calculate the total comparison ensemble noise
-        N_e_comp = np.sqrt(np.sum(N_comp**2))
-        
+        N_e_comp = np.sqrt(np.sum(N_comp ** 2))
+
+        rel_flux_err = (rel_flx_T1/rel_flux_comp)*np.sqrt((N_tar**2/target_flx**2) +
+                                                          (N_e_comp**2/sum(comparison_flx)**2))
+
         # calculate the total target magnitude and error
-        target_magnitude = [0]
-        target_magnitude_error = [0]
+        target_magnitude = -np.log(sum(2.512**(magnitudes_comp)))/np.log(2.512) - \
+                           (2.5*np.log10(target_bkg/sum(comparison_bkg)))
+        target_magnitude_error = 2.5*np.log10(1 + np.sqrt(target_flux_err**2/target_bkg**2) +
+                                              (sum(comp_flux_err)**2/sum(comparison_bkg)**2))
 
         # Append the calculated magnitude and error to the lists
         magnitudes.append(target_magnitude[0])

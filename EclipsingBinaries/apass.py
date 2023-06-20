@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 06/17/2023
+Last Updated: 06/20/2023
 """
 
 from astroquery.vizier import Vizier
@@ -33,7 +33,7 @@ from .vseq_updated import isNaN, conversion, splitter, decimal_limit
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
 
-def comparison_selector(ra, dec, pipeline, folder_path, obj_name):
+def comparison_selector(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
     """
     This code compares AIJ found stars (given an RA and DEC) to APASS stars to get their respective Johnson B, V, and
     Cousins R values and their respective errors.
@@ -49,23 +49,31 @@ def comparison_selector(ra, dec, pipeline, folder_path, obj_name):
 
     :return: A list of stars that are the most likely to be on the AIJ list of stars
     """
-
-    apass_file, input_ra, input_dec, T_list = cousins_r(ra, dec, pipeline, folder_path, obj_name)
-    df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
-
-    print("Finished Saving\n\n")
-    print("The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
-          "with their respective errors.\n")
-
-    create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
-
+    
     if not pipeline:
+        apass_file, input_ra, input_dec, T_list = cousins_r()
+        df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
+    
+        print("Finished Saving\n\n")
+        print("The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
+              "with their respective errors.\n")
+    
+        create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
+
         overlay(df, input_ra, input_dec)
     else:
-        pass
+        apass_file, input_ra, input_dec, T_list = cousins_r(ra, dec, pipeline, folder_path, obj_name)
+        df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
+
+        print("Finished Saving\n\n")
+        print(
+            "The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
+            "with their respective errors.\n")
+
+        create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
 
 
-def cousins_r(ra, dec, pipeline, folder_path, obj_name):
+def cousins_r(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
     """
     Calculates the Cousins R_c value for a given B, V, g', and r' from APASS
 
@@ -83,8 +91,11 @@ def cousins_r(ra, dec, pipeline, folder_path, obj_name):
     beta = 1.321
     e_beta = 0.03
     gamma = 0.219
-
-    input_file, input_ra, input_dec = catalog_finder(ra, dec, pipeline, folder_path, obj_name)
+    
+    if not pipeline:
+        input_file, input_ra, input_dec = catalog_finder(ra, dec, pipeline, folder_path, obj_name)
+    else:
+        input_file, input_ra, input_dec = catalog_finder()
     df = pd.read_csv(input_file, header=None, skiprows=[0], sep=",")
 
     # writes the columns from the input file
@@ -161,7 +172,7 @@ def cousins_r(ra, dec, pipeline, folder_path, obj_name):
     return output_file, input_ra, input_dec, T_list
 
 
-def catalog_finder(ra, dec, pipeline, folder_path, obj_name):
+def catalog_finder(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
     """
     This looks at a region of the sky at the decimal coordinates of an object and gathers the "column" data with
     "column filters"

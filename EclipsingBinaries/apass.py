@@ -316,7 +316,7 @@ def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name):
     :return: None but saves the RADEC files to user specified locations
     """
     filters = ["B", "V", "R", "T"]
-    header = "#RA in decimal or sexagesimal HOURS\n " \
+    header = "#RA in decimal or sexagesimal HOURS\n" \
              "#Dec in decimal or sexagesimal DEGREES\n" \
              "#Ref Star=0,1,missing (0=target star, 1=ref star, missing->first ap=target, others=ref)\n" \
              "#Centroid=0,1,missing (0=do not centroid, 1=centroid, missing=centroid)\n" \

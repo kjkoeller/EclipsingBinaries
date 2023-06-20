@@ -56,6 +56,16 @@ jobs:
             os: windows-latest
             python: '3.10'
             tox_env: 'py310-test-alldeps'
+            
+          - name: 'windows-py38'
+            os: windows-latest
+            python: '3.8'
+            tox_env: 'py310-test-alldeps'
+          
+          - name: 'windows-py39'
+            os: windows-latest
+            python: '3.9'
+            tox_env: 'py310-test-alldeps'
 
           - name: 'ubuntu-codestyle'
             os: ubuntu-latest

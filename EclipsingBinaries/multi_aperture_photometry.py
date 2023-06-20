@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 06/18/2023
+Last Updated: 06/20/2023
 """
 
 # Python imports
@@ -282,20 +282,26 @@ def multiple_AP(image_list, path):
         n_b_mask_tar = target_annulus.to_mask(method="center")
         n_b_tar = np.sum(n_b_mask_tar.data)
 
-        # find the number of pixels used in the aperture
-        n_pix_mask_comp = comparison_aperture.to_mask(method="center")
-        n_pix_comp = np.sum(n_pix_mask_comp)
+        """
+        # find the number of pixels used in the aperture if the radius of the apertures is in arcseconds not pixels
+        focal_length = 4114  # mm
+        pixel_size = 9  # microns
+        pixel_size = pixel_size * 10 ** -3  # mm
+        ap_area = np.pi * aperture_radius.area**2  # area of the aperture in mm^2
+        plate_scale = 1/focal_length  # rad/mm
+        plate_scale = plate_scale * 206265  # arcsec/mm
+        n_pix = ap_area / (plate_scale * pixel_size)**2  # number of pixels in the aperture
+        """
 
-        n_pix_tar = target_aperture.to_mask(method="center")
-        n_pix_tar = np.sum(n_pix_tar)
+        n_pix = np.pi * aperture_radius**2  # number of pixels in the aperture
 
         # Calculate the total noise
         sigma_f = 0.289  # quoted from Collins 2017 https://iopscience.iop.org/article/10.3847/1538-3881/153/2/77/pdf
         F_s = 0.01  # number of sky background counts per pixel in ADU
 
-        N_comp = np.sqrt(gain * comparison_flx + n_pix_comp * (1 + (n_pix_comp / n_b_comp)) *
+        N_comp = np.sqrt(gain * comparison_flx + n_pix * (1 + (n_pix_comp / n_b_comp)) *
                          (gain * F_s + F_dark + read_noise ** 2 + gain ** 2 + sigma_f ** 2)) / gain
-        N_tar = np.sqrt(gain * target_flx + n_pix_tar * (1 + (n_pix_tar / n_b_tar)) *
+        N_tar = np.sqrt(gain * target_flx + n_pix * (1 + (n_pix_tar / n_b_tar)) *
                         (gain * F_s + F_dark + read_noise ** 2 + gain ** 2 + sigma_f ** 2)) / gain
 
         # calculate the total comparison ensemble noise

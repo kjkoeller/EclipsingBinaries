@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 06/20/2023
+Last Updated: 06/23/2023
 """
 
 # Python imports
@@ -48,10 +48,10 @@ def main(path="", pipeline=False):
     N/A
     """
     if not pipeline:
-        path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
-                     "the word 'Close' to leave: ")
+        # path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
+        #              "the word 'Close' to leave: ")
 
-        # path = "D:\\BSUO data\\2022.09.29-reduced"  # For testing purposes
+        path = "D:\\BSUO data\\2022.09.29-reduced"  # For testing purposes
 
         if path.lower() == "close":
             exit()
@@ -232,8 +232,12 @@ def multiple_AP(image_list, path):
         sky_coords = SkyCoord(ra, dec, unit=(u.h, u.deg), frame='icrs')
         pixel_coords = wcs_.world_to_pixel(sky_coords)
 
-        target_position = list(pixel_coords[0])
-        comparison_positions = list(pixel_coords[1:])
+        x_coords, y_coords = pixel_coords
+
+        # target_position = np.array(pixel_coords[0])
+        # comparison_positions = np.array(pixel_coords[1:])
+        target_position = (x_coords[0], y_coords[0])
+        comparison_positions = list(zip(x_coords[1:], y_coords[1:]))
 
         hjd.append(header['HJD-OBS'])
         bjd.append(header['BJD-OBS'])
@@ -242,30 +246,60 @@ def multiple_AP(image_list, path):
         target_aperture = CircularAperture(target_position, r=aperture_radius)
         target_annulus = CircularAnnulus(target_position, *annulus_radii)
 
-        comparison_aperture = CircularAperture(comparison_positions, r=aperture_radius)
-        comparison_annulus = CircularAnnulus(comparison_positions, *annulus_radii)
-
+        comparison_aperture = [CircularAperture(pos1, r=aperture_radius) for pos1 in comparison_positions]
+        comparison_annulus = [CircularAnnulus(pos2, *annulus_radii) for pos2 in comparison_positions]
         target_phot_table = aperture_photometry(image_data, target_aperture)
-        comparison_phot_table = aperture_photometry(image_data, comparison_aperture)
+        # comparison_phot_table = aperture_photometry(image_data, comparison_aperture)
+
+        im_plot(image_data, target_aperture, comparison_aperture, target_annulus, comparison_annulus)
+
+        comparison_phot_table = []
+
+        for comp_aperture, comp_annulus in zip(comparison_aperture, comparison_annulus):
+            # Perform aperture photometry on the star
+            aperture_phot_table = aperture_photometry(image_data, comp_aperture)
+
+            # Perform aperture photometry on the annulus (background)
+            annulus_phot_table = aperture_photometry(image_data, comp_annulus)
+
+            # Store the result in the comparison_phot_table list
+            comparison_phot_table.append((aperture_phot_table, annulus_phot_table))
 
         # Perform annulus photometry to estimate the background
         target_bkg_mean = ApertureStats(image_data, target_annulus).mean
-        comparison_bkg_mean = ApertureStats(image_data, comparison_annulus).mean
+        # comparison_bkg_mean = ApertureStats(image_data, comparison_annulus).mean
 
-        # Calculate the total background
-        if np.isnan(target_bkg_mean) or np.isinf(target_bkg_mean) \
-                or np.isnan(comparison_bkg_mean) or np.isinf(comparison_bkg_mean):
+        # Calculate the total background for the comparison stars
+        comparison_bkg_mean = []
+        for annulus in comparison_annulus:
+            stats = ApertureStats(image_data, annulus)
+            if np.isnan(stats.mean) or np.isinf(stats.mean):
+                comparison_bkg_mean.append(0)
+            else:
+                comparison_bkg_mean.append(stats.mean)
+
+        # Calculate the total background for the target star
+        if np.isnan(target_bkg_mean) or np.isinf(target_bkg_mean):
             target_bkg_mean = 0
-            comparison_bkg_mean = 0
 
         target_bkg = ApertureStats(image_data, target_aperture, local_bkg=target_bkg_mean).sum
-        comparison_bkg = ApertureStats(image_data, comparison_aperture, local_bkg=comparison_bkg_mean).sum
+        # comparison_bkg = ApertureStats(image_data, comparison_aperture, local_bkg=comparison_bkg_mean).sum
+
+        comparison_bkg = []
+        for aperture, bkg_mean in zip(comparison_aperture, comparison_bkg_mean):
+            stats = ApertureStats(image_data, aperture, local_bkg=bkg_mean)
+            comparison_bkg.append(stats.sum)
 
         # Calculate the background subtracted counts
         target_flx = target_phot_table['aperture_sum'] - target_bkg
         target_flux_err = np.sqrt(target_phot_table['aperture_sum'] + target_aperture.area * read_noise**2)
-        comparison_flx = comparison_phot_table['aperture_sum'] - comparison_bkg
-        comp_flux_err = np.sqrt(comparison_phot_table['aperture_sum'] + comparison_aperture.area * read_noise ** 2)
+        # comparison_flx = comparison_phot_table['aperture_sum'] - comparison_bkg
+        # comp_flux_err = np.sqrt(comparison_phot_table['aperture_sum'] + comparison_aperture.area * read_noise ** 2)
+        comparison_flx = [phot_table[0]['aperture_sum'] - bkg
+                          for phot_table, bkg in zip(comparison_phot_table, comparison_bkg)]
+
+        comp_flux_err = [np.sqrt(phot_table[0]['aperture_sum'] + aperture.area * read_noise ** 2)
+                         for phot_table, aperture in zip(comparison_phot_table, comparison_aperture)]
 
         # calculate the relative flux for each comparison star and the target star
         rel_flx_T1 = target_flx / sum(comparison_flx)
@@ -276,11 +310,12 @@ def multiple_AP(image_list, path):
             count += 1
 
         # find the number of pixels used to estimate the sky background
-        n_b_mask_comp = comparison_annulus.to_mask(method="center")
-        n_b_comp = np.sum(n_b_mask_comp)
+        n_b = (np.pi * annulus_radii[1]**2) - (np.pi * annulus_radii[0] ** 2)
+        # n_b_mask_comp = comparison_annulus.to_mask(method="center")
+        # n_b_comp = np.sum(n_b_mask_comp)
 
-        n_b_mask_tar = target_annulus.to_mask(method="center")
-        n_b_tar = np.sum(n_b_mask_tar.data)
+        # n_b_mask_tar = target_annulus.to_mask(method="center")
+        # n_b_tar = np.sum(n_b_mask_tar.data)
 
         """
         # find the number of pixels used in the aperture if the radius of the apertures is in arcseconds not pixels
@@ -299,13 +334,16 @@ def multiple_AP(image_list, path):
         sigma_f = 0.289  # quoted from Collins 2017 https://iopscience.iop.org/article/10.3847/1538-3881/153/2/77/pdf
         F_s = 0.01  # number of sky background counts per pixel in ADU
 
-        N_comp = np.sqrt(gain * comparison_flx + n_pix * (1 + (n_pix_comp / n_b_comp)) *
-                         (gain * F_s + F_dark + read_noise ** 2 + gain ** 2 + sigma_f ** 2)) / gain
-        N_tar = np.sqrt(gain * target_flx + n_pix * (1 + (n_pix_tar / n_b_tar)) *
+        # N_comp = np.sqrt(gain * comparison_flx + n_pix * (1 + (n_pix / n_b)) *
+        #                  (gain * F_s + F_dark + read_noise ** 2 + gain ** 2 + sigma_f ** 2)) / gain
+        N_comp = [np.sqrt(gain * flx + n_pix * (1 + (n_pix / n_b)) *
+                          (gain * F_s + F_dark + read_noise ** 2 + gain ** 2 + sigma_f ** 2)) / gain
+                  for flx in comparison_flx]
+        N_tar = np.sqrt(gain * target_flx + n_pix * (1 + (n_pix / n_b)) *
                         (gain * F_s + F_dark + read_noise ** 2 + gain ** 2 + sigma_f ** 2)) / gain
 
         # calculate the total comparison ensemble noise
-        N_e_comp = np.sqrt(np.sum(N_comp ** 2))
+        N_e_comp = np.sqrt(np.sum(np.array(N_comp) ** 2))
 
         rel_flux_err = (rel_flx_T1/rel_flux_comp)*np.sqrt((N_tar**2/target_flx**2) +
                                                           (N_e_comp**2/sum(comparison_flx)**2))
@@ -317,8 +355,8 @@ def multiple_AP(image_list, path):
                                               (sum(comp_flux_err)**2/sum(comparison_bkg)**2))
 
         # Append the calculated magnitude and error to the lists
-        magnitudes.append(target_magnitude[0])
-        mag_err.append(target_magnitude_error[0])
+        magnitudes.append(target_magnitude)
+        mag_err.append(target_magnitude_error)
 
         # Clear the axis
         ax.clear()
@@ -340,6 +378,28 @@ def multiple_AP(image_list, path):
 
     # Disable interactive mode
     plt.ioff()
+    plt.show()
+
+
+def im_plot(image_data, target_aperture, comparison_apertures, target_annulus, comparison_annuli):
+    # First, plot the image
+    plt.figure(figsize=(10, 10))
+    plt.imshow(image_data, cmap='gray', origin='lower', vmin=np.percentile(image_data, 5),
+               vmax=np.percentile(image_data, 95))
+    plt.colorbar(label='Counts')
+
+    # Now plot the apertures
+    target_aperture.plot(color='blue', lw=1.5, alpha=0.5)
+    for comparison_aperture in comparison_apertures:
+        comparison_aperture.plot(color='red', lw=1.5, alpha=0.5)
+
+    # Now plot the annuli
+    target_annulus.plot(color='blue', lw=1.5, alpha=0.5, linestyle='dashed')
+    for comparison_annulus in comparison_annuli:
+        comparison_annulus.plot(color='red', lw=1.5, alpha=0.5, linestyle='dashed')
+
+    plt.pause(1000)
+    plt.show()
 
 
 if __name__ == '__main__':

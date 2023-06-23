@@ -1,12 +1,12 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 06/13/2023
+Last Edited: 06/23/2023
 
 This calculates O-C values and produces an O-C plot.
 """
 
-from math import sqrt, floor
+from math import sqrt, floor, ceil
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,7 +20,7 @@ import time
 def main(period=None, loop=0, num=None, nights=None):
     if loop == 0:
         print("\n\nThe format of these input files should be the of the raw form given from Dr. Robert Berrginton's"
-              " 'find_minimum' C program.")
+              " 'find_minimum' C program. Please check the GitHub for an example of this.")
         print("Run TESS data by itself through the TESS option and filtered SARA/BSUO data through the BSU option.\n"
               "DO NOT combine them in any way unless you have already run them through to get the (O-C) values and"
               "are about to run the 'All Data' option.")
@@ -195,6 +195,7 @@ def all_data(nights, period, loop):
     :param nights: number of files there are for the first time through
     :param period: period of the system
     :param loop: number of loops through the program either o or 1
+
     :return: None
     """
     count = 0
@@ -253,8 +254,8 @@ def all_data(nights, period, loop):
 
     minimum_lines = []
     for i in range(len(minimum)):
-        line = str("%.5f" % minimum[i]) + ' & ' + str(e[i]) + ' & $' + str("%.5f" % o_c[i]) + ' \pm ' + \
-               str("%.5f" % o_c_err[i]) + '$ ' + "\\\ \n"
+        line = str("%.5f" % minimum[i]) + ' & ' + str(e[i]) + ' & $' + str("%.5f" % o_c[i]) + ' \pm ' + str(
+            "%.5f" % o_c_err[i]) + '$ ' + "\\\ \n"
         minimum_lines.append(line)
 
     output = table_header
@@ -317,7 +318,10 @@ def calculate_oc(m, err, T0, T0_err, p):
     # get the exact E value
     E_act = (m - T0) / p
     # estimate for the primary or secondary eclipse by rounding to the nearest 0.5
-    e = floor(E_act * 2) / 2
+    if E_act > 0:
+        e = ceil(E_act * 2) / 2
+    else:
+        e = floor(E_act * 2) / 2
     # calculate the calculated ToM and find the O-C value
     T_calc = T0 + (e * p)
     OC = "%.5f" % (m - T_calc)
@@ -514,12 +518,6 @@ def residuals(x, y, x_label, y_label, degree, model, xs):
     # creates the figure subplot for appending next
     fig, (ax1, ax2) = plt.subplots(rows, cols)
     # adds gridlines to both subplots
-    """
-    a[0].grid(visible=True, which='major', color='black', linewidth=1.0)
-    a[0].grid(visible=True, which='minor', color='black', linewidth=0.5)
-    a[1].grid(visible=True, which='major', color='black', linewidth=1.0)
-    a[1].grid(visible=True, which='minor', color='black', linewidth=0.5)
-    """
     ax1.grid()
     ax2.grid()
     # creates the model line fit

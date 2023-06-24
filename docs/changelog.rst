@@ -4,4 +4,4 @@
 Full Changelog
 **************
 
-.. include:: ../CHANGES.md
+.. include:: ../CHANGELOG.md

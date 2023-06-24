@@ -27,6 +27,6 @@ Using `EclipsingBinaries`
 .. toctree::
    :maxdepth: 2
    
-   Menu
-   Night_Filters
-   apass
+   pipeline
+   EB
+   toolbox

@@ -15,18 +15,18 @@ Getting Started
 
 .. toctree::
    :maxdepth: 1
-      
-      installation
-      getting_started
-      changelog
-      license
+
+   installation
+   getting_started
+   changelog
+   license
 
 Using `EclipsingBinaries`
 ------------------------
 
 .. toctree::
    :maxdepth: 2
-      
-      Menu
-      Night_Filters
-      apass
+   
+   Menu
+   Night_Filters
+   apass

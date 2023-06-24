@@ -1,31 +1,12 @@
-EclipsingBinaries Package
-=========================
-
-.. contents:: Table of Contents
-    :depth: 2
-
-Introduction
-------------
-
-EclipsingBinaries is a binary star research package for Ball State University's Variable Star Research Group. The purpose of this package is to increase the efficiency of the group's analysis process of more basic steps. The package also adds some new statistical analysis that used to not be common for the group until this package.
-
+************
 Installation
-------------
+************
 
-.. code-block:: bash
+Requirements
+============
 
-    pip install EclipsingBinaries
+EclipsingBinaries has the following requirements:
 
-Then to upgrade to the next version
-
-.. code-block:: bash
-
-    pip install --upgrade EclipsingBinaries
-
-Dependencies
-------------
-
-- python >=3.7
 - astropy>=5.1.1
 - astroquery>=0.4.6
 - ccdproc>=2.4.0
@@ -40,20 +21,28 @@ Dependencies
 - seaborn>=0.12.2
 - pyia>=1.3
 
-Modules
--------
 
-menu.py
-~~~~~~~
+Installing EclipsingBinaries
+============================
 
-The main program that can call all the other programs given a user's prompts.
+To install ccdproc with `pip <https://pip.pypa.io/en/latest/>`_, simply run::
 
-Night_Filters.py
-~~~~~~~~~~~~~~~~
+    pip install EclipsingBinaries
 
-This program is meant to make the process of collecting the different filters from AIJ and TESS excel spreadsheets faster.
+Using conda
+-------------
 
-apass.py
-~~~~~~~~
+To install ccdproc with `anaconda`_, run::
 
-With this program, you compile a list of stars that are 30 arcmin box around a set of coordinates.
+    conda install -c conda-forge ccdproc
+
+Updating
+--------
+
+To update to the latest versions, simply run::
+
+    pip install --upgrade EclipsingBinaries
+
+And to install a specified version, simply run::
+
+    pip install --upgrade EclipsingBinaries==[version]

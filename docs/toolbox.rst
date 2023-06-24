@@ -24,6 +24,9 @@ The various programs to choose from are:
 IRAF Reduction
 --------------
 
+.. note::
+    The pipeline for this program is setup only for use at BSUO. This will be updated in the future.
+
 Making heavy use of `Astropy's ccdproc <https://ccdproc.readthedocs.io/en/stable/ccddata.html>`_ and `Photutils <https://photutils.readthedocs.io/en/stable/aperture.html>`_ I was able to create an automatic data reduction process using Bias, Darks, and Flats to reduce science images.
 
 The first thing that is done is set some global variables:
@@ -126,3 +129,6 @@ BJD_TDB
 ^^^^^^^
 
 The conversion between ``HJD`` and ``BJD_TDB`` is not an easy conversion. The purpose of including this in this package is to have a single time value across multiple telescopes or satellites. `TESS <https://tess.mit.edu/>`_ uses ``BJD_TDB`` while BSUO and various `SARA <https://www.saraobservatory.org/>`_ use ``HJD``.
+
+.. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
+   :lines: 571-592

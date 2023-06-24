@@ -18,6 +18,7 @@ Getting Started
       
       installation
       getting_started
+      changelog
       license
 
 Using `EclipsingBinaries`

@@ -8,13 +8,13 @@ EclipsingBinaries
 =======
 
 .. Important::
-   This document page is still a work in project and there may be things missing so please bare    with me as the pages get created and documented.
+   This document page is still a work in progress and there may be things missing so please bare with me as the pages get created and documented.
    
 Getting Started
 ---------------
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
       
       installation
       getting_started

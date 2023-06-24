@@ -3,6 +3,9 @@
 Program Options
 ===============
 
+.. Important::
+    This documentation is not meant to go over all the physics/astronomy or background knowledge required to fully understand what the various programs are doing.
+
 Menu
 ----
 
@@ -132,3 +135,43 @@ The conversion between ``HJD`` and ``BJD_TDB`` is not an easy conversion. The pu
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
    :lines: 571-592
+
+Find Minimum
+------------
+
+.. note::
+    This program was originally created by Alec J. Neal but updated for interactive usage by Kyle J. Koeller.
+
+This program aims to find the times of minimum (ToM) from given light curve data. One thing this helps with is determine how accurate the period is.
+
+The ``main`` function first asks the user how many filters they are using. Again this is assumed to be between 1-3 fiflters as that is what is used for BSUO and the SARA telescopes that Ball State has access to.
+
+.. literalinclude:: ../EclipsingBinaries/find_min.py
+   :lines: 552-594
+
+Kwee van Woerdan
+^^^^^^^^^^^^^^^^
+
+Any option that the user enters, the function ``plot_obs`` is called. The point of this function is to plot the main figure that the user interacts with varying keyboard press events (talk about that later). Within this function, the function ``KvW`` (Kwee van Woerdan) is called. This is a method utilizes the symmetry of a light curve to use an estimated location.
+
+The ToM and its error is defined by the following:
+
+.. literalinclude:: ../EclipsingBinaries/find_min.py
+   :lines: 160-182
+
+Key Events
+^^^^^^^^^^
+
+When the plot gets displayed to the user, the user can interactively work with what is displayed using various key presses:
+
+.. literalinclude:: ../EclipsingBinaries/find_min.py
+   :lines: 459-507
+
+This functionaility is still a work in progress but the user can do the following:
+
++ Left and right boundaries
++ Move to the next "day" (next set of observations)
++ Close the plot
++ Display the options available
+
+The ability to write the KvW value and error to a file will be added at a later date.

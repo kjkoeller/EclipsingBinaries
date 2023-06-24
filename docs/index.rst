@@ -17,7 +17,7 @@ Getting Started
    :maxdepth: 1
 
    installation
-   getting_started
+   contributing
    changelog
    license
 

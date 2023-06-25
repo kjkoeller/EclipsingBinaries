@@ -175,3 +175,134 @@ This functionaility is still a work in progress but the user can do the followin
 + Display the options available
 
 The ability to write the KvW value and error to a file will be added at a later date.
+
+TESS DataBase Search/Download
+-----------------------------
+
+Searching the TESS Database allows for even more data collection than what is availabe through telescope time. TESS is a great resource because if a user's target object is in the database there is most likely a couple of months worth of data as TESS looks at the same spot in the sky for 27 days straight without stopping collecting data.
+
+Searching TESS
+^^^^^^^^^^^^^^
+
+Given an object's name, the program will find sector numbers (the number of the month data was taken). If there are no sectors available for a particular star then the program will ask the user for another star name.
+
+.. literalinclude:: ../EclipsingBinaries/tess_data_search.py
+   :lines: 29-36
+
+TESS ccd Information
+^^^^^^^^^^^^^^^^^^^^
+
+TESS released information regarding its ccd's (there are four on board the satellite) and this is compiled into a text file called ``tess_ccd_info.txt`` located `here <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/tess_ccd_info.txt>`_ for reference. The program determined the gain given the sector's camera and ccd values and only takes every 4th value given repeats.
+
+.. literalinclude:: ../EclipsingBinaries/tess_data_search.py
+   :lines: 49-70
+
+Downloading
+^^^^^^^^^^^
+
+Starting the downloading after finding sector numbers is as simple as telling the program to download all the sectors for a first time run or to download a specific sector for new data release.
+
+.. literalinclude:: ../EclipsingBinaries/tess_data_search.py
+   :lines: 80-103
+
+For either choice, the program calls the ``download`` function. This function actively retrieves the data based on system name and sector number.
+
+.. literalinclude:: ../EclipsingBinaries/tess_data_search.py
+   :lines: 108-131
+
+The default size is the maximum size allowed by TESS which is a ``30x30 arcmin`` box. At this current time, there is no way to change this as an input, but if users are wanting this choice, this can be added at a later date.
+
+TESSCut
+^^^^^^^
+
+At the line ``tCut(manifest, download_path)``, the program calls a new file named ``tesscut.py``. The reason for this file is to "unzip" the downloaded file from TESS. TESS outputs a fits file that has all images for a given sector inside of this.
+
+The extraction process is handled by this file and looks at the metadata of each extracted image to gather the mid exposure time in ``BJD_TDB`` at which that image was taken:
+
+.. literalinclude:: ../EclipsingBinaries/tesscut.py
+   :lines: 97-98
+
+.. literalinclude:: ../EclipsingBinaries/tesscut.py
+   :lines: 110
+
+BJD to HJD
+^^^^^^^^^^
+
+Converting from ``BJD_TDB`` to ``HJD`` is handled by the following function:
+
+.. literalinclude:: ../EclipsingBinaries/tesscut.py
+   :lines: 146-156
+
+Takes a ``RA, DEC, BJD_TDB, location`` as inputs and finds the light travel time corrected ``HJD``. Currently the light travel time is not fully correct as it uses ``Greenwich England`` as the location but should be using the TESS satellite location. This will hopefully be added at a later date but is not a priority as the effect will be minimal.
+
+Header Information
+^^^^^^^^^^^^^^^^^^
+
+Lastly there are a few header updates that are added to each image as denoted by the following lines:
+
+.. literalinclude:: ../EclipsingBinaries/tesscut.py
+   :lines: 128-132
+
+The value ``LST_UPDT`` is when the file was edited by this program and the ``COMMENT`` is some information about the image like: date image was taken, sector number, etc.
+
+AIJ Comparison Star Selector
+----------------------------
+
+Catalog Finder
+^^^^^^^^^^^^^^
+
+The first thing this program does is search the `Vizier APASS catalog <https://vizier.cds.unistra.fr/viz-bin/VizieR-3?-source=II/336/apass9&-out.max=50&-out.form=HTML%20Table&-out.add=_r&-out.add=_RAJ,_DEJ&-sort=_r&-oc.form=sexa>`_. Given a ``RA`` and ``DEC`` of a star, the program does the following:
+
+.. literalinclude:: ../EclipsingBinaries/apass.py
+   :lines: 213-221
+
+This looks at a box of size 30 arcmin and gathers all APASS magnitude known stars and compiles them into a table. The first three inputs into the result variable are:
+
++ ``columns`` Defines what to gather from the catalog database
++ ``row_limit`` Set to ``-1`` to have no row limit (i.e. gather as many objects as possible)
++ ``column_filters`` Only gather data on the stars with Johnson B and V magnitudes less than 14
+
+Cousins R
+^^^^^^^^^
+
+.. note::
+    Utilizes GPU accleration through ``numba`` for the ``calculations`` function.
+
+After gathering all the comparison stars, the program then goes on to calculate the Cousins R band filter. For each and every comparison star by calling the ``calculations`` function:
+
+.. literalinclude:: ../EclipsingBinaries/apass.py
+   :lines: 448-483
+
+The final equation used comes from this `paper <https://arxiv.org/pdf/astro-ph/0609736.pdf>`_ by rearranging equation 2 to solve for the Cousins R variable. The error for the ``val`` is given by the variable ``root`` and this uses basic add the errors in quadrature.
+
+Gaia
+^^^^
+
+The ``cousins_r`` function also searches the `Gaia <https://www.cosmos.esa.int/web/gaia/data-release-3>`_ catalog by calling the ``gaia.py`` file and specifically the ``tess_mag`` function. The function takes numerous Gaia magnitude values and calculates the TESS magnitude. Here are a number of papers on the subject:
+
++ https://iopscience.iop.org/article/10.3847/1538-3881/acaaa7/pdf
++ https://iopscience.iop.org/article/10.3847/1538-3881/ab3467/pdf
++ https://arxiv.org/pdf/2012.01916.pdf
+
+.. literalinclude:: ../EclipsingBinaries/gaia.py
+   :lines: 128-160
+
+If the value of the TESS magnitude for a given comparison is ``NaN`` then the value and its error are set to ``99.999`` to effectively guarantee that it will not be used later.
+
+Creating RADEC Files
+^^^^^^^^^^^^^^^^^^^^
+
+The creation of RADEC files is carried out by the function ``create_radec`` and it uses Astro ImageJ (AIJ) convention of formatting these files:
+
+.. literalinclude:: ../EclipsingBinaries/apass.py
+   :lines: 304-378
+
+The function creates four RADEC files for each main filter used by BSUO (Johnson B, Johnson V, and Cousins R) and writes them to individual files.
+
+Overlay
+^^^^^^^
+
+Displaying where all the comparison stars are located is optional. The function ``overlay`` takes the list of RA and DEC of the comparison stars and overlays their locations onto an image that the user enters in. The program plots circles around the stars and numbers them underneath those circles.
+
+.. literalinclude:: ../EclipsingBinaries/apass.py
+   :lines: 427-444

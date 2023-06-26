@@ -306,3 +306,41 @@ Displaying where all the comparison stars are located is optional. The function 
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
    :lines: 427-444
+
+BSUO or SARA/TESSS Night Filters
+--------------------------------
+
+Gather Data
+^^^^^^^^^^^
+
+When using Astro ImageJ (AIJ) produces ``.dat`` files that contain magntiude and flux data for every set of data anlyzed. The purpose of this code is to take all sets of the data files and combine them into a single file per filter, from the ``Night_Filters.py`` program.
+
+The program first checks how many nights the use will be using and then gathers each file pathway from a for loop inside the ``get_nights_AIJ`` function. 
+
+.. literalinclude:: ../EclipsingBinaries/Niight_Filters.py
+   :lines: 86-162
+
+The program checks if the user has both magnitude and flux data or just magnitude data by checking if there five or seven columns in the ``.dat`` files. Once that has been determined the program then writes those values into a text file:
+
+.. literalinclude:: ../EclipsingBinaries/Night_Filters.py
+   :lines: 163-195
+
+.. note::
+    The same thing happens for TESS data (``get_nights_TESS.py`` function) except at the time or writing this program (1-30-2023), BSUO only had the ablity to gather relative flux data but now with the ``gaia.py`` program, this needs to be updated to gather magnitude data as well.
+
+Gaia Search
+-----------
+
+Query
+^^^^^
+Some of the Gaia (``gaia.py``) has already been described in the `AIJ Comparison Star Selector Section <https://eclipsingbinaries.readthedocs.io/en/latest/toolbox.html#gaia>`_, but the other functionality of this program is to find parallax, effective temperature, radial velocity, and various Gaia mangitude data for a target star.
+
+The query comes from the package ``pyia`` and the function ``GaiaData``:
+
+.. literalinclude:: ../EclipsingBinaries/gaia.py
+   :lines: 40-61
+
+Then all that information gets saved to a text file with the name entered by the user:
+
+.. literalinclude:: ../EclipsingBinaries/gaia.py
+   :lines: 64-88

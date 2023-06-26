@@ -1,0 +1,72 @@
+\documentclass{report}
+            \usepackage{booktabs}
+            \begin{document}\begin{center}
+\begin{tabular}{lclc}
+\toprule
+\textbf{Dep. Variable:}    &        y         & \textbf{  R-squared:         } &     0.982   \\
+\textbf{Model:}            &       OLS        & \textbf{  Adj. R-squared:    } &     0.982   \\
+\textbf{Method:}           &  Least Squares   & \textbf{  F-statistic:       } & 4.945e+04   \\
+\textbf{Date:}             & Tue, 28 Mar 2023 & \textbf{  Prob (F-statistic):} &     0.00    \\
+\textbf{Time:}             &     19:10:00     & \textbf{  Log-Likelihood:    } &    5410.8   \\
+\textbf{No. Observations:} &         903      & \textbf{  AIC:               } & -1.082e+04  \\
+\textbf{Df Residuals:}     &         901      & \textbf{  BIC:               } & -1.081e+04  \\
+\textbf{Df Model:}         &           1      & \textbf{                     } &             \\
+\textbf{Covariance Type:}  &    nonrobust     & \textbf{                     } &             \\
+\bottomrule
+\end{tabular}
+\begin{tabular}{lcccccc}
+                   & \textbf{coef} & \textbf{std err} & \textbf{t} & \textbf{P$> |$t$|$} & \textbf{[0.025} & \textbf{0.975]}  \\
+\midrule
+\textbf{Intercept} &       0.0001  &        0.000     &     0.895  &         0.371        &       -0.000    &        0.000     \\
+\textbf{x}         &   -3.991e-06  &     1.79e-08     &  -222.382  &         0.000        &    -4.03e-06    &    -3.96e-06     \\
+\bottomrule
+\end{tabular}
+\begin{tabular}{lclc}
+\textbf{Omnibus:}       & 96.524 & \textbf{  Durbin-Watson:     } &     1.917  \\
+\textbf{Prob(Omnibus):} &  0.000 & \textbf{  Jarque-Bera (JB):  } &   482.165  \\
+\textbf{Skew:}          & -0.342 & \textbf{  Prob(JB):          } & 1.99e-105  \\
+\textbf{Kurtosis:}      &  6.514 & \textbf{  Cond. No.          } &  4.27e+04  \\
+\bottomrule
+\end{tabular}
+%\caption{OLS Regression Results}
+\end{center}
+
+Notes: \newline
+ [1] Standard Errors assume that the covariance matrix of the errors is correctly specified. \newline
+ [2] The condition number is large, 4.27e+04. This might indicate that there are \newline
+ strong multicollinearity or other numerical problems.\begin{center}
+\begin{tabular}{lclc}
+\toprule
+\textbf{Dep. Variable:}    &        y         & \textbf{  R-squared:         } &     0.982   \\
+\textbf{Model:}            &       OLS        & \textbf{  Adj. R-squared:    } &     0.982   \\
+\textbf{Method:}           &  Least Squares   & \textbf{  F-statistic:       } & 2.473e+04   \\
+\textbf{Date:}             & Tue, 28 Mar 2023 & \textbf{  Prob (F-statistic):} &     0.00    \\
+\textbf{Time:}             &     19:10:00     & \textbf{  Log-Likelihood:    } &    5411.3   \\
+\textbf{No. Observations:} &         903      & \textbf{  AIC:               } & -1.082e+04  \\
+\textbf{Df Residuals:}     &         900      & \textbf{  BIC:               } & -1.080e+04  \\
+\textbf{Df Model:}         &           2      & \textbf{                     } &             \\
+\textbf{Covariance Type:}  &    nonrobust     & \textbf{                     } &             \\
+\bottomrule
+\end{tabular}
+\begin{tabular}{lcccccc}
+                   & \textbf{coef} & \textbf{std err} & \textbf{t} & \textbf{P$> |$t$|$} & \textbf{[0.025} & \textbf{0.975]}  \\
+\midrule
+\textbf{Intercept} &      -0.0002  &        0.000     &    -0.576  &         0.565        &       -0.001    &        0.000     \\
+\textbf{x}         &   -3.894e-06  &     9.55e-08     &   -40.755  &         0.000        &    -4.08e-06    &    -3.71e-06     \\
+\textbf{I(x ** 2)} &   -7.949e-12  &     7.65e-12     &    -1.039  &         0.299        &     -2.3e-11    &     7.07e-12     \\
+\bottomrule
+\end{tabular}
+\begin{tabular}{lclc}
+\textbf{Omnibus:}       & 97.981 & \textbf{  Durbin-Watson:     } &     1.918  \\
+\textbf{Prob(Omnibus):} &  0.000 & \textbf{  Jarque-Bera (JB):  } &   490.004  \\
+\textbf{Skew:}          & -0.351 & \textbf{  Prob(JB):          } & 3.95e-107  \\
+\textbf{Kurtosis:}      &  6.540 & \textbf{  Cond. No.          } &  7.47e+08  \\
+\bottomrule
+\end{tabular}
+%\caption{OLS Regression Results}
+\end{center}
+
+Notes: \newline
+ [1] Standard Errors assume that the covariance matrix of the errors is correctly specified. \newline
+ [2] The condition number is large, 7.47e+08. This might indicate that there are \newline
+ strong multicollinearity or other numerical problems.\end{document}

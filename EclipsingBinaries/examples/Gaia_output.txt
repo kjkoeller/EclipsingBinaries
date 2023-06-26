@@ -1,0 +1,2 @@
+Parallax(mas)	Parallax_err(mas)	Distance_lower(pc)	Distance(pc)	Distance_higher(pc)	T_eff_lower(K)	T_eff(K)	T_eff_higher(K)	G_Mag	G_BP_Mag	G_RP_Mag	Radial_velocity(km/s)	Radial_velocity_err(km/s)
+4.751641342780107	0.011979661	1e+20	1e+20	1e+20	1e+20	1e+20	1e+20	11.719252	12.113523	11.06324	-42.200104	24.182922

@@ -344,3 +344,46 @@ Then all that information gets saved to a text file with the name entered by the
 
 .. literalinclude:: ../EclipsingBinaries/gaia.py
    :lines: 64-88
+
+O'Connell Effect
+----------------
+
+.. note::
+    Based on this `paper <https://app.aavso.org/jaavso/article/3511/>`_ and originally created by Alec J. Neal, the program ``OConnell.py`` solves various statistical anlalyses in regards to the O'Connell effect.
+
+Data
+^^^^
+
+The program first tasks the user with entering in light curve data for 1-3 filters (Johnson B, Johnson V, and Cousins R). Which then calls the function ``multi_OConnell_total`` and there are options for one or two filters as well.
+
+.. literalinclude:: ../EclipsingBinaries/OConnell.py
+   :lines: 38-53
+
+Calculations
+^^^^^^^^^^^^
+
+After the files have been entered, the program converst the magnitude data into flux data and finds the phase at which each data point occurs from the period:
+
+.. literalinclude:: ../EclipsingBinaries/OConnell.py
+   :lines: 113-120
+
+Then plots the first half of the light curve flux on top of the second half light curve and finds the difference.
+
+.. literalinclude:: ../EclipsingBinaries/OConnell.py
+   :lines: 126-137
+
+Once this gets plotted the program then finds the various statistical values and adds them to a list for each filter.
+
+.. literalinclude:: ../EclipsingBinaries/OConnell.py
+   :lines: 415-433
+
+.. literalinclude:: ../EclipsingBinaries/OConnell.py
+   :lines: 298-328
+
+See `vseq_updated.py <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/vseq_updated.py#L1114>`_ for the actual calculations of all the values.
+
+Output
+^^^^^^
+
+Once the program goes through all the filters, it then creates a latex ready file for use in a paper with a table of all filters along with their respctive statistical values.
+    

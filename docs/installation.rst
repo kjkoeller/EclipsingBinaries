@@ -29,13 +29,6 @@ To install ccdproc with `pip <https://pip.pypa.io/en/latest/>`_, simply run::
 
     pip install EclipsingBinaries
 
-Using conda
--------------
-
-To install ccdproc with `anaconda`_, run::
-
-    conda install -c conda-forge ccdproc
-
 Updating
 --------
 

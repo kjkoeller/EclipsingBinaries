@@ -277,8 +277,8 @@ After gathering all the comparison stars, the program then goes on to calculate 
 
 The final equation used comes from this `paper <https://arxiv.org/pdf/astro-ph/0609736.pdf>`_ by rearranging equation 2 to solve for the Cousins R variable. The error for the ``val`` is given by the variable ``root`` and this uses basic add the errors in quadrature.
 
-.. literalinclude:: ../EclipsingBinaries/examples/APASS_Catlog_ex.txt
-    :lines: 0-10
+.. literalinclude:: ../EclipsingBinaries/examples/APASS_Catalog_ex.txt
+    :lines: 1-10
 
 Gaia
 ^^^^
@@ -324,7 +324,7 @@ When using Astro ImageJ (AIJ) produces ``.dat`` files that contain magntiude and
 
 The program first checks how many nights the use will be using and then gathers each file pathway from a for loop inside the ``get_nights_AIJ`` function. 
 
-.. literalinclude:: ../EclipsingBinaries/Niight_Filters.py
+.. literalinclude:: ../EclipsingBinaries/Night_Filters.py
    :lines: 86-162
 
 The program checks if the user has both magnitude and flux data or just magnitude data by checking if there five or seven columns in the ``.dat`` files. Once that has been determined the program then writes those values into a text file:
@@ -332,7 +332,7 @@ The program checks if the user has both magnitude and flux data or just magnitud
 .. literalinclude:: ../EclipsingBinaries/Night_Filters.py
    :lines: 163-195
 
-.. literalinclude:: ../EclipsingBinaries/examples/text_B.txt
+.. literalinclude:: ../EclipsingBinaries/examples/test_B.txt
     :lines: 1-10
 
 .. note::
@@ -470,6 +470,4 @@ Output
 
 Once the program goes through all the filters, it then creates a latex ready file for use in a paper with a table of all filters along with their respctive statistical values.
 
-.. literalinclude:: ../EclipsingBinaries/examples/OConnell_table.txt
-    :lines: 1-30
-    
+.. literalinclude:: ../EclipsingBinaries/examples/OConnell_table.txt    

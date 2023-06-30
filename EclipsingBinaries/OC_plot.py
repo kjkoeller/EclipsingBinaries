@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 06/23/2023
+Last Edited: 06/29/2023
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -319,9 +319,9 @@ def calculate_oc(m, err, T0, T0_err, p):
     E_act = (m - T0) / p
     # estimate for the primary or secondary eclipse by rounding to the nearest 0.5
     if E_act > 0:
-        e = ceil(E_act * 2) / 2
-    else:
         e = floor(E_act * 2) / 2
+    else:
+        e = ceil(E_act * 2) / 2
     # calculate the calculated ToM and find the O-C value
     T_calc = T0 + (e * p)
     OC = "%.5f" % (m - T_calc)

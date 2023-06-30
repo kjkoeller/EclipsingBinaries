@@ -174,9 +174,11 @@ This functionaility is still a work in progress but the user can do the followin
 + Close the plot
 + Display the options available
 
+.. image:: ../EclipsingBinaries/examples/min_program_demo.png
+
 The ability to write the KvW value and error to a file will be added at a later date.
 
-TESS DataBase Search/Download
+TESS Database Search/Download
 -----------------------------
 
 Searching the TESS Database allows for even more data collection than what is availabe through telescope time. TESS is a great resource because if a user's target object is in the database there is most likely a couple of months worth of data as TESS looks at the same spot in the sky for 27 days straight without stopping collecting data.
@@ -275,6 +277,9 @@ After gathering all the comparison stars, the program then goes on to calculate 
 
 The final equation used comes from this `paper <https://arxiv.org/pdf/astro-ph/0609736.pdf>`_ by rearranging equation 2 to solve for the Cousins R variable. The error for the ``val`` is given by the variable ``root`` and this uses basic add the errors in quadrature.
 
+.. literalinclude:: ../EclipsingBinaries/examples/APASS_Catlog_ex.txt
+    :lines: 0-10
+
 Gaia
 ^^^^
 
@@ -307,6 +312,8 @@ Displaying where all the comparison stars are located is optional. The function 
 .. literalinclude:: ../EclipsingBinaries/apass.py
    :lines: 427-444
 
+.. image:: ../EclipsingBinaries/examples/overlay_example.png
+
 BSUO or SARA/TESSS Night Filters
 --------------------------------
 
@@ -324,6 +331,9 @@ The program checks if the user has both magnitude and flux data or just magnitud
 
 .. literalinclude:: ../EclipsingBinaries/Night_Filters.py
    :lines: 163-195
+
+.. literalinclude:: ../EclipsingBinaries/examples/text_B.txt
+    :lines: 1-10
 
 .. note::
     The same thing happens for TESS data (``get_nights_TESS.py`` function) except at the time or writing this program (1-30-2023), BSUO only had the ablity to gather relative flux data but now with the ``gaia.py`` program, this needs to be updated to gather magnitude data as well.
@@ -359,6 +369,9 @@ After that, the programs calls the ``BSUO`` function which then calls the ``calc
 
 The very first line of the above code is utilizing the `Numba <https://numba.pydata.org/>`_ package. The following lines are what calculate the eclipse number and if the ``E_act`` is positive then use the floor function and if ``E_act`` is negative use the ceiling function. The ``OC`` and ``OC_err`` only take the first five decimal places, otherwise there would be like 10 decimal places (unrealistic accuracy).
 
+.. literalinclude:: ../EclipsingBinaries/examples/example_OC_table.txt
+    :lines: 1-10
+
 TESS
 ^^^^
 
@@ -375,6 +388,8 @@ Once all calculations have been done through ``OC_plot.py`` or elsewhere, the pr
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
    :lines: 244-271
 
+.. literalinclude:: ../EclipsingBinaries/examples/O-C_paper_table.txt
+
 Weights are calculated by this line:
 
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
@@ -384,6 +399,13 @@ The program splits up the primary and secondary ToM to help show potential trend
 
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
    :lines: 456-457
+
+.. image:: ../EclipsingBinaries/examples/O_C_ex.png
+
+When plotting the qudratic and linear fits, the program also produces a text file that shows the Least Squares fit for both fits. This file is also made to be used in a paper and is formatted in latex automatically.
+
+.. literalinclude:: ../EclipsingBinaries/examples/example_regression.txt
+    :lines: 1-32
 
 Gaia Search
 -----------
@@ -401,6 +423,8 @@ Then all that information gets saved to a text file with the name entered by the
 
 .. literalinclude:: ../EclipsingBinaries/gaia.py
    :lines: 64-88
+
+.. literalinclude:: ../EclipsingBinaries/examples/Gaia_output.txt
 
 O'Connell Effect
 ----------------
@@ -429,6 +453,8 @@ Then plots the first half of the light curve flux on top of the second half ligh
 .. literalinclude:: ../EclipsingBinaries/OConnell.py
    :lines: 126-137
 
+.. image:: ../EclipsingBinaries/examples/OConnell_plot.png
+
 Once this gets plotted the program then finds the various statistical values and adds them to a list for each filter.
 
 .. literalinclude:: ../EclipsingBinaries/OConnell.py
@@ -443,4 +469,7 @@ Output
 ^^^^^^
 
 Once the program goes through all the filters, it then creates a latex ready file for use in a paper with a table of all filters along with their respctive statistical values.
+
+.. literalinclude:: ../EclipsingBinaries/examples/OConnell_table.txt
+    :lines: 1-30
     

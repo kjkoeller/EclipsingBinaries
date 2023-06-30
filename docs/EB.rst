@@ -1,7 +1,7 @@
 .. _EB:
 
 Running EclipsingBinaries
-===============
+=========================
 
 Script
 ------

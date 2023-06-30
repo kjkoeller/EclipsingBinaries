@@ -470,4 +470,45 @@ Output
 
 Once the program goes through all the filters, it then creates a latex ready file for use in a paper with a table of all filters along with their respctive statistical values.
 
-.. literalinclude:: ../EclipsingBinaries/examples/OConnell_table.txt    
+.. literalinclude:: ../EclipsingBinaries/examples/OConnell_table.txt  
+
+Color Light Curve
+-----------------
+
+.. note::
+    Originally created by Alec J. Neal but originally updated for this package by Kyle Koeller.
+
+This program is a little unique because instead of a command line interface, ``color_light_curve.py`` utilizes the ``tkinter`` package to use a GUI.
+
+.. image::  ../EclipsingBinaries/examples/gui_color_light.png
+
+Required Files
+^^^^^^^^^^^^^^
+
+The ``B file`` (Johnson B filter), ``V file`` (Johnson V), ``Epoch`` (first primary ToM), and ``Period`` are required for the program to run. The ``Max. tolerance`` and ``Lower limit`` should not be changed if the user does not know what they do. Once these required items have been entered, the program calls the ``subtract_LC``function.
+
+Subtact Light Curve
+^^^^^^^^^^^^^^^^^^^
+
+The ``subtract_LC`` finds the ``B-V`` and ``V-R`` values and their errors.
+
+.. literalinclude:: ../EclipsingBinaries/color_light_curve.py
+   :lines: 86-143
+
+At line 141, the program calculates the effective temperature found from each of these color index values from the `Flower P. J. 1996 <https://ui.adsabs.harvard.edu/abs/1996ApJ...469..355F/abstract>`_ with the Torres 2010 polynomial update.
+
+.. literalinclude:: ../EclipsingBinaries/vseq_updated.py
+   :lines: 1499-1507
+
+Inside the GUI, the program will tell the user what the effective temperatures are along with outputting those values into the command line. The ``B-V`` is what Flower specifically created the polynomial fit for but this program uses the same polynomial fit for the ``V-R`` which cannot be assumed to be correct. This might be updated to the correct polynomial at a later date.
+
+Plotting
+^^^^^^^^
+
+The program then plots the phase space light curve plots of each filter entered on an upper panel and the color index values in the lower panel as shown below:
+
+.. image::  ../EclipsingBinaries/examples/color_light_curve_ex.png
+
+The program also plots a simple light curve plot of each filter separately from the color index plot.
+
+.. image::  ../EclipsingBinaries/examples/light_curve_ex.png

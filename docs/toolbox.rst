@@ -328,6 +328,63 @@ The program checks if the user has both magnitude and flux data or just magnitud
 .. note::
     The same thing happens for TESS data (``get_nights_TESS.py`` function) except at the time or writing this program (1-30-2023), BSUO only had the ablity to gather relative flux data but now with the ``gaia.py`` program, this needs to be updated to gather magnitude data as well.
 
+O-C Plotting
+------------
+
+Calculating Observed minus Calculated (O-C) is done by the ``OC_plot.py`` prigram. Given a period and first primary ToM the program calculates the O-C values and respctive errors. The program first asks the user if they are calculating BSUO/SARA data, TESS data, or plotting all their data.
+
+BSUO/SARA
+^^^^^^^^^
+
+.. literalinclude:: ../EclipsingBinaries/OC_plot.py
+   :lines: 34-56
+
+As seen above, the program asks the user if they know what their ``T0`` and ``To_err`` and if they don't then the program calls the ``arguments`` function:
+
+.. literalinclude:: ../EclipsingBinaries/OC_plot.py
+   :lines: 286-300
+
+For each index value for each filter, the ToM are averaged together. This gives the user the most likely time for that ToM:
+
+.. literalinclude:: ../EclipsingBinaries/OC_plot.py
+   :lines: 159-162
+
+Calculations
+^^^^^^^^^^^^
+
+After that, the programs calls the ``BSUO`` function which then calls the ``calculate_oc`` function that does the real calculations:
+
+.. literalinclude:: ../EclipsingBinaries/OC_plot.py
+   :lines: 303-332
+
+The very first line of the above code is utilizing the `Numba <https://numba.pydata.org/>`_ package. The following lines are what calculate the eclipse number and if the ``E_act`` is positive then use the floor function and if ``E_act`` is negative use the ceiling function. The ``OC`` and ``OC_err`` only take the first five decimal places, otherwise there would be like 10 decimal places (unrealistic accuracy).
+
+TESS
+^^^^
+
+The only difference between BSUO/SARA to TESS data is that, TESS assumes only a single filter. So there is no averaging for the ToM to be done.
+
+Plotting All Data
+^^^^^^^^^^^^^^^^^
+
+.. note::
+    The format for all data files must follow the format as seen in this `example_OC_table.txt <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/examples/example_OC_table.txt>`_.
+
+Once all calculations have been done through ``OC_plot.py`` or elsewhere, the program allows the user to plot all their data together. The program will first create a table that turns the input file into a ``.tex`` file that is formatted automatically to be turned into a paper ready table.
+
+.. literalinclude:: ../EclipsingBinaries/OC_plot.py
+   :lines: 244-271
+
+Weights are calculated by this line:
+
+.. literalinclude:: ../EclipsingBinaries/OC_plot.py
+   :lines: 356
+
+The program splits up the primary and secondary ToM to help show potential trends and the plotting occurs with these lines:
+
+.. literalinclude:: ../EclipsingBinaries/OC_plot.py
+   :lines: 456-457
+
 Gaia Search
 -----------
 

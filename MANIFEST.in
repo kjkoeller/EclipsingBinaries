@@ -3,3 +3,7 @@ include CODE_OF_CONDUCT.md
 include LICENSE
 include README.md
 include pyproject.toml
+
+prune Eclipsingbianries/examples
+prune docs
+prune Eclipsingbianries/tests

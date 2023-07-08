@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 06/20/2023
+Last Updated: 07/05/2023
 """
 
 from astroquery.vizier import Vizier
@@ -49,15 +49,15 @@ def comparison_selector(ra="", dec="", pipeline=False, folder_path="", obj_name=
 
     :return: A list of stars that are the most likely to be on the AIJ list of stars
     """
-    
+
     if not pipeline:
         apass_file, input_ra, input_dec, T_list = cousins_r()
         df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
-    
+
         print("Finished Saving\n\n")
         print("The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
               "with their respective errors.\n")
-    
+
         create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
 
         overlay(df, input_ra, input_dec)
@@ -91,7 +91,7 @@ def cousins_r(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
     beta = 1.321
     e_beta = 0.03
     gamma = 0.219
-    
+
     if not pipeline:
         input_file, input_ra, input_dec = catalog_finder(ra, dec, pipeline, folder_path, obj_name)
     else:
@@ -172,57 +172,51 @@ def cousins_r(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
     return output_file, input_ra, input_dec, T_list
 
 
-def catalog_finder(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
+def get_user_inputs():
     """
-    This looks at a region of the sky at the decimal coordinates of an object and gathers the "column" data with
-    "column filters"
-    You can change the columns or the column filters to whatever you like, I have these set as they are because of the
-    telescope that was used (Rooftop)
+    Gathers user entered RA and DEC
 
-    I also set the width of the search radius to larger than what you would actually see in the field of view of any
-    telescope we use to make sure it gathers all stars within the star field
-
-    Main things to change are:
-    "columns"- what factors are actually taken from the online catalog
-    "column_filters"- which stars are to actually be extracted from that online data table and narrows list down from a
-    couple of hundred to like 50-60
-    "ra"/"dec"- must be in decimal notation
-    "width"- set to the notation that is currently set as, but you may change the number being used
-            30m = 30 arc-minutes
-
-    :param ra: decimal notation of the RA of the object
-    :param dec: decimal notation of the DEC of the object
-    :param pipeline: the pipeline that is being used (ex: "TESS")
-    :param folder_path: the path to the folder that you want to save the file to
-    :param obj_name: the name of the object that you are looking at
-
-    :return: outputs a file with the columns and column filters that you have chosen
+    :return: None
     """
-    if not pipeline:
-        ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
-        dec_input = input("Enter the DEC of your system (DD:MM:SS.SSSS or -DD:MM:SS.SSSS): ")
-        # ra_input = "00:28:27.9684836736"  # testing
-        # dec_input = "78:57:42.657327180"  # testing
-    else:
-        ra_input = ra
-        dec_input = dec
+    ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
+    dec_input = input("Enter the DEC of your system (DD:MM:SS.SSSS or -DD:MM:SS.SSSS): ")
 
-    ra_input2 = splitter([ra_input])
-    dec_input2 = splitter([dec_input])
+    return ra_input, dec_input
 
+
+def query_vizier(ra_input, dec_input):
+    """
+    Queries the Vizier database for the APASS catalog
+
+    :param ra_input: Right ascension input
+    :param dec_input: Declination input
+    :return: table result from Vizier
+    """
     result = Vizier(
         columns=['_RAJ2000', '_DEJ2000', 'Vmag', "e_Vmag", 'Bmag', "e_Bmag", "g'mag", "e_g'mag", "r'mag", "e_r'mag"],
         row_limit=-1,
         column_filters=({"Vmag": "<14", "Bmag": "<14"})).query_region(
-        coord.SkyCoord(ra=ra_input2[0], dec=dec_input2[0], unit=(u.h, u.deg), frame="icrs"),
+        coord.SkyCoord(ra=ra_input, dec=dec_input, unit=(u.h, u.deg), frame="icrs"),
         width="30m", catalog="APASS")
 
     # catalog is II/336/apass9
     tb = result['II/336/apass9']
 
+    # print(tb)
+
+    return tb
+
+
+def process_data(vizier_result):
+    """
+    Processes the data from the Vizier query
+
+    :param vizier_result: Table from Vizier
+    :return: Panda dataframe
+    """
     # converts the table result to a list format for putting values into lists
     table_list = []
-    for i in tb:
+    for i in vizier_result:
         table_list.append(i)
 
     ra = []
@@ -274,36 +268,118 @@ def catalog_finder(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
     df = pd.DataFrame({
         "RA": ra_final,
         "Dec": dec_new,
-        "Bmag": bmag_new,
-        "e_Bmag": e_bmag_new,
         "Vmag": vmag_new,
         "e_Vmag": e_vmag_new,
+        "Bmag": bmag_new,
+        "e_Bmag": e_bmag_new,
         "g'mag": gmag_new,
         "e_g'mag": e_gmag_new,
         "r'mag": rmag_new,
         "e_r'mag": e_rmag_new
     })
 
+    return df
+
+
+def save_to_file(df, filepath):
+    """
+    Saves the dataframe to a text file
+
+    :param df: Dataframe of the Vizier catalog
+    :param filepath: File pathway to where the user wants to save the file
+    :return:
+    """
+
+    df.to_csv(filepath, index=None)
+    print("\nCompleted save.\n")
+
+
+def catalog_finder(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
+    """
+    Finds the APASS catalog for the user to determine comparison stars
+
+    :param ra: Right ascension of the object
+    :param dec: Declination of the object
+    :param pipeline: Boolean for if pipeline is being used
+    :param folder_path: Folder pathway to where files get saved
+    :param obj_name: Object name for pipeline
+    :return: Text file pathway, RA, and DEC
+    """
     if not pipeline:
-        # saves the dataframe to a text file and prints that dataframe out to easily see what was copied to the text file
-        print(
-            "\n\nThis output file contains all the Vizier magnitudes that will be used to calculate the Cousins R band, and\n"
-            "should not be used for anything else other than calculation confirmation if needed later on.\n")
-        text_file = input("Enter a text file pathway and name for the output comparisons "
-                          "(ex: C:\\folder1\\APASS_254037.txt): ")
-        # text_file = "APASS_254037.txt"  # testing
+        ra_input, dec_input = get_user_inputs()
+    else:
+        ra_input, dec_input = ra, dec
+
+    ra_input2 = splitter([ra_input])
+    dec_input2 = splitter([dec_input])
+
+    result = query_vizier(ra_input2[0], dec_input2[0])
+    df = process_data(result)
+
+    if not pipeline:
+        text_file = input("Enter a text file pathway and name for the output comparisons (ex: C:\\folder1\\APASS_254037.txt): ")
     else:
         text_file = folder_path + "\\APASS_" + obj_name + ".txt"
 
-    df.to_csv(text_file, index=None)
-    print("\nCompleted save.\n")
+    save_to_file(df, text_file)
 
     return text_file, ra_input2[0], dec_input2[0]
 
 
+def create_header(ra, dec):
+    """
+    Creates the header string for the RADEC file.
+
+    :param ra: Right ascension of the object of interest
+    :param dec: Declination of the object of interest
+
+    :return: The header string for the RADEC file
+    """
+    header = "#RA in decimal or sexagesimal HOURS\n " \
+             "#Dec in decimal or sexagesimal DEGREES\n" \
+             "#Ref Star=0,1,missing (0=target star, 1=ref star, missing->first ap=target, others=ref)\n" \
+             "#Centroid=0,1,missing (0=do not centroid, 1=centroid, missing=centroid)\n" \
+             "#Apparent Magnitude or missing (value = apparent magnitude, or value > 99 or missing = no mag info)\n" \
+             "#Add one comma separated line per aperture in the following format:\n"
+    header += "#RA, Dec, Ref Star, Centroid, Magnitude\n"
+    header += str(conversion([ra])[0]) + ", " + str(conversion([dec])[0]) + ", 0, 1, 99.999\n"
+
+    return header
+
+
+def create_lines(ra_list, dec_list, mag_list, ra, dec, filt):
+    """
+    Creates the data lines string for the RADEC file.
+
+    :param ra_list: The list of right ascensions
+    :param dec_list: The list of declinations
+    :param mag_list: The list of magnitudes
+    :param ra: Right ascension of the object of interest
+    :param dec: Declination of the object of interest
+    :param filt: The filter for which the RADEC file is being created
+
+    :return: The data lines string for the RADEC file
+    """
+    lines = ""
+    ra_decimal = np.array(splitter(ra_list))
+    dec_decimal = np.array(splitter(dec_list))
+
+    for count, val in enumerate(ra_list):
+        next_ra = float(ra_decimal[count])
+        next_dec = float(dec_decimal[count])
+        # Checks where the RA and DEC given by the user at the beginning is in the file to make sure there is no
+        # duplication
+        angle = angle_dist(float(ra), float(dec), next_ra, next_dec)
+        # print(angle, next_ra, next_dec, ra, dec)
+        if not angle:
+            lines += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(mag_list[count]) + "\n"
+
+    return lines
+
+
 def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name):
     """
-    Creates a RADEC file for all 3 filters (Johnson B, V, and Cousins R
+    Creates a RADEC file for all 3 filters (Johnson B, V, Cousins R, and T)
 
     :param df: input catalog DataFrame
     :param ra: user entered RA for system
@@ -316,54 +392,26 @@ def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name):
     :return: None but saves the RADEC files to user specified locations
     """
     filters = ["B", "V", "R", "T"]
-    header = "#RA in decimal or sexagesimal HOURS\n" \
-             "#Dec in decimal or sexagesimal DEGREES\n" \
-             "#Ref Star=0,1,missing (0=target star, 1=ref star, missing->first ap=target, others=ref)\n" \
-             "#Centroid=0,1,missing (0=do not centroid, 1=centroid, missing=centroid)\n" \
-             "#Apparent Magnitude or missing (value = apparent magnitude, or value > 99 or missing = no mag info)\n" \
-             "#Add one comma separated line per aperture in the following format:\n"
-    header += "#RA, Dec, Ref Star, Centroid, Magnitude\n"
-    header += str(conversion([ra])[0]) + ", " + str(conversion([dec])[0]) + ", 0, 1, 99.999\n"
+    mag_cols = [3, 5, 7, T_list]
 
     ra_list = df[1]
     dec_list = df[2]
-    b_mag = df[3]
-    v_mag = df[5]
-    r_mag = df[7]
 
-    ra_decimal = np.array(splitter(ra_list))
-    dec_decimal = np.array(splitter(dec_list))
-
-    # T_list, _ = ga(ra_decimal, dec_decimal)
-
-    next_ra = float(ra_decimal[0])
-    next_dec = float(dec_decimal[0])
+    header = create_header(ra, dec)
 
     print("The 'T' filter is the calibrated TESS magnitudes calculated from Gaia magnitudes. Please go to the GitHub "
           "page for more information.\n")
 
     # to write lines to the file in order create new RADEC files for each filter
     for fcount, filt in enumerate(filters):
-        header2 = ""
-        for count, val in enumerate(ra_list):
-            # checks where the RA and DEC given by the user at the beginning is in the file to make sure there is no
-            # duplication
-            angle = angle_dist(float(ra), float(dec), next_ra, next_dec)
-            if not angle:
-                # checks where the filter is B, V, R, T for output reasons
-                if filt == "B":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(b_mag[count]) + "\n"
-                elif filt == "V":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(v_mag[count]) + "\n"
-                elif filt == "R":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(r_mag[count]) + "\n"
-                elif filt == "T":
-                    header2 += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(T_list[count]) + "\n"
+        if filt != "T":
+            mag_list = df[mag_cols[fcount]]
+        else:
+            mag_list = mag_cols[fcount]
 
-            next_ra = float(ra_decimal[count])
-            next_dec = float(dec_decimal[count])
+        lines = create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
 
-        output = header + header2
+        output = header + lines
         if not pipeline:
             outputfile = input(
                 "Please enter an output file pathway " + "\033[1m" + "\033[93m" + "WITHOUT" + "\033[00m" +
@@ -371,11 +419,11 @@ def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name):
                 filt + " filter RADEC file, for AIJ (i.e. C:\\folder1\\folder2\[filename]): ")
         else:
             outputfile = folder_path + "\\" + obj_name + "_" + filt
-        file = open(outputfile + ".radec", "w")
-        file.write(output)
-        file.close()
 
-    print("\nFinished writing RADEC files for Johnson B, Johnson V, and Cousins R.\n")
+        with open(outputfile + ".radec", "w") as file:
+            file.write(output)
+
+    print("\nFinished writing RADEC files for Johnson B, Johnson V, and Cousins R, and T.\n")
 
 
 def overlay(df, tar_ra, tar_dec):

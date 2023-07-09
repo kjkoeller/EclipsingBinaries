@@ -270,7 +270,7 @@ class calc:  # assortment of functions
             n0 = 1
             n = n0
             errlist = []
-            while (n < len(coeflist)):
+            while n < len(coeflist):
                 errlist.append(n * coeflist[n] * value ** (n - 1))
                 n += 1
             return error * sum(errlist)
@@ -327,6 +327,13 @@ class calc:  # assortment of functions
 
         def error_power(coeflist, value, error, base=10):
             return abs(calc.poly.error(coeflist, value, error) * np.log(base) * calc.poly.power(coeflist, value, base))
+
+        def t_eff_err(coeflist, value, error, coeferror, temp, base=10):
+            return temp * np.log(base) * np.sqrt(error * calc.poly.error(coeflist, value, error) ** 2 +
+                                          sum(np.array(coeferror) * ((value ** np.arange(len(coeflist))) ** 2)))
+            # return np.log(base) * calc.poly.power(coeflist, value, base) * \
+            #        np.sqrt(calc.poly.error(coeflist, value, error) ** 2 + \
+            #                sum(np.array(coeferror) * value ** np.arange(len(coeflist)) ** 2))
 
     class error:
         def per_diff(x1, x2):
@@ -2080,13 +2087,21 @@ class Pecaut:  # stuff from Pecaut and Mamajek 2013 https://arxiv.org/pdf/1307.2
         c1 = [3.98007, -1.2742, 32.41373, 98.06855]  # -0.115 < V-R < 0.019
         c2 = [3.9764, -0.80319, 0.64832, -0.2651]  # 0.019 < V-R < 1.079
 
-        def Teff(VR):
+        c1_err = [0.00499, 0.25431, 6.60765, 41.6003]
+        c2_err = [0.00179, 0.01409, 0.03136, 0.0197]
+
+        def Teff(VR, error):
             if -0.115 < VR < 0.019:
-                return calc.poly.power(Pecaut.T.c1, VR, 10)
+                # coeflist, value, error, coeferror
+                temp = calc.poly.power(Pecaut.T.c1, VR, 10)
+                err = calc.poly.t_eff_err(Pecaut.T.c1, VR, error, Pecaut.T.c1_err, temp)
+                return temp, err
             elif 0.019 < VR < 1.079:
-                return calc.poly.power(Pecaut.T.c2, VR, 10)
+                temp = calc.poly.power(Pecaut.T.c2, VR, 10)
+                err = calc.poly.t_eff_err(Pecaut.T.c2, VR, error, Pecaut.T.c2_err, temp)
+                return temp, err
             else:
-                return 0
+                return 0, 0
 
 
 #######################################

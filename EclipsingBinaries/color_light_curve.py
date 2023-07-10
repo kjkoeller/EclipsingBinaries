@@ -4,7 +4,7 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 07/08/2022
+Last Edited: 07/09/2022
 Editor: Kyle Koeller
 """
 
@@ -142,9 +142,10 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     if index == "BV":
         temp = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1))
     elif index == "VR":
-        temp = vseq.Pecaut.T.Teff(quadcolor - (0.58 / 3.1))
-        if temp == 0:
+        temp = vseq.Pecaut.T.Teff(quadcolor - (0.58 / 3.1), colorerr)
+        if temp[0] == 0:
             print("V-R color cannot be used to determine temperature.")
+        print('T_VR =', temp[0], '+/-', temp[1])
 
     return B_V, B, V, quadcolor, colorerr, temp
 
@@ -324,7 +325,7 @@ def color_gui(developer=False):
     # disp=3
     # T=Text(root,height=disp,width=25)
     # T.grid(row=0,column=1)
-    Intro = Label(root, text='Color Light Curve - gui\nversion 0.3.0 (2/19/21)\nby Alec Neal\n')
+    Intro = Label(root, text='Color Light Curve - gui\nversion 0.4.1 (2/19/21)\nby Alec Neal\n')
     Intro.grid(row=0, column=0, columnspan=2)
     # Intro.config(font=('Arial',12))
     # T.insert(END,'Hello world!')
@@ -456,7 +457,7 @@ def color_gui(developer=False):
             fig = Figure(figsize=(7, 7.8), dpi=90, tight_layout=True)
             # canvas = FigureCanvasTkAgg(fig, master=root)
             # canvas.destroy()
-            axs, fig = vseq.plot.multiplot(height_ratios=[8, 4.5], fig=fig)
+            axs, _ = vseq.plot.multiplot(height_ratios=[8, 4.5], fig=fig)
             mag = axs[0]
             bv = axs[1]
             mag.plot(Vphase, Vmag, 'o', ms=2, color='#00FF00')
@@ -501,10 +502,10 @@ def color_gui(developer=False):
             fig = Figure(figsize=(7, 9), dpi=90, tight_layout=True)
             # canvas = FigureCanvasTkAgg(fig, master=root)
             # canvas.destroy()
-            axs, fig = vseq.plot.multiplot(height_ratios=[8, 3, 3], fig=fig)
+            axs, _ = vseq.plot.multiplot(height_ratios=[8, 3, 3], fig=fig)
             mag = axs[0]
-            bv = axs[1]
-            vr = axs[2]
+            bv = axs[2]
+            vr = axs[1]
             mag.plot(Vphase, Vmag, 'o', ms=2, color='#00FF00')
             mag.plot(Bphase, Bmag, 'ob', ms=2)
             mag.plot(Rphase, Rmag, 'or', ms=2)
@@ -536,7 +537,7 @@ def color_gui(developer=False):
 
             VRL.config(text='(V-R) = ' + str(round(VRc, 6)) + ' +/- ' + str(round(VRerr, 6)), bg='white',
                        relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
-            VRL_temp.config(text='T_V-R = ' + str(VR_temp), bg='white', relief='solid', borderwidth=1,
+            VRL_temp.config(text='T_(V-R) = ' + str(format(VR_temp[0], ".4f")) + " +/- " + str(format(VR_temp[1], ".4f")), bg='white', relief='solid', borderwidth=1,
                             padx=5,
                             pady=5, font=('None', 14))
             show_color = False
@@ -575,7 +576,7 @@ def color_gui(developer=False):
 
         BVL.config(text='(B-V) = ' + str(round(quadcolor, 6)) + ' +/- ' + str(round(colorerr, 6)), bg='white',
                    relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
-        BVL_temp.config(text='T_B-V = ' + str(eff_temp), bg='white', relief='solid', borderwidth=1, padx=5,
+        BVL_temp.config(text='T_(B-V) = ' + str(format(eff_temp, ".4f")), bg='white', relief='solid', borderwidth=1, padx=5,
                         pady=5, font=('None', 14))
         CreateToolTip(BVL, text=autowrap(
             'These values are calculated using an average of the (X-Y) values within phase 0.075 of quadrature (phase = +/- 0.25).'

@@ -140,7 +140,15 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
 
     # print('T =', vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1)))
     if index == "BV":
-        temp = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1))
+        temp = []
+        t1 = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1))
+        temp_high = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1) - colorerr)
+        temp_low = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1) + colorerr)
+
+        temp_err = (temp_high - temp_low)/2
+        temp.append(t1)
+        temp.append(temp_err)
+        print('T_BV =', temp[0], '+/-', temp[1])
     elif index == "VR":
         temp = vseq.Pecaut.T.Teff(quadcolor - (0.58 / 3.1), colorerr)
         if temp[0] == 0:
@@ -439,7 +447,7 @@ def color_gui(developer=False):
         """
         Calls to create the color plot after clicking the plot button.
 
-        This creates plots for both the B-V and the V-R2458403.58763
+        This creates plots for both the B-V and the V-R color indices.
         """
         B_V = subtract_LC(Bfile=getit(B), Vfile=getit(V), Epoch=float(getit(Epoch)), period=float(getit(Period)),
                           max_tol=float(getit(MaxT)), lower_lim=float(getit(LL)), index="BV")
@@ -449,7 +457,7 @@ def color_gui(developer=False):
         Vphase, Vmag = B_V[2][:2:]
         aB_minus_V = B_V[0][3]
         quadcolor, colorerr = B_V[3:5:]
-        eff_temp = B_V[5]
+        BV_temp = B_V[5]
         if getit(R) == '':
             """
             Checks whether the user has entered a R band text file
@@ -496,7 +504,7 @@ def color_gui(developer=False):
             # max_tol=MaxT,lower_lim=LL)
             VRc, VRerr = V_R[3:5:]
             Rphase, Rmag = V_R[2][:2:]
-            V_interp_mag = V_R[1][2]
+            # V_interp_mag = V_R[1][2]
             aV_minus_R = V_R[0][3]
             VR_temp = V_R[5]
             fig = Figure(figsize=(7, 9), dpi=90, tight_layout=True)
@@ -576,7 +584,7 @@ def color_gui(developer=False):
 
         BVL.config(text='(B-V) = ' + str(round(quadcolor, 6)) + ' +/- ' + str(round(colorerr, 6)), bg='white',
                    relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
-        BVL_temp.config(text='T_(B-V) = ' + str(format(eff_temp, ".4f")), bg='white', relief='solid', borderwidth=1, padx=5,
+        BVL_temp.config(text='T_(B-V) = ' + str(format(BV_temp[0], ".4f")) + " +/- " + str(format(BV_temp[1], ".4f")), bg='white', relief='solid', borderwidth=1, padx=5,
                         pady=5, font=('None', 14))
         CreateToolTip(BVL, text=autowrap(
             'These values are calculated using an average of the (X-Y) values within phase 0.075 of quadrature (phase = +/- 0.25).'

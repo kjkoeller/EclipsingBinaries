@@ -22,23 +22,13 @@ def main(c):
     :param c: Number of whether the user has used the program before or not. Must be manually changed within the code
     """
     # warning prompts for the user to read to make sure this program works correctly
-    if c == 0:
-        # AIJ Data
-        print("\nFrom each night, yous should have a file that is sort of like this: 2018.09.18.APASS.B_datasubset.dat.\n"
-              "This file has 7 or 5 columns and you will only need 5 or 3 of them respectively.\n")
-        print("All of the nights that you entire MUST have the exact same column number or this program will not work.\n")
-        print(
-            "You may also type the word 'Close' in the next prompt to leave this program and return to the main menu.\n")
-        num = check_num()
-        get_nights_AIJ(int(num))
-    elif c == 1:
-        # TESS data
-        print("\nFrom each night, yous should have a file that is sort of like this: 2018.09.18.APASS.B_datasubset.dat.\n"
-              "This file has 5 columns and you will only need 3 of them.\n")
-        print(
-            "You may also type the word 'Close' in the next prompt to leave this program and return to the main menu.\n")
-        num = check_num()
-        get_nights_TESS(int(num))
+    print("\nFrom each night, yous should have a file that is sort of like this: 2018.09.18.APASS.B_datasubset.dat.\n"
+          "This file has 7 or 5 columns and you will only need 5 or 3 of them respectively.\n")
+    print("All of the nights that you entire MUST have the exact same column number or this program will not work.\n")
+    print(
+        "You may also type the word 'Close' in the next prompt to leave this program and return to the main menu.\n")
+    num = check_num()
+    flux_mag(num, c)
 
 
 def check_num():
@@ -80,11 +70,11 @@ def file_path(i):
     return df
 
 
-def flux_mag(df, num):
+def flux_mag(night, num):
     """
     Finds the flux and magnitude columns from the file
 
-    :param df: Dataframe of the file
+    :param night: the number of the nights
     :param num: which filter is used
 
     :return:
@@ -96,87 +86,89 @@ def flux_mag(df, num):
     total_amag_err = []
     total_flux = []
     total_flux_err = []
-    
-    if len(df.columns) == 7:
-        # set parameters to lists from the file by the column header
-        hjd = []
-        bjd = []
-        amag = []
-        amag_err = []
-        flux = []
-        flux_err = []
-        try:
+
+    for i in range(night):
+        df = file_path(i)
+        if len(df.columns) == 7:
+            # set parameters to lists from the file by the column header
+            hjd = []
+            bjd = []
+            amag = []
+            amag_err = []
+            flux = []
+            flux_err = []
+            try:
+                if num == 0:
+                    hjd = list(df["HJD"])
+                elif num == 1:
+                    bjd = list(df["BJD_TDB"])
+                    hjd = list(df["HJD"])
+                amag = list(df["Source_AMag_T1"])
+                amag_err = list(df["Source_AMag_Err_T1"])
+                flux = list(df["rel_flux_T1"])
+                flux_err = list(df["rel_flux_err_T1"])
+            except KeyError:
+                print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
+                      "Please re-enter the file path and make sure its the correct file.\n")
+                main(0)
+
             if num == 0:
-                hjd = list(df["HJD"])
+                total_hjd.append(hjd)
             elif num == 1:
-                bjd = list(df["BJD_TDB"])
-                hjd = list(df["HJD"])
-            amag = list(df["Source_AMag_T1"])
-            amag_err = list(df["Source_AMag_Err_T1"])
-            flux = list(df["rel_flux_T1"])
-            flux_err = list(df["rel_flux_err_T1"])
-        except KeyError:
-            print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
-                  "Please re-enter the file path and make sure its the correct file.\n")
+                total_bjd.append(bjd)
+                total_hjd.append(hjd)
+                new_bjd = [item for elem in total_bjd for item in elem]
+
+            total_amag.append(amag)
+            total_amag_err.append(amag_err)
+            total_flux.append(flux)
+            total_flux_err.append(flux_err)
+
+            # converts the Dataframe embedded lists into a normal flat list
+            new_hjd = [item for elem in total_hjd for item in elem]
+            new_amag = [item for elem in total_amag for item in elem]
+            new_amag_err = [item for elem in total_amag_err for item in elem]
+            new_flux = [item for elem in total_flux for item in elem]
+            new_flux_err = [item for elem in total_flux_err for item in elem]
+
+            data_amount = 2
+        elif len(df.columns == 5):
+            # set parameters to lists from the file by the column header
+            hjd = []
+            amag = []
+            amag_err = []
+            try:
+                if num == 0:
+                    hjd = list(df["HJD"])
+                elif num == 1:
+                    bjd = list(df["BJD_TDB"])
+                    hjd = list(df["HJD"])
+                amag = list(df["Source_AMag_T1"])
+                amag_err = list(df["Source_AMag_Err_T1"])
+            except KeyError:
+                print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
+                      "Please re-enter the file path and make sure its the correct file.\n")
+                c = 1
+                main(c)
+
+            if num == 0:
+                total_hjd.append(hjd)
+            elif num == 1:
+                total_bjd.append(bjd)
+                total_hjd.append(hjd)
+
+            total_amag.append(amag)
+            total_amag_err.append(amag_err)
+
+            # converts the Dataframe embedded lists into a normal flat list
+            new_bjd = [item for elem in total_bjd for item in elem]
+            new_hjd = [item for elem in total_hjd for item in elem]
+            new_amag = [item for elem in total_amag for item in elem]
+            new_amag_err = [item for elem in total_amag_err for item in elem]
+            data_amount = 1
+        else:
+            print("\nThe file you entered does not have the correct amount of columns.\n")
             main(0)
-
-        if num == 0:
-            total_hjd.append(hjd)
-        elif num == 1:
-            total_bjd.append(bjd)
-            total_hjd.append(hjd)
-            new_bjd = [item for elem in total_bjd for item in elem]
-        
-        total_amag.append(amag)
-        total_amag_err.append(amag_err)
-        total_flux.append(flux)
-        total_flux_err.append(flux_err)
-        
-        # converts the Dataframe embedded lists into a normal flat list
-        new_hjd = [item for elem in total_hjd for item in elem]
-        new_amag = [item for elem in total_amag for item in elem]
-        new_amag_err = [item for elem in total_amag_err for item in elem]
-        new_flux = [item for elem in total_flux for item in elem]
-        new_flux_err = [item for elem in total_flux_err for item in elem]
-
-        data_amount = 2
-    elif len(df.columns == 5):
-        # set parameters to lists from the file by the column header
-        hjd = []
-        amag = []
-        amag_err = []
-        try:
-            if num == 0:
-                hjd = list(df["HJD"])
-            elif num == 1:
-                bjd = list(df["BJD_TDB"])
-                hjd = list(df["HJD"])
-            amag = list(df["Source_AMag_T1"])
-            amag_err = list(df["Source_AMag_Err_T1"])
-        except KeyError:
-            print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
-                  "Please re-enter the file path and make sure its the correct file.\n")
-            c = 1
-            main(c)
-
-        if num == 0:
-            total_hjd.append(hjd)
-        elif num == 1:
-            total_bjd.append(bjd)
-            total_hjd.append(hjd)
-            new_bjd = [item for elem in total_bjd for item in elem]
-        
-        total_amag.append(amag)
-        total_amag_err.append(amag_err)
-
-        # converts the Dataframe embedded lists into a normal flat list
-        new_hjd = [item for elem in total_hjd for item in elem]
-        new_amag = [item for elem in total_amag for item in elem]
-        new_amag_err = [item for elem in total_amag_err for item in elem]
-        data_amount = 1
-    else:
-        print("\nThe file you entered does not have the correct amount of columns.\n")
-        main(0)
 
     if data_amount == 1:
         if num == 0:
@@ -208,7 +200,7 @@ def flux_mag(df, num):
                 "rel flux": new_flux,
                 "rel flux error": new_flux_err
             })
-    
+
             data2 = pd.DataFrame({
                 "HJD": new_hjd,
                 "AMag": new_amag,
@@ -221,7 +213,7 @@ def flux_mag(df, num):
                 "rel flux": new_flux,
                 "rel flux error": new_flux_err
             })
-    
+
             data2 = pd.DataFrame({
                 "BJD_TDB": new_bjd,
                 "HJD": new_hjd,

@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/11/2020
-Last Updated: 01/30/2023
+Last Updated: 07/11/2023
 
 This program is meant to make the process of collecting the different filters from AIJ Excel spreadsheets faster.
 The user enters however many nights they have and the program goes through and checks those text files for the
@@ -44,7 +44,7 @@ def main(c):
 def check_num():
     """
     Checks whether the user enters a real number for the number of nights
-    
+
     :return: returns the entered number
     """
     while True:
@@ -61,111 +61,137 @@ def check_num():
     return num
 
 
-def get_nights_AIJ(n):
+def file_path(i):
     """
-    Takes a number of nights for a given filter and takes out the HJD, either A_Mag1 or T1_flux, and
-    error for mag or flux. Determines if the user has entered a file that contains 4 or 7 columns and correctly parses
-    the data based on that.
+    Checks whether the user enters a real file path
 
-    :param n: Number of nights
-    :return: the output text files for each night in a given filter
+    :param i: the number of the night
+
+    :return: returns the entered file path
+    """
+    while True:
+        file = input("Enter night %d file path: " % (i + 1))
+        if path.exists(file):
+            break
+        else:
+            print("You have entered an invalid file path. Please try again.\n")
+    df = pd.read_csv(file, delimiter="\t")
+
+    return df
+
+
+def flux_mag(df, num):
+    """
+    Finds the flux and magnitude columns from the file
+
+    :param df: Dataframe of the file
+    :param num: which filter is used
+
+    :return:
     """
 
     total_hjd = []
+    total_bjd = []
     total_amag = []
     total_amag_err = []
     total_flux = []
     total_flux_err = []
-
-    # checks for either the b or v filter as either upper or lowercase will work
-    # an example pathway for the files
-    print("Example of a correct file path: "
-          "E:/Research/Data/NSVS_254037/2018.10.12-reduced/Check/V/2018.09.18.APASS.B_datasubset.dat\n")
-    print("When entering a file path make sure to use files that are the same filter. So if you are going"
-          " through the Johnson B files, then ONLY use the file paths of the Johnson B and not V or R yet.\n")
-    for i in range(n):
-        while True:
-            # makes sure the file pathway is real and points to some file
-            # (does not check if that file is the correct one though)
-            try:
-                file = input("Enter night %d file path: " % (i + 1))
-                if path.exists(file):
-                    break
-                else:
-                    continue
-            except FileNotFoundError:
-                print("Please enter a correct file path.\n")
-
-        # noinspection PyUnboundLocalVariable
-        df = pd.read_csv(file, delimiter="\t")
-
-        # if statement checks whether the user has entered a file with 4 or 7 columns and correctly parses the data
-        # into specified output files
-        if len(df.columns) == 7:
-            # set parameters to lists from the file by the column header
-            hjd = []
-            amag = []
-            amag_err = []
-            flux = []
-            flux_err = []
-            try:
+    
+    if len(df.columns) == 7:
+        # set parameters to lists from the file by the column header
+        hjd = []
+        bjd = []
+        amag = []
+        amag_err = []
+        flux = []
+        flux_err = []
+        try:
+            if num == 0:
                 hjd = list(df["HJD"])
-                amag = list(df["Source_AMag_T1"])
-                amag_err = list(df["Source_AMag_Err_T1"])
-                flux = list(df["rel_flux_T1"])
-                flux_err = list(df["rel_flux_err_T1"])
-            except KeyError:
-                print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
-                      "Please re-enter the file path and make sure its the correct file.\n")
-                main(0)
-
-            total_hjd.append(hjd)
-            total_amag.append(amag)
-            total_amag_err.append(amag_err)
-            total_flux.append(flux)
-            total_flux_err.append(flux_err)
-            # converts the Dataframe embedded lists into a normal flat list
-            new_hjd = [item for elem in total_hjd for item in elem]
-            new_amag = [item for elem in total_amag for item in elem]
-            new_amag_err = [item for elem in total_amag_err for item in elem]
-            new_flux = [item for elem in total_flux for item in elem]
-            new_flux_err = [item for elem in total_flux_err for item in elem]
-
-            data_amount = 2
-        elif len(df.columns == 5):
-            # set parameters to lists from the file by the column header
-            hjd = []
-            amag = []
-            amag_err = []
-            try:
+            elif num == 1:
+                bjd = list(df["BJD_TDB"])
                 hjd = list(df["HJD"])
-                amag = list(df["Source_AMag_T1"])
-                amag_err = list(df["Source_AMag_Err_T1"])
-            except KeyError:
-                print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
-                      "Please re-enter the file path and make sure its the correct file.\n")
-                c = 1
-                main(c)
-
-            total_hjd.append(hjd)
-            total_amag.append(amag)
-            total_amag_err.append(amag_err)
-
-            # converts the Dataframe embedded lists into a normal flat list
-            new_hjd = [item for elem in total_hjd for item in elem]
-            new_amag = [item for elem in total_amag for item in elem]
-            new_amag_err = [item for elem in total_amag_err for item in elem]
-            data_amount = 1
-        else:
-            print("\nThe file you entered does not have the correct amount of columns.\n")
+            amag = list(df["Source_AMag_T1"])
+            amag_err = list(df["Source_AMag_Err_T1"])
+            flux = list(df["rel_flux_T1"])
+            flux_err = list(df["rel_flux_err_T1"])
+        except KeyError:
+            print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
+                  "Please re-enter the file path and make sure its the correct file.\n")
             main(0)
-            # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
+
+        if num == 0:
+            total_hjd.append(hjd)
+        elif num == 1:
+            total_bjd.append(bjd)
+            total_hjd.append(hjd)
+            new_bjd = [item for elem in total_bjd for item in elem]
+        
+        total_amag.append(amag)
+        total_amag_err.append(amag_err)
+        total_flux.append(flux)
+        total_flux_err.append(flux_err)
+        
+        # converts the Dataframe embedded lists into a normal flat list
+        new_hjd = [item for elem in total_hjd for item in elem]
+        new_amag = [item for elem in total_amag for item in elem]
+        new_amag_err = [item for elem in total_amag_err for item in elem]
+        new_flux = [item for elem in total_flux for item in elem]
+        new_flux_err = [item for elem in total_flux_err for item in elem]
+
+        data_amount = 2
+    elif len(df.columns == 5):
+        # set parameters to lists from the file by the column header
+        hjd = []
+        amag = []
+        amag_err = []
+        try:
+            if num == 0:
+                hjd = list(df["HJD"])
+            elif num == 1:
+                bjd = list(df["BJD_TDB"])
+                hjd = list(df["HJD"])
+            amag = list(df["Source_AMag_T1"])
+            amag_err = list(df["Source_AMag_Err_T1"])
+        except KeyError:
+            print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
+                  "Please re-enter the file path and make sure its the correct file.\n")
+            c = 1
+            main(c)
+
+        if num == 0:
+            total_hjd.append(hjd)
+        elif num == 1:
+            total_bjd.append(bjd)
+            total_hjd.append(hjd)
+            new_bjd = [item for elem in total_bjd for item in elem]
+        
+        total_amag.append(amag)
+        total_amag_err.append(amag_err)
+
+        # converts the Dataframe embedded lists into a normal flat list
+        new_hjd = [item for elem in total_hjd for item in elem]
+        new_amag = [item for elem in total_amag for item in elem]
+        new_amag_err = [item for elem in total_amag_err for item in elem]
+        data_amount = 1
+    else:
+        print("\nThe file you entered does not have the correct amount of columns.\n")
+        main(0)
+
     if data_amount == 1:
-        data2 = pd.DataFrame({
-            "HJD": new_hjd,
-            "AMag": new_amag,
-            "AMag Error": new_amag_err
-        })
+        if num == 0:
+            data2 = pd.DataFrame({
+                "HJD": new_hjd,
+                "AMag": new_amag,
+                "AMag Error": new_amag_err
+            })
+        elif num == 1:
+            data2 = pd.DataFrame({
+                "BJD_TDB": new_bjd,
+                "HJD": new_hjd,
+                "AMag": new_amag,
+                "AMag Error": new_amag_err
+            })
 
         print("")
         output = input("What is the file output name (WITHOUT any file extension): ")
@@ -176,91 +202,39 @@ def get_nights_AIJ(n):
         print("Fished saving the file to the same location as this program.\n\n")
     elif data_amount == 2:
         # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
-        data1 = pd.DataFrame({
-            "HJD": new_hjd,
-            "rel flux": new_flux,
-            "rel flux error": new_flux_err
-        })
+        if num == 0:
+            data1 = pd.DataFrame({
+                "HJD": new_hjd,
+                "rel flux": new_flux,
+                "rel flux error": new_flux_err
+            })
+    
+            data2 = pd.DataFrame({
+                "HJD": new_hjd,
+                "AMag": new_amag,
+                "AMag Error": new_amag_err
+            })
+        elif num == 1:
+            data1 = pd.DataFrame({
+                "BJD_TDB": new_bjd,
+                "HJD": new_hjd,
+                "rel flux": new_flux,
+                "rel flux error": new_flux_err
+            })
+    
+            data2 = pd.DataFrame({
+                "BJD_TDB": new_bjd,
+                "HJD": new_hjd,
+                "AMag": new_amag,
+                "AMag Error": new_amag_err
+            })
 
-        data2 = pd.DataFrame({
-            "HJD": new_hjd,
-            "AMag": new_amag,
-            "AMag Error": new_amag_err
-        })
-        
         output = input("What is the file output name (WITHOUT any file extension): ")
 
         # output both text files with a designation of magnitude or flux
         data1.to_csv(output + "_magnitudes.txt", index=False, header=False, sep="\t")
         data2.to_csv(output + "_flux.txt", index=False, header=False, sep="\t")
         print("")
-
-
-def get_nights_TESS(n):
-    """
-    Takes a number of nights for a given filter and takes out the HJD, either A_Mag1 or T1_flux, and
-    error for mag or flux
-
-    :param n: Number of observation nights
-    :return: the output text files for each night in a given filter
-    """
-    total_bjd = []
-    total_rel_flux = []
-    total_rel_flux_err = []
-    # checks for either the b, v, r filter as either upper or lowercase will work
-    for i in range(n):
-        while True:
-            # makes sure the file pathway is real and points to some file
-            # (does not check if that file is the correct one though)
-            try:
-                # an example pathway for the files
-                print(r"Example: D:\Research\Data\NSVS_254037\nsvs_254037_tess_data\sector18\sector18_datasubset.dat" + 
-                      "\n")
-                file = input("Enter night %d file path: " % (i + 1))
-                if path.exists(file):
-                    break
-                else:
-                    continue
-            except FileNotFoundError:
-                print("\nPlease enter a correct file path\n")
-
-        # noinspection PyUnboundLocalVariable
-        df = pd.read_csv(file, delimiter="\t")
-
-        # set parameters to lists from the file by the column header
-        bjd = []
-        rel_flux = []
-        rel_flux_err = []
-        try:
-            bjd = list(df["BJD_TDB"])
-            rel_flux = list(df["rel_flux_T1"])
-            rel_flux_err = list(df["rel_flux_err_T1"])
-        except KeyError:
-            print("\nThe file you entered does not have the columns of BJD_TDB, rel_flux_T1, or rel_flux_err_T1. "
-                  "Please re-enter the file path and make sure its the correct file.\n")
-            main(1)
-
-        total_bjd.append(bjd)
-        total_rel_flux.append(rel_flux)
-        total_rel_flux_err.append(rel_flux_err)
-
-    # converts the Dataframe embedded lists into a normal flat list
-    new_bjd = [item for elem in total_bjd for item in elem]
-    new_rel_flux = [item for elem in total_rel_flux for item in elem]
-    new_rel_flux_err = [item for elem in total_rel_flux_err for item in elem]
-
-    # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
-    data = pd.DataFrame({
-        "BJD": new_bjd,
-        "rel_flux": new_rel_flux,
-        "rel_flux_err": new_rel_flux_err
-    })
-    print("")
-    output = input("What is the file output name (with file extension .txt): ")
-
-    data.to_csv(output, index=False, header=False, sep='\t')
-    print("")
-    print("Fished saving the file to the same location as this program.\n\n")
 
 
 if __name__ == '__main__':

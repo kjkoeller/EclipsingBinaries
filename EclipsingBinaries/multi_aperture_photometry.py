@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 06/23/2023
+Last Updated: 08/12/2023
 """
 
 # Python imports
@@ -13,6 +13,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import time
 import warnings
+from tqdm import tqdm
 
 # Astropy imports
 import ccdproc as ccdp
@@ -51,7 +52,7 @@ def main(path="", pipeline=False):
         # path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
         #              "the word 'Close' to leave: ")
 
-        path = "D:\\BSUO data\\2022.09.29-reduced"  # For testing purposes
+        path = "H:\Research\Data\\NSVS_254037\\2018.09.18-reduced"  # For testing purposes
 
         if path.lower() == "close":
             exit()
@@ -62,7 +63,7 @@ def main(path="", pipeline=False):
 
     images_path = Path(path)
     files = ccdp.ImageFileCollection(images_path)
-    image_list = files.files_filtered(imagetyp=science_imagetyp, filter="Empty/V")
+    image_list = files.files_filtered(imagetyp=science_imagetyp, filter="Empty/B")
 
     multiple_AP(image_list, images_path)
 
@@ -93,7 +94,7 @@ def single_AP(image_list, path):
     F_dark = 0.01  # dark current in u.electron / u.pix / u.s
 
     # Magnitudes of the comparison stars (replace with your values)
-    df = pd.read_csv('254037_B.radec', skiprows=7, sep=",", header=None)
+    df = pd.read_csv('NSVS_254037-B.radec', skiprows=7, sep=",", header=None)
     magnitudes_comp = df[4]
     ra = df[0]
     dec = df[1]
@@ -112,7 +113,7 @@ def single_AP(image_list, path):
     fig, ax = plt.subplots()
     plt.show()
 
-    for icount, image_file in enumerate(image_list):
+    for icount, image_file in tqdm(enumerate(image_list), desc="Performing aperture photometry on images"):
         image_data, header = fits.getdata(path / image_file, header=True)
         wcs_ = WCS(header)
 
@@ -203,8 +204,11 @@ def multiple_AP(image_list, path):
     F_dark = 0.01  # dark current in u.electron / u.pix / u.s
 
     # Magnitudes of the comparison stars (replace with your values)
-    df = pd.read_csv('254037_B.radec', skiprows=7, sep=",", header=None)
+    df = pd.read_csv('NSVS_254037-B.radec', skiprows=7, sep=",", header=None)
     magnitudes_comp = df[4]
+
+    magnitudes_comp = magnitudes_comp.replace(99.999, pd.NA).dropna().reset_index(drop=True)
+
     ra = df[0]
     dec = df[1]
     # ref_star = df[2]
@@ -215,14 +219,10 @@ def multiple_AP(image_list, path):
     hjd = []
     bjd = []
 
-    # Start interactive mode
-    plt.ion()
-
     # Create a figure and axis
     fig, ax = plt.subplots()
-    plt.show()
 
-    for icount, image_file in enumerate(image_list):
+    for icount, image_file in tqdm(enumerate(image_list), desc="Performing aperture photometry on {} images".format(len(image_list))):
         image_data, header = fits.getdata(path / image_file, header=True)
         wcs_ = WCS(header)
 
@@ -251,10 +251,11 @@ def multiple_AP(image_list, path):
         target_phot_table = aperture_photometry(image_data, target_aperture)
         # comparison_phot_table = aperture_photometry(image_data, comparison_aperture)
 
-        im_plot(image_data, target_aperture, comparison_aperture, target_annulus, comparison_annulus)
+        if icount == 0:
+            pass
+            # im_plot(image_data, target_aperture, comparison_aperture, target_annulus, comparison_annulus)
 
         comparison_phot_table = []
-
         for comp_aperture, comp_annulus in zip(comparison_aperture, comparison_annulus):
             # Perform aperture photometry on the star
             aperture_phot_table = aperture_photometry(image_data, comp_aperture)
@@ -282,13 +283,18 @@ def multiple_AP(image_list, path):
         if np.isnan(target_bkg_mean) or np.isinf(target_bkg_mean):
             target_bkg_mean = 0
 
-        target_bkg = ApertureStats(image_data, target_aperture, local_bkg=target_bkg_mean).sum
-        # comparison_bkg = ApertureStats(image_data, comparison_aperture, local_bkg=comparison_bkg_mean).sum
+        # Multiply the background mean by the aperture area to get the total background
+        target_bkg = target_bkg_mean * target_aperture.area
+        comparison_bkg = [bkg_mean * aperture.area for bkg_mean, aperture in
+                          zip(comparison_bkg_mean, comparison_aperture)]
 
-        comparison_bkg = []
-        for aperture, bkg_mean in zip(comparison_aperture, comparison_bkg_mean):
-            stats = ApertureStats(image_data, aperture, local_bkg=bkg_mean)
-            comparison_bkg.append(stats.sum)
+        # target_bkg = ApertureStats(image_data, target_aperture, local_bkg=target_bkg_mean).sum
+        # # comparison_bkg = ApertureStats(image_data, comparison_aperture, local_bkg=comparison_bkg_mean).sum
+        #
+        # comparison_bkg = []
+        # for aperture, bkg_mean in zip(comparison_aperture, comparison_bkg_mean):
+        #     stats = ApertureStats(image_data, aperture, local_bkg=bkg_mean)
+        #     comparison_bkg.append(stats.sum)
 
         # Calculate the background subtracted counts
         target_flx = target_phot_table['aperture_sum'] - target_bkg
@@ -300,6 +306,7 @@ def multiple_AP(image_list, path):
 
         comp_flux_err = [np.sqrt(phot_table[0]['aperture_sum'] + aperture.area * read_noise ** 2)
                          for phot_table, aperture in zip(comparison_phot_table, comparison_aperture)]
+        comp_flux_err = np.array(comp_flux_err)
 
         # calculate the relative flux for each comparison star and the target star
         rel_flx_T1 = target_flx / sum(comparison_flx)
@@ -349,35 +356,28 @@ def multiple_AP(image_list, path):
                                                           (N_e_comp**2/sum(comparison_flx)**2))
 
         # calculate the total target magnitude and error
-        target_magnitude = -np.log(sum(2.512**(magnitudes_comp)))/np.log(2.512) - \
-                           (2.5*np.log10(target_bkg/sum(comparison_bkg)))
-        target_magnitude_error = 2.5*np.log10(1 + np.sqrt(target_flux_err**2/target_bkg**2) +
-                                              (sum(comp_flux_err)**2/sum(comparison_bkg)**2))
+        target_magnitude = (-np.log(sum(2.512**-magnitudes_comp))/np.log(2.512)) - \
+                           (2.5*np.log10(target_flx/sum(comparison_flx)))
+
+        target_magnitude_error = 2.5*np.log10(1 + np.sqrt(((target_flux_err**2)/(target_flx**2)) +
+                                                          (sum(comp_flux_err**2)/sum(comparison_flx)**2)))
 
         # Append the calculated magnitude and error to the lists
-        magnitudes.append(target_magnitude)
-        mag_err.append(target_magnitude_error)
+        magnitudes.append(target_magnitude.value[0])
+        mag_err.append(target_magnitude_error.value[0])
 
-        # Clear the axis
-        ax.clear()
+    # magnitudes = np.array(magnitudes).flatten()
+    # mag_err = np.array(mag_err).flatten()
+    # Plot the magnitudes with error bars
+    ax.errorbar(hjd, magnitudes, yerr=mag_err, fmt='o')
+    # ax.scatter(hjd, magnitudes, marker='o', color='black')
 
-        # Plot the magnitudes with error bars
-        # ax.errorbar(hjd, magnitudes, yerr=mag_err, fmt='o')
-        ax.scatter(hjd, magnitudes, marker='o', color='black')
+    # Set the labels
+    ax.set_xlabel('HJD')
+    ax.set_ylabel('Source_AMag_T1')
+    ax.invert_yaxis()
+    ax.grid()
 
-        # Set the labels
-        ax.set_xlabel('HJD')
-        ax.set_ylabel('Source_AMag_T1')
-
-        # Draw the figure
-        fig.canvas.draw()
-
-        # Pause for a bit to allow the figure to update
-        time.sleep(0.1)
-        plt.pause(0.0001)
-
-    # Disable interactive mode
-    plt.ioff()
     plt.show()
 
 

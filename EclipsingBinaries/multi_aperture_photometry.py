@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 08/13/2023
+Last Updated: 08/14/2023
 """
 
 # Python imports
@@ -143,7 +143,7 @@ def multiple_AP(image_list, path):
             # pass
             im_plot(image_data, target_aperture, comparison_aperture, target_annulus, comparison_annulus)
             # Create a figure and axis
-            fig, ax = plt.subplots(figsize=(11, 8))
+            _, ax = plt.subplots(figsize=(11, 8))
 
         comparison_phot_table = []
         for comp_aperture, comp_annulus in zip(comparison_aperture, comparison_annulus):
@@ -199,7 +199,7 @@ def multiple_AP(image_list, path):
         comp_flux_err = np.array(comp_flux_err)
 
         # calculate the relative flux for each comparison star and the target star
-        rel_flx_T1 = target_flx / sum(comparison_flx)
+        # rel_flx_T1 = target_flx / sum(comparison_flx)
         count = 0
         rel_flux_comps = []
         for i in comparison_flx:
@@ -208,10 +208,10 @@ def multiple_AP(image_list, path):
                 rel_flux_comps.append(rel_flux_c)
             count += 1
 
-        rel_flux_comps = np.array(rel_flux_comps)
+        # rel_flux_comps = np.array(rel_flux_comps)
 
         # find the number of pixels used to estimate the sky background
-        n_b = (np.pi * annulus_radii[1]**2) - (np.pi * annulus_radii[0] ** 2)
+        # n_b = (np.pi * annulus_radii[1]**2) - (np.pi * annulus_radii[0] ** 2)  # main equation
         # n_b_mask_comp = comparison_annulus.to_mask(method="center")
         # n_b_comp = np.sum(n_b_mask_comp)
 
@@ -228,7 +228,8 @@ def multiple_AP(image_list, path):
         plate_scale = plate_scale * 206265  # arcsec/mm
         n_pix = ap_area / (plate_scale * pixel_size)**2  # number of pixels in the aperture
         """
-
+        
+        """
         n_pix = np.pi * aperture_radius**2  # number of pixels in the aperture
 
         # Calculate the total noise
@@ -248,7 +249,7 @@ def multiple_AP(image_list, path):
 
         rel_flux_err = (rel_flx_T1/rel_flux_comps)*np.sqrt((N_tar**2/target_flx**2) +
                                                           (N_e_comp**2/sum(comparison_flx)**2))
-
+        """
         # calculate the total target magnitude and error
         target_magnitude = (-np.log(sum(2.512**-magnitudes_comp))/np.log(2.512)) - \
                            (2.5*np.log10(target_flx/sum(comparison_flx)))
@@ -256,7 +257,7 @@ def multiple_AP(image_list, path):
         target_magnitude_error = 2.5*np.log10(1 + np.sqrt(((target_flux_err**2)/(target_flx**2)) +
                                                           (sum(comp_flux_err**2)/sum(comparison_flx)**2)))
 
-        comparison_magnitude = -(2.5*np.log10(target_flx/sum(comparison_flx)))
+        # comparison_magnitude = -(2.5*np.log10(target_flx/sum(comparison_flx)))
 
         # Append the calculated magnitude and error to the lists
         magnitudes.append(target_magnitude.value[0])

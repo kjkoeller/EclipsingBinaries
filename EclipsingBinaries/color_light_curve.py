@@ -4,7 +4,7 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 07/08/2022
+Last Edited: 08/15/2022
 Editor: Kyle Koeller
 """
 
@@ -140,11 +140,30 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
 
     # print('T =', vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1)))
     if index == "BV":
-        temp = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1))
+        temp = []
+        # temp = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1), colorerr)
+        t1 = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1))
+        temp_high = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1) - colorerr)
+        temp_low = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1) + colorerr)
+
+        temp_err = (temp_high - temp_low)/2
+        temp.append(t1)
+        temp.append(temp_err)
+        print('T_BV =', temp[0], '+/-', temp[1])
     elif index == "VR":
-        temp = vseq.Pecaut.T.Teff(quadcolor - (0.58 / 3.1))
-        if temp == 0:
+        # temp = vseq.Pecaut.T.Teff(quadcolor - (0.58 / 3.1), colorerr)
+        temp = []
+        t1 = vseq.Flower.T.Teff(quadcolor - 0.561 * (0.641 / 3.1))
+        # E_V-R = 0.561*E_B-V
+        temp_high = vseq.Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) - colorerr)
+        temp_low = vseq.Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) + colorerr)
+
+        temp_err = (temp_high - temp_low) / 2
+        temp.append(t1)
+        temp.append(temp_err)
+        if temp[0] == 0:
             print("V-R color cannot be used to determine temperature.")
+        print('T_VR =', temp[0], '+/-', temp[1])
 
     return B_V, B, V, quadcolor, colorerr, temp
 
@@ -324,7 +343,7 @@ def color_gui(developer=False):
     # disp=3
     # T=Text(root,height=disp,width=25)
     # T.grid(row=0,column=1)
-    Intro = Label(root, text='Color Light Curve - gui\nversion 0.3.0 (2/19/21)\nby Alec Neal\n')
+    Intro = Label(root, text='Color Light Curve - gui\nversion 0.4.1 (2/19/21)\nby Alec Neal\n')
     Intro.grid(row=0, column=0, columnspan=2)
     # Intro.config(font=('Arial',12))
     # T.insert(END,'Hello world!')
@@ -438,7 +457,7 @@ def color_gui(developer=False):
         """
         Calls to create the color plot after clicking the plot button.
 
-        This creates plots for both the B-V and the V-R2458403.58763
+        This creates plots for both the B-V and the V-R color indices.
         """
         B_V = subtract_LC(Bfile=getit(B), Vfile=getit(V), Epoch=float(getit(Epoch)), period=float(getit(Period)),
                           max_tol=float(getit(MaxT)), lower_lim=float(getit(LL)), index="BV")
@@ -448,7 +467,7 @@ def color_gui(developer=False):
         Vphase, Vmag = B_V[2][:2:]
         aB_minus_V = B_V[0][3]
         quadcolor, colorerr = B_V[3:5:]
-        eff_temp = B_V[5]
+        BV_temp = B_V[5]
         if getit(R) == '':
             """
             Checks whether the user has entered a R band text file
@@ -456,7 +475,7 @@ def color_gui(developer=False):
             fig = Figure(figsize=(7, 7.8), dpi=90, tight_layout=True)
             # canvas = FigureCanvasTkAgg(fig, master=root)
             # canvas.destroy()
-            axs, fig = vseq.plot.multiplot(height_ratios=[8, 4.5], fig=fig)
+            axs, _ = vseq.plot.multiplot(height_ratios=[8, 4.5], fig=fig)
             mag = axs[0]
             bv = axs[1]
             mag.plot(Vphase, Vmag, 'o', ms=2, color='#00FF00')
@@ -495,16 +514,16 @@ def color_gui(developer=False):
             # max_tol=MaxT,lower_lim=LL)
             VRc, VRerr = V_R[3:5:]
             Rphase, Rmag = V_R[2][:2:]
-            V_interp_mag = V_R[1][2]
+            # V_interp_mag = V_R[1][2]
             aV_minus_R = V_R[0][3]
             VR_temp = V_R[5]
             fig = Figure(figsize=(7, 9), dpi=90, tight_layout=True)
             # canvas = FigureCanvasTkAgg(fig, master=root)
             # canvas.destroy()
-            axs, fig = vseq.plot.multiplot(height_ratios=[8, 3, 3], fig=fig)
+            axs, _ = vseq.plot.multiplot(height_ratios=[8, 3, 3], fig=fig)
             mag = axs[0]
-            bv = axs[1]
-            vr = axs[2]
+            bv = axs[2]
+            vr = axs[1]
             mag.plot(Vphase, Vmag, 'o', ms=2, color='#00FF00')
             mag.plot(Bphase, Bmag, 'ob', ms=2)
             mag.plot(Rphase, Rmag, 'or', ms=2)
@@ -536,7 +555,7 @@ def color_gui(developer=False):
 
             VRL.config(text='(V-R) = ' + str(round(VRc, 6)) + ' +/- ' + str(round(VRerr, 6)), bg='white',
                        relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
-            VRL_temp.config(text='T_V-R = ' + str(VR_temp), bg='white', relief='solid', borderwidth=1,
+            VRL_temp.config(text='T_(V-R) = ' + str(format(VR_temp[0], ".4f")) + " +/- " + str(format(VR_temp[1], ".4f")), bg='white', relief='solid', borderwidth=1,
                             padx=5,
                             pady=5, font=('None', 14))
             show_color = False
@@ -575,7 +594,7 @@ def color_gui(developer=False):
 
         BVL.config(text='(B-V) = ' + str(round(quadcolor, 6)) + ' +/- ' + str(round(colorerr, 6)), bg='white',
                    relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
-        BVL_temp.config(text='T_B-V = ' + str(eff_temp), bg='white', relief='solid', borderwidth=1, padx=5,
+        BVL_temp.config(text='T_(B-V) = ' + str(format(BV_temp[0], ".4f")) + " +/- " + str(format(BV_temp[1], ".4f")), bg='white', relief='solid', borderwidth=1, padx=5,
                         pady=5, font=('None', 14))
         CreateToolTip(BVL, text=autowrap(
             'These values are calculated using an average of the (X-Y) values within phase 0.075 of quadrature (phase = +/- 0.25).'

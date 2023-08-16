@@ -328,9 +328,12 @@ class calc:  # assortment of functions
         def error_power(coeflist, value, error, base=10):
             return abs(calc.poly.error(coeflist, value, error) * np.log(base) * calc.poly.power(coeflist, value, base))
 
-        def t_eff_err(coeflist, value, error, coeferror, temp, base=10):
-            return temp * np.log(base) * np.sqrt(error * calc.poly.error(coeflist, value, error) ** 2 +
-                                          sum(np.array(coeferror) * ((value ** np.arange(len(coeflist))) ** 2)))
+        def t_eff_err(coeflist, value, error, temp, coeferror=[], base=10):
+            if len(coeferror) == 0:
+                return temp * np.log(base) * calc.poly.error(coeflist, value, error)
+            else:
+                return temp * np.log(base) * np.sqrt(calc.poly.error(coeflist, value, error) ** 2 +
+                                                     sum(np.array(coeferror) * ((value ** np.arange(len(coeflist))) ** 2)))
             # return np.log(base) * calc.poly.power(coeflist, value, base) * \
             #        np.sqrt(calc.poly.error(coeflist, value, error) ** 2 + \
             #                sum(np.array(coeferror) * value ** np.arange(len(coeflist)) ** 2))
@@ -589,7 +592,7 @@ class binning:
 
     def masterbinner(HJD, mag, magerr, Epoch, period, bins=40, weighted=True, norm_factor='alt', centered=True, pdot=0):
         ob_phaselist = calc.astro.convert.HJD_phase(HJD, period, Epoch, Pdot=pdot)
-        ob_maglist = mag;
+        ob_maglist = mag
         ob_magerr = magerr
         observations = len(ob_maglist)
 
@@ -604,8 +607,8 @@ class binning:
         dphase = 1 / bins
 
         def makebin(phase):
-            phases_in_bin = [];
-            fluxes_in_bin = [];
+            phases_in_bin = []
+            fluxes_in_bin = []
             errors_in_bin = []
             index_in_bin = []
             for n in range(observations):
@@ -636,11 +639,11 @@ class binning:
             # print(round(phase,10),fluxes_in_bin)
             return phases_in_bin, fluxes_in_bin, errors_in_bin, index_in_bin
 
-        binnedfluxlist = [];
-        binnederrorlist = [];
+        binnedfluxlist = []
+        binnederrorlist = []
         avgphaselist = []
-        master_phases_in_bin = [];
-        master_fluxes_in_bin = [];
+        master_phases_in_bin = []
+        master_fluxes_in_bin = []
         master_errors_in_bin = []
         master_index_in_bin = []
         binnedphaselist = np.arange(0, 1, dphase)
@@ -679,7 +682,7 @@ class binning:
             norm_f = 10 ** (-0.4 * np.mean(ob_maglist))
         else:
             offset = 0.025
-            quad1 = [];
+            quad1 = []
             quad2 = []
             for n in range(len(ob_phaselist)):
                 if 0.25 - offset < ob_phaselist[n] < 0.25 + offset:
@@ -715,8 +718,8 @@ class binning:
                         weighted=True, norm_factor='bin', sep=None,
                         header=None, file_type='text', centered=True, pdot=0):
         file = io.importFile_pd(fileName, delimit=sep, header=header, file_type=file_type)
-        HJD = file[HJDcol];
-        mag = file[magcol];
+        HJD = file[HJDcol]
+        mag = file[magcol]
         magerr = file[magerrcol]
         MB = binning.masterbinner(HJD, mag, magerr, Epoch, period, bins,
                                   weighted=weighted, norm_factor=norm_factor, centered=centered, pdot=pdot)
@@ -733,7 +736,7 @@ class binning:
 
         section_polyphase = []
         section_polyflux = []
-        lastphase = [];
+        lastphase = []
         lastflux = []
 
         halfsec = 0.5 / sections
@@ -804,17 +807,17 @@ class binning:
             nc_MB = binning.masterbinner_FF(input_file, Epoch, period, sections, centered=False,
                                             norm_factor=norm_factor, pdot=pdot)
 
-        c_master_phases = c_MB[5][0];
+        c_master_phases = c_MB[5][0]
         c_master_fluxes = c_MB[5][1]
-        nc_master_phases = nc_MB[5][0];
+        nc_master_phases = nc_MB[5][0]
         nc_master_fluxes = nc_MB[5][1]
 
-        ob_phaselist = c_MB[0][1];
+        ob_phaselist = c_MB[0][1]
         ob_fluxlist = c_MB[1][1]
 
         section_polyphase = []
         section_polyflux = []
-        lastphase = [];
+        lastphase = []
         lastflux = []
         halfsec = 0.5 / sections
         dphase = 1 / sections
@@ -904,7 +907,7 @@ class FT:  # Fourier transform
         return Fbfli, coslist, sinlist
 
     def a_sigma(a, b, term, aterm, ob_phaselist, ob_fluxlist, ob_fluxerr, order, X2min, incr):
-        X20 = 0;
+        X20 = 0
         X2 = X20
         while (X2 < X2min + 1):
             a[term] += abs(aterm * incr)
@@ -927,7 +930,7 @@ class FT:  # Fourier transform
         return avgsig, uppersig, lowersig
 
     def b_sigma(a, b, term, bterm, ob_phaselist, ob_fluxlist, ob_fluxerr, order, X2min, incr):
-        X20 = 0;
+        X20 = 0
         X2 = X20
         while (X2 < X2min + 1):
             b[term] += abs(bterm * incr)
@@ -937,7 +940,7 @@ class FT:  # Fourier transform
         print('bound\trelerr\tdX2')
         print('upper\t' + str(round(uppersig / abs(bterm), 8)) + '\t' + str(round(X2 - X2min, 8)))
 
-        X2 = 0;
+        X2 = 0
         b[term] = bterm
         while (X2 < X2min + 1):
             b[term] -= abs(bterm * incr)
@@ -1039,9 +1042,9 @@ class FT:  # Fourier transform
         Generates the results of a FT given the coefficients.
         Resolution: how many points you want.
         """
-        phase = 0;
-        FTfluxlist = [];
-        FTphaselist = [];
+        phase = 0
+        FTfluxlist = []
+        FTphaselist = []
         FTderivlist = []
         while (phase < 1):
             FTfluxlist.append(FT.sumatphase(phase, order, a, b))
@@ -1124,14 +1127,14 @@ class OConnell:  # O'Connell effect
         Don't use
         """
         bins = len(binnedfluxlist)
-        i0 = 0;
-        i = i0;
+        i0 = 0
+        i = i0
         firstmax = []
         while (i < len(binnedfluxlist) / 2):
             firstmax.append(binnedfluxlist[i])
             i += 1
-        j0 = int(bins / 2);
-        j = j0;
+        j0 = int(bins / 2)
+        j = j0
         secondmax = []
         while (j < len(binnedfluxlist)):
             secondmax.append(binnedfluxlist[j])
@@ -1223,9 +1226,9 @@ class OConnell:  # O'Connell effect
         return OER, OER_unc
 
     def OER_FT_error_fixed(a, b, a_unc, b_unc, order):
-        a = np.array(a);
+        a = np.array(a)
         b = np.array(b)
-        a_unc = np.array(a_unc);
+        a_unc = np.array(a_unc)
         b_unc = np.array(b_unc)
         nlist = np.arange(order + 1)[1::]
         A = 0.5 * sum(a[nlist])
@@ -1301,8 +1304,8 @@ class OConnell:  # O'Connell effect
         Anything over 200 is fine, but > 1000 is ideal for one time calculations.
         """
         import scipy
-        Phi = np.linspace(0, 0.5, resolution);
-        no_a = np.zeros(len(a));
+        Phi = np.linspace(0, 0.5, resolution)
+        no_a = np.zeros(len(a))
         K2 = []
         for phase in Phi:
             K2.append(((2 * FT.sumatphase(phase, order, no_a, b)) / FT.sumatphase(phase, order, a, b)) ** 2)
@@ -1319,8 +1322,8 @@ class OConnell:  # O'Connell effect
         K = J / I
         L = K ** 2
 
-        dL_da0 = -2 * L / I;
-        dL_dak = [];
+        dL_da0 = -2 * L / I
+        dL_dak = []
         dL_dbk = []
         # dL_da0=-2*J**2*I ; dL_dak=[] ; dL_dbk=[]
         # J2I=J**2*I
@@ -1342,7 +1345,7 @@ class OConnell:  # O'Connell effect
         """
         import scipy
         Phi = np.linspace(0, 0.5, resolution)
-        Llist = [];
+        Llist = []
         Lerrlist = []
         for phase in Phi:
             L_ap = OConnell.L_error(phase, order, a, b, a_unc, b_unc)
@@ -1377,7 +1380,7 @@ class OConnell:  # O'Connell effect
 
         import scipy
         Phi = np.linspace(0, 0.5, resolution)
-        Llist = [];
+        Llist = []
         Lerrlist = []
         for phase in Phi:
             L_ap = L_error2(phase)
@@ -1438,9 +1441,9 @@ class OConnell:  # O'Connell effect
         values. Average can be weighted, although that is probably overkill and/or
         undesireable.
         """
-        Iplist = [];
+        Iplist = []
         Iperrors = []
-        Islist = [];
+        Islist = []
         Iserrors = []
         for n in range(len(ob_phaselist)):
             if 0.25 - phase_range < ob_phaselist[n] < 0.25 + phase_range:
@@ -1464,7 +1467,7 @@ class OConnell:  # O'Connell effect
         """
         Same as Delta_I_mean_obs but just for simulations (errors not used).
         """
-        Iplist = [];
+        Iplist = []
         Islist = []
         for n in range(len(ob_phaselist)):
             if 0.25 - phase_range < ob_phaselist[n] < 0.25 + phase_range:
@@ -1509,9 +1512,14 @@ class Flower:  # stuff from Flower 1996, Torres 2010
         c = [3.97914510671409, -0.654992268598245, 1.74069004238509, -4.60881515405716, 6.79259977994447,
              -5.39690989132252, 2.19297037652249, -0.359495739295671]
 
-        def Teff(BV):
+        def Teff(BV, error=None):
             # return 10**((Flower.T.c[0]*BV**0)+(Flower.T.c[1]*BV**1)+(Flower.T.c[2]*BV**2)+(Flower.T.c[3]*BV**3)+(Flower.T.c[4]*BV**4)+(Flower.T.c[5]*BV**5)+(Flower.T.c[6]*BV**6)+(Flower.T.c[7]*BV**7))
-            return calc.poly.power(Flower.T.c, BV, 10)
+            temp = calc.poly.power(Flower.T.c, BV, 10)
+            if error is None:
+                return temp
+            else:
+                err = calc.poly.t_eff_err(Flower.T.c, BV, error, temp)
+                return temp, err
 
 
 # ======================================
@@ -1603,8 +1611,8 @@ class plot:
         phase = list(np.array(phaselist) - 1) + list(phaselist)
         mag = list(maglist) + list(maglist)
         error = list(errorlist) + list(errorlist)
-        a_phase = [];
-        a_mag = [];
+        a_phase = []
+        a_mag = []
         a_error = []
         for n in range(len(phase)):
             if -alias < phase[n] < alias:
@@ -1915,7 +1923,7 @@ class Roche:
                       potcap=None):
         if xcm == None:
             xcm = q / (1 + q)
-        A1 = -q / (1 + q);
+        A1 = -q / (1 + q)
         A2 = 1 / (1 + q)
         B1 = xcm ** 2 + ycm ** 2 + zcm ** 2 + 2 * xcm * A1 + A1 ** 2
         # print(B1)
@@ -1930,7 +1938,7 @@ class Roche:
 
     def gen_Kopal_cyl_x(rho, phi, x, q,
                         xcm=None, ycm=0, zcm=0):
-        a1 = q / (1 + q);
+        a1 = q / (1 + q)
         a2 = 1 / (1 + q)
         if xcm == None:
             xcm = a1
@@ -1941,8 +1949,8 @@ class Roche:
             (xp - a2) ** 2 + yp ** 2 + zp ** 2) + 0.5 * (1 + q) * (xp ** 2 + yp ** 2) - 0.5 * q ** 2 / (1 + q)
 
     def Kopal_xyz(x, y, z, q, xcm=0, ycm=0, zcm=0):
-        xp = x - xcm;
-        yp = y - ycm;
+        xp = x - xcm
+        yp = y - ycm
         zp = z - zcm
         return 1 / np.sqrt((xp + q / (1 + q)) ** 2 + yp ** 2 + zp ** 2) + q / np.sqrt(
             (xp - 1 / (1 + q)) ** 2 + yp ** 2 + zp ** 2) + 0.5 * (1 + q) * (xp ** 2 + yp ** 2) - 0.5 * q ** 2 / (1 + q)
@@ -2090,18 +2098,27 @@ class Pecaut:  # stuff from Pecaut and Mamajek 2013 https://arxiv.org/pdf/1307.2
         c1_err = [0.00499, 0.25431, 6.60765, 41.6003]
         c2_err = [0.00179, 0.01409, 0.03136, 0.0197]
 
-        def Teff(VR, error):
-            if -0.115 < VR < 0.019:
-                # coeflist, value, error, coeferror
-                temp = calc.poly.power(Pecaut.T.c1, VR, 10)
-                err = calc.poly.t_eff_err(Pecaut.T.c1, VR, error, Pecaut.T.c1_err, temp)
-                return temp, err
-            elif 0.019 < VR < 1.079:
-                temp = calc.poly.power(Pecaut.T.c2, VR, 10)
-                err = calc.poly.t_eff_err(Pecaut.T.c2, VR, error, Pecaut.T.c2_err, temp)
-                return temp, err
+        def Teff(VR, error=None):
+            if error is None:
+                if -0.115 < VR < 0.019:
+                    temp = calc.poly.power(Pecaut.T.c1, VR, 10)
+                    return temp
+                elif 0.019 < VR < 1.079:
+                    temp = calc.poly.power(Pecaut.T.c2, VR, 10)
+                    return temp
+                else:
+                    return 0
             else:
-                return 0, 0
+                if -0.115 < VR < 0.019:
+                    temp = calc.poly.power(Pecaut.T.c1, VR, 10)
+                    err = calc.poly.t_eff_err(Pecaut.T.c1, VR, error, temp, coeferror=Pecaut.T.c1_err)
+                    return temp, err
+                elif 0.019 < VR < 1.079:
+                    temp = calc.poly.power(Pecaut.T.c2, VR, 10)
+                    err = calc.poly.t_eff_err(Pecaut.T.c2, VR, error, temp, coeferror=Pecaut.T.c2_err)
+                    return temp, err
+                else:
+                    return 0, 0
 
 
 #######################################

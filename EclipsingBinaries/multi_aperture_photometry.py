@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 08/14/2023
+Last Updated: 08/15/2023
 """
 
 # Python imports
@@ -33,51 +33,92 @@ from astropy import wcs
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
 
-def main(path="", pipeline=False):
+def main(path="", pipeline=False, radec_list=None, obj_name=""):
     """
     Main function for aperture photometry
 
     Parameters
     ----------
+    radec_list: list
+        RADEC files for each filter
+    obj_name: str
+        Name of the target
     path : str
         Path to the folder containing the images.
-
     pipeline : bool
         If True, then the program is being run from the pipeline and will not ask for user input.
     Returns
     -------
     N/A
     """
+    filt_list = ["Empty/B", "Empty/V", "Empty/R"]
     if not pipeline:
-        # path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
-        #              "the word 'Close' to leave: ")
-
-        path = "H:\Research\Data\\NSVS_254037\\2018.09.18-reduced"  # For testing purposes
+        # path = "D:\Research\Data\\NSVS_254037\\2018.09.18-reduced"  # For testing purposes
+        path = input(
+            "Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
+            "the word 'Close' to leave: ")
+        # allows the user to input where the raw images are and where the calibrated images go to
+        radec_file = ""
+        while True:
+            try:
+                images_path = Path(path)
+                break
+            except FileNotFoundError:
+                print("File not found. Please try again.")
+                path = input(
+                    "Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
+                    "the word 'Close' to leave: ")
 
         if path.lower() == "close":
             exit()
+
+        science_imagetyp = 'LIGHT'
+        files = ccdp.ImageFileCollection(images_path)
+
+        for filt in filt_list:
+            if "/B" in filt:
+                radec_file = input("Enter the file location for the RADEC file for the B filter: ")
+            elif "/V" in filt:
+                radec_file = input("Enter the file location for the RADEC file for the V filter: ")
+            elif "/R" in filt:
+                radec_file = input("Enter the file location for the RADEC file for the R filter: ")
+
+            image_list = files.files_filtered(imagetyp=science_imagetyp, filter=filt)
+            multiple_AP(image_list, images_path, filt, pipeline=pipeline, radec_file=radec_file)
     else:
-        pass
+        images_path = Path(path)
 
-    science_imagetyp = 'LIGHT'
+        science_imagetyp = 'LIGHT'
 
-    images_path = Path(path)
-    files = ccdp.ImageFileCollection(images_path)
-    image_list = files.files_filtered(imagetyp=science_imagetyp, filter="Empty/B")
+        files = ccdp.ImageFileCollection(images_path)
 
-    multiple_AP(image_list, images_path)
+        for filt in filt_list:
+            if "/B" in filt:
+                radec_file = radec_list[0]
+            elif "/V" in filt:
+                radec_file = radec_list[1]
+            elif "/R" in filt:
+                radec_file = radec_list[2]
+            image_list = files.files_filtered(imagetyp=science_imagetyp, filter=filt)
+            multiple_AP(image_list, images_path, filt, pipeline=pipeline, radec_file=radec_file)
 
 
-def multiple_AP(image_list, path):
+def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
     """
     Perform multi-aperture photometry on a list of images for a single target
 
     Parameters
     ----------
-    path : path
+    filter: String
+        Filter used for the images
+    pipeline: Boolean
+        If True, then the program is being run from the pipeline and will not ask for user input.
+    radec_file: string
+        Location of a radec file. If not given, the user will be prompted to enter one.
+    path : pathway
         Path to the folder containing the images.
-    image_list : table
-        Table of images to perform aperture photometry on.
+    image_list : List
+        Images to perform multi-aperture photometry on.
 
     Returns
     -------
@@ -90,11 +131,22 @@ def multiple_AP(image_list, path):
     annulus_radii = (30, 50)
 
     read_noise = 10.83  # * u.electron  # gathered from fits headers manually
-    gain = 1.43  # * u.electron / u.adu  # gathered from fits headers manually
-    F_dark = 0.01  # dark current in u.electron / u.pix / u.s
+    # gain = 1.43  # * u.electron / u.adu  # gathered from fits headers manually
+    # F_dark = 0.01  # dark current in u.electron / u.pix / u.s
 
-    # Magnitudes of the comparison stars (replace with your values)
-    df = pd.read_csv('NSVS_254037-B.radec', skiprows=7, sep=",", header=None)
+    if not pipeline:
+        while True:
+            # Magnitudes of the comparison stars (replace with your values)
+            radec_file = input("Please enter the RADEC file (i.e. C://folder1//folder2//[file name]: ")
+            try:
+                # df = pd.read_csv('NSVS_254037-B.radec', skiprows=7, sep=",", header=None)
+                df = pd.read_csv(radec_file, skiprows=7, sep=",", header=None)
+                break
+            except FileNotFoundError:
+                print("File not found. Please try again.")
+    else:
+        df = pd.read_csv(radec_file, skiprows=7, sep=",", header=None)
+
     magnitudes_comp = df[4]
 
     magnitudes_comp = magnitudes_comp.replace(99.999, pd.NA).dropna().reset_index(drop=True)
@@ -228,7 +280,6 @@ def multiple_AP(image_list, path):
         plate_scale = plate_scale * 206265  # arcsec/mm
         n_pix = ap_area / (plate_scale * pixel_size)**2  # number of pixels in the aperture
         """
-        
         """
         n_pix = np.pi * aperture_radius**2  # number of pixels in the aperture
 
@@ -279,6 +330,21 @@ def multiple_AP(image_list, path):
     ax.tick_params(axis='both', which='major', labelsize=fontsize)
 
     plt.show()
+
+    light_curve_data = pd.DataFrame({
+        'HJD': hjd,
+        'BJD': bjd,
+        'Source_AMag_T1': magnitudes,
+        'Source_AMag_T1_Error': mag_err
+    })
+
+    if not pipeline:
+        output_file = input("Enter an output file name and location for the final light curve data in the {} filter "
+                            "(ex: C:\\folder1\\folder2\\APASS_254037_B.txt): ").format(filter)
+    else:
+        output_file = path + "//APASS_254037_" + filter + "_LC_dat.txt"
+
+    light_curve_data.to_csv(output_file, index=False)
 
 
 def im_plot(image_data, target_aperture, comparison_apertures, target_annulus, comparison_annuli):

@@ -563,6 +563,6 @@ def angle_dist(x1, y1, x2, y2):
         return False
 
 
-comparison_selector()
+# comparison_selector()
 # overlay("test_cat.txt", "00:28:27.9684836736", "78:57:42.657327180")
 # find_comp()

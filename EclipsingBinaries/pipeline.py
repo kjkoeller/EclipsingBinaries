@@ -12,7 +12,7 @@ import argparse
 
 from .apass import comparison_selector
 from .IRAF_Reduction import main as IRAF
-from .multi_aperture_photometry.py import main as multiple_AP
+from .multi_aperture_photometry import main as multiple_AP
 
 
 def monitor_directory():

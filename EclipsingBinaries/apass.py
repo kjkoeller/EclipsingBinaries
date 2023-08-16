@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 07/05/2023
+Last Updated: 08/15/2023
 """
 
 from astroquery.vizier import Vizier
@@ -58,7 +58,7 @@ def comparison_selector(ra="", dec="", pipeline=False, folder_path="", obj_name=
         print("The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
               "with their respective errors.\n")
 
-        create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
+        _ = create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
 
         overlay(df, input_ra, input_dec)
     else:
@@ -70,7 +70,9 @@ def comparison_selector(ra="", dec="", pipeline=False, folder_path="", obj_name=
             "The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
             "with their respective errors.\n")
 
-        create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
+        radec_list = create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
+
+        return radec_list
 
 
 def cousins_r(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
@@ -162,9 +164,9 @@ def cousins_r(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
             "both Johnson bands and respective errors.\n")
         # saves the dataframe to an entered output file
         output_file = input("Enter an output file name and location for the finalized catalog file "
-                            "(ex: C:\\folder1\\folder2\\APASS_254037_Catalog.txt): ")
+                            "(ex: C:\\folder1\\folder2\\APASS_254037_Rc.txt): ")
     else:
-        output_file = folder_path + "\\" + obj_name + "_APASS_Catalog.txt"
+        output_file = folder_path + "\\APASS_" + obj_name + "_Rc.txt"
     # noinspection PyTypeChecker
     final.to_csv(output_file, index=True, sep="\t")
     print("\nCompleted Save.\n")
@@ -192,6 +194,8 @@ def query_vizier(ra_input, dec_input):
     :param dec_input: Declination input
     :return: table result from Vizier
     """
+    # Query Vizier here and return result
+
     result = Vizier(
         columns=['_RAJ2000', '_DEJ2000', 'Vmag', "e_Vmag", 'Bmag', "e_Bmag", "g'mag", "e_g'mag", "r'mag", "e_r'mag"],
         row_limit=-1,
@@ -201,8 +205,6 @@ def query_vizier(ra_input, dec_input):
 
     # catalog is II/336/apass9
     tb = result['II/336/apass9']
-
-    # print(tb)
 
     return tb
 
@@ -268,10 +270,10 @@ def process_data(vizier_result):
     df = pd.DataFrame({
         "RA": ra_final,
         "Dec": dec_new,
-        "Vmag": vmag_new,
-        "e_Vmag": e_vmag_new,
         "Bmag": bmag_new,
         "e_Bmag": e_bmag_new,
+        "Vmag": vmag_new,
+        "e_Vmag": e_vmag_new,
         "g'mag": gmag_new,
         "e_g'mag": e_gmag_new,
         "r'mag": rmag_new,
@@ -317,9 +319,10 @@ def catalog_finder(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
     df = process_data(result)
 
     if not pipeline:
-        text_file = input("Enter a text file pathway and name for the output comparisons (ex: C:\\folder1\\APASS_254037.txt): ")
+        text_file = input("Enter a text file pathway and name for the output comparisons "
+                          "(ex: C:\\folder1\\APASS_254037_catalog.txt): ")
     else:
-        text_file = folder_path + "\\APASS_" + obj_name + ".txt"
+        text_file = folder_path + "\\APASS_" + obj_name + "catalog.txt"
 
     save_to_file(df, text_file)
 
@@ -364,15 +367,18 @@ def create_lines(ra_list, dec_list, mag_list, ra, dec, filt):
     ra_decimal = np.array(splitter(ra_list))
     dec_decimal = np.array(splitter(dec_list))
 
+    next_ra = float(ra_decimal[0])
+    next_dec = float(dec_decimal[0])
+
     for count, val in enumerate(ra_list):
-        next_ra = float(ra_decimal[count])
-        next_dec = float(dec_decimal[count])
         # Checks where the RA and DEC given by the user at the beginning is in the file to make sure there is no
         # duplication
         angle = angle_dist(float(ra), float(dec), next_ra, next_dec)
-        # print(angle, next_ra, next_dec, ra, dec)
         if not angle:
             lines += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(mag_list[count]) + "\n"
+
+        next_ra = float(ra_decimal[count])
+        next_dec = float(dec_decimal[count])
 
     return lines
 
@@ -403,6 +409,7 @@ def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name):
           "page for more information.\n")
 
     # to write lines to the file in order create new RADEC files for each filter
+    file_list = []
     for fcount, filt in enumerate(filters):
         if filt != "T":
             mag_list = df[mag_cols[fcount]]
@@ -423,7 +430,11 @@ def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name):
         with open(outputfile + ".radec", "w") as file:
             file.write(output)
 
+        file_list.append(outputfile + ".radec")
+
     print("\nFinished writing RADEC files for Johnson B, Johnson V, and Cousins R, and T.\n")
+
+    return file_list
 
 
 def overlay(df, tar_ra, tar_dec):
@@ -552,6 +563,6 @@ def angle_dist(x1, y1, x2, y2):
         return False
 
 
-# comparison_selector()
+comparison_selector()
 # overlay("test_cat.txt", "00:28:27.9684836736", "78:57:42.657327180")
 # find_comp()

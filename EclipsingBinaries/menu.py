@@ -4,7 +4,7 @@ other programs.
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 06/15/2023
+Last Updated: 08/16/2023
 """
 
 import pandas as pd
@@ -20,6 +20,7 @@ from IRAF_Reduction import main as IRAF
 from OC_plot import main as data_fit
 from gaia import target_star as gaia
 from find_min import main as find_min
+from .multi_aperture_photometry import main as multi_ap
 """
 from .tess_data_search import main as data_search
 from .Night_Filters import main as night
@@ -30,6 +31,7 @@ from .IRAF_Reduction import main as IRAF
 from .OC_plot import main as data_fit
 from .gaia import target_star as gaia
 from .find_min import main as find_min
+from .multi_aperture_photometry import main as multi_ap
 
 
 def main():
@@ -38,9 +40,9 @@ def main():
     print("\nWhich program do you want to run?\n\n")
 
     options = ["IRAF Reduction", "Find Minimum (WIP)", "TESS Database Search/Download", "AIJ Comparison Star Selector",
-               "BSUO or SARA/TESS Night Filters", "O-C Plotting", "Gaia Search", "O'Connel Effect", "Color Light Curve",
-               "Close Program"]
-    numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+               "Multi-Aperture Calculation", "BSUO or SARA/TESS Night Filters", "O-C Plotting", "Gaia Search", 
+               "O'Connel Effect", "Color Light Curve", "Close Program"]
+    numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
     total = pd.DataFrame({"Options": options,
                           "Numbers": numbers})
@@ -55,7 +57,7 @@ def main():
         elif prompt == 2:
             # find minimum
             find_min()
-        elif prompt == 5:
+        elif prompt == 6:
             # night filters for AIJ and TESS
             aij = input("BSUO/SARA or TESS or 'Go Back': ")
             if aij.lower() == "aij":
@@ -69,22 +71,25 @@ def main():
         elif prompt == 4:
             # comparison finder
             comp_select()
-        elif prompt == 8:
+        elif prompt == 5:
+            # multi-aperture
+            multi_ap()
+        elif prompt == 9:
             # o'connell effect
             oconnell()
-        elif prompt == 9:
+        elif prompt == 10:
             # color light curve
             gui(False)
         elif prompt == 1:
             # iraf reduction
             IRAF()
-        elif prompt == 6:
+        elif prompt == 7:
             # O-C plotting
             data_fit()
-        elif prompt == 10:
+        elif prompt == 11:
             # close program
             break
-        elif prompt == 7:
+        elif prompt == 8:
             gaia()
         else:
             print("\nYou have not entered any of the allowed entries, please try again.\n")

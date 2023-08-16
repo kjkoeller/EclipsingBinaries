@@ -3,7 +3,7 @@ This script checks for new files in a directory every second for the start of a 
 
 Author: Kyle Koeller
 Created: 06/15/2023
-Last Edited: 06/17/2023
+Last Edited: 08/15/2023
 """
 
 from os import path, listdir
@@ -11,7 +11,8 @@ from time import time, sleep
 import argparse
 
 from .apass import comparison_selector
-from .IRAF_Reduction import main
+from .IRAF_Reduction import main as IRAF
+from .multi_aperture_photometry.py import main as multiple_AP
 
 
 def monitor_directory():
@@ -31,8 +32,8 @@ def monitor_directory():
                         help="The right ascension of the target. Default is 00:00:00.", required=True)
     parser.add_argument("--dec", type=str, default="00:00:00",
                         help="The declination of the target (if negative -00:00:00). Default is 00:00:00.", required=True)
-    parser.add_argument("--name", metavar="Object Name", type=str, default="target",
-                        help="The name of the target. Default is target.")
+    parser.add_argument("--name", metavar="Object Name", type=str, default="NSVS 254037",
+                        help="The name of the target. Default is NSVS 254037.")
 
     # parse the arguments
     args = parser.parse_args()
@@ -74,7 +75,9 @@ def monitor_directory():
             start_time = time()
             current_latest_file = latest_file
 
-    print("Starting data reduction.\n")
-    main(path=args.input, calibrated=args.output, pipeline=True, location=args.loc)
-    print("\n\nStarting comparison star selection.")
-    comparison_selector(ra=args.ra, dec=args.dec, pipeline=True, folder_path=args.output, obj_name=args.name)
+    print("\n\nStarting data reduction.\n")
+    IRAF(path=args.input, calibrated=args.output, pipeline=True, location=args.loc)
+    print("\n\nStarting comparison star selection.\n")
+    radec_files = comparison_selector(ra=args.ra, dec=args.dec, pipeline=True, folder_path=args.output, obj_name=args.name)
+    print("\n\nStarting photometry.\n")
+    multiple_AP(path=args.output, pipeline=True, radec_files=radec_files, obj_name=args.name)

@@ -4,7 +4,7 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 07/09/2022
+Last Edited: 08/15/2022
 Editor: Kyle Koeller
 """
 
@@ -141,6 +141,7 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     # print('T =', vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1)))
     if index == "BV":
         temp = []
+        # temp = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1), colorerr)
         t1 = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1))
         temp_high = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1) - colorerr)
         temp_low = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1) + colorerr)
@@ -150,7 +151,16 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
         temp.append(temp_err)
         print('T_BV =', temp[0], '+/-', temp[1])
     elif index == "VR":
-        temp = vseq.Pecaut.T.Teff(quadcolor - (0.58 / 3.1), colorerr)
+        # temp = vseq.Pecaut.T.Teff(quadcolor - (0.58 / 3.1), colorerr)
+        temp = []
+        t1 = vseq.Flower.T.Teff(quadcolor - 0.561 * (0.641 / 3.1))
+        # E_V-R = 0.561*E_B-V
+        temp_high = vseq.Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) - colorerr)
+        temp_low = vseq.Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) + colorerr)
+
+        temp_err = (temp_high - temp_low) / 2
+        temp.append(t1)
+        temp.append(temp_err)
         if temp[0] == 0:
             print("V-R color cannot be used to determine temperature.")
         print('T_VR =', temp[0], '+/-', temp[1])

@@ -84,7 +84,13 @@ jobs:
 
     steps:
     - name: List directory contents
-      run: ls -la
+      run: |
+        if [ "${{ runner.os }}" == "Windows" ]; then
+          Get-ChildItem -Path .
+        else
+          ls -la
+        fi
+      shell: pwsh # This sets the shell to PowerShell (cross-platform)
     - name: Check out repository
       uses: actions/checkout@v3
     - name: Set up Python ${{ matrix.python }}

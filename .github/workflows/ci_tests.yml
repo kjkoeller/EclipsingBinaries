@@ -85,11 +85,11 @@ jobs:
     steps:
     - name: List directory contents
       run: |
-        if [ "${{ runner.os }}" == "Windows" ]; then
+        if (${{ runner.os }} -eq "Windows") {
           Get-ChildItem -Path .
-        else
+        } else {
           ls -la
-        fi
+        }
       shell: pwsh # This sets the shell to PowerShell (cross-platform)
     - name: Check out repository
       uses: actions/checkout@v3

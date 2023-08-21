@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 08/15/2023
+Last Updated: 08/21/2023
 """
 
 from astroquery.vizier import Vizier
@@ -62,7 +62,7 @@ def comparison_selector(ra="", dec="", pipeline=False, folder_path="", obj_name=
 
         overlay(df, input_ra, input_dec)
     else:
-        apass_file, input_ra, input_dec, T_list = cousins_r(ra, dec, pipeline, folder_path, obj_name)
+        apass_file, input_ra, input_dec, T_list = cousins_r(ra=ra, dec=dec, pipeline=pipeline, folder_path=folder_path, obj_name=obj_name)
         df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
 
         print("Finished Saving\n\n")
@@ -95,9 +95,9 @@ def cousins_r(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
     gamma = 0.219
 
     if not pipeline:
-        input_file, input_ra, input_dec = catalog_finder(ra, dec, pipeline, folder_path, obj_name)
-    else:
         input_file, input_ra, input_dec = catalog_finder()
+    else:
+        input_file, input_ra, input_dec = catalog_finder(ra, dec, pipeline, folder_path, obj_name)
     df = pd.read_csv(input_file, header=None, skiprows=[0], sep=",")
 
     # writes the columns from the input file
@@ -322,7 +322,7 @@ def catalog_finder(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
         text_file = input("Enter a text file pathway and name for the output comparisons "
                           "(ex: C:\\folder1\\APASS_254037_catalog.txt): ")
     else:
-        text_file = folder_path + "\\APASS_" + obj_name + "catalog.txt"
+        text_file = folder_path + "\\APASS_" + obj_name + "_catalog.txt"
 
     save_to_file(df, text_file)
 
@@ -367,18 +367,15 @@ def create_lines(ra_list, dec_list, mag_list, ra, dec, filt):
     ra_decimal = np.array(splitter(ra_list))
     dec_decimal = np.array(splitter(dec_list))
 
-    next_ra = float(ra_decimal[0])
-    next_dec = float(dec_decimal[0])
-
     for count, val in enumerate(ra_list):
-        # Checks where the RA and DEC given by the user at the beginning is in the file to make sure there is no
+        next_ra = float(ra_decimal[count])
+        next_dec = float(dec_decimal[count])
+
+        # Check where the RA and DEC given by the user at the beginning is in the file to make sure there is no
         # duplication
         angle = angle_dist(float(ra), float(dec), next_ra, next_dec)
         if not angle:
             lines += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(mag_list[count]) + "\n"
-
-        next_ra = float(ra_decimal[count])
-        next_dec = float(dec_decimal[count])
 
     return lines
 
@@ -557,7 +554,6 @@ def angle_dist(x1, y1, x2, y2):
     # noinspection PyUnresolvedReferences
     radial = pyasl.getAngDist(x1, y1, x2, y2)
     if radial <= 0.01:
-        # print(x1, y1, x2, y2)
         return True
     else:
         return False

@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 08/15/2023
+Last Updated: 08/21/2023
 """
 
 # Python imports
@@ -100,7 +100,9 @@ def main(path="", pipeline=False, radec_list=None, obj_name=""):
             elif "/R" in filt:
                 radec_file = radec_list[2]
             image_list = files.files_filtered(imagetyp=science_imagetyp, filter=filt)
-            multiple_AP(image_list, images_path, filt, pipeline=pipeline, radec_file=radec_file)
+            substring_to_match = obj_name
+            filtered_image_list = [file for file in image_list if substring_to_match in file]
+            multiple_AP(filtered_image_list, images_path, filt, pipeline=pipeline, radec_file=radec_file)
 
 
 def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):

@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 08/15/2023
+Last Updated: 08/24/2023
 """
 
 # Python imports
@@ -66,7 +66,7 @@ def main(path="", pipeline=False, radec_list=None, obj_name=""):
             except FileNotFoundError:
                 print("File not found. Please try again.")
                 path = input(
-                    "Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
+                    "Please enter a file pathway (i.e. C:\\folder1\\folder2\\[reduced]) to where the reduced images are or type "
                     "the word 'Close' to leave: ")
 
         if path.lower() == "close":
@@ -100,7 +100,9 @@ def main(path="", pipeline=False, radec_list=None, obj_name=""):
             elif "/R" in filt:
                 radec_file = radec_list[2]
             image_list = files.files_filtered(imagetyp=science_imagetyp, filter=filt)
-            multiple_AP(image_list, images_path, filt, pipeline=pipeline, radec_file=radec_file)
+            substring_to_match = obj_name
+            filtered_image_list = [file for file in image_list if substring_to_match in file]
+            multiple_AP(filtered_image_list, images_path, filt, pipeline=pipeline, radec_file=radec_file)
 
 
 def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
@@ -136,16 +138,16 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
 
     if not pipeline:
         while True:
-            # Magnitudes of the comparison stars (replace with your values)
-            radec_file = input("Please enter the RADEC file (i.e. C://folder1//folder2//[file name]: ")
             try:
                 # df = pd.read_csv('NSVS_254037-B.radec', skiprows=7, sep=",", header=None)
                 df = pd.read_csv(radec_file, skiprows=7, sep=",", header=None)
                 break
             except FileNotFoundError:
                 print("File not found. Please try again.")
+                radec_file = input("Please enter the RADEC file (i.e. C://folder1//folder2//[file name]: ")
     else:
         df = pd.read_csv(radec_file, skiprows=7, sep=",", header=None)
+        print("RADEC file found.\n")
 
     magnitudes_comp = df[4]
 
@@ -192,7 +194,6 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
         # comparison_phot_table = aperture_photometry(image_data, comparison_aperture)
 
         if icount == 0:
-            # pass
             im_plot(image_data, target_aperture, comparison_aperture, target_annulus, comparison_annulus)
             # Create a figure and axis
             _, ax = plt.subplots(figsize=(11, 8))
@@ -340,7 +341,7 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
 
     if not pipeline:
         output_file = input("Enter an output file name and location for the final light curve data in the {} filter "
-                            "(ex: C:\\folder1\\folder2\\APASS_254037_B.txt): ").format(filter)
+                            "(ex: C:\\folder1\\folder2\\APASS_254037_B.txt): ".format(filter))
     else:
         output_file = path + "//APASS_254037_" + filter + "_LC_dat.txt"
 
@@ -386,7 +387,7 @@ def im_plot(image_data, target_aperture, comparison_apertures, target_annulus, c
     for comparison_annulus in comparison_annuli:
         comparison_annulus.plot(color='red', lw=lw, alpha=alpha)
 
-    plt.pause(1000)
+    plt.pause(1)
     plt.show()
 
 

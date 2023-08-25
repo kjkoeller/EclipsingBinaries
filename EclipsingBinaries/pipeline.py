@@ -3,7 +3,7 @@ This script checks for new files in a directory every second for the start of a 
 
 Author: Kyle Koeller
 Created: 06/15/2023
-Last Edited: 08/15/2023
+Last Edited: 08/21/2023
 """
 
 from os import path, listdir
@@ -32,8 +32,8 @@ def monitor_directory():
                         help="The right ascension of the target. Default is 00:00:00.", required=True)
     parser.add_argument("--dec", type=str, default="00:00:00",
                         help="The declination of the target (if negative -00:00:00). Default is 00:00:00.", required=True)
-    parser.add_argument("--name", metavar="Object Name", type=str, default="NSVS 254037",
-                        help="The name of the target. Default is NSVS 254037.")
+    parser.add_argument("--name", metavar="Object Name", type=str, default="NSVS_254037",
+                        help="The name of the target and must include '_' instead of spaces. Default is NSVS_254037.")
 
     # parse the arguments
     args = parser.parse_args()
@@ -80,4 +80,4 @@ def monitor_directory():
     print("\n\nStarting comparison star selection.\n")
     radec_files = comparison_selector(ra=args.ra, dec=args.dec, pipeline=True, folder_path=args.output, obj_name=args.name)
     print("\n\nStarting photometry.\n")
-    multiple_AP(path=args.output, pipeline=True, radec_files=radec_files, obj_name=args.name)
+    multiple_AP(path=args.output, pipeline=True, radec_list=radec_files, obj_name=args.name)

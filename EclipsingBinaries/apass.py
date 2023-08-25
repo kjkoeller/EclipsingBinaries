@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 08/21/2023
+Last Updated: 08/22/2023
 """
 
 from astroquery.vizier import Vizier
@@ -338,7 +338,7 @@ def create_header(ra, dec):
 
     :return: The header string for the RADEC file
     """
-    header = "#RA in decimal or sexagesimal HOURS\n " \
+    header = "#RA in decimal or sexagesimal HOURS\n" \
              "#Dec in decimal or sexagesimal DEGREES\n" \
              "#Ref Star=0,1,missing (0=target star, 1=ref star, missing->first ap=target, others=ref)\n" \
              "#Centroid=0,1,missing (0=do not centroid, 1=centroid, missing=centroid)\n" \
@@ -374,7 +374,7 @@ def create_lines(ra_list, dec_list, mag_list, ra, dec, filt):
         # Check where the RA and DEC given by the user at the beginning is in the file to make sure there is no
         # duplication
         angle = angle_dist(float(ra), float(dec), next_ra, next_dec)
-        if not angle:
+        if angle:
             lines += str(val) + ", " + str(dec_list[count]) + ", " + "1, 1, " + str(mag_list[count]) + "\n"
 
     return lines
@@ -553,7 +553,8 @@ def angle_dist(x1, y1, x2, y2):
     """
     # noinspection PyUnresolvedReferences
     radial = pyasl.getAngDist(x1, y1, x2, y2)
-    if radial <= 0.01:
+    # print(f"Comparing ({x1}, {y1}) to ({x2}, {y2}), Radial distance: {radial}")
+    if 0.15 > radial > 0.01:  # Exclude exact target and include values within 15 arcminutes (0.25 degrees)
         return True
     else:
         return False

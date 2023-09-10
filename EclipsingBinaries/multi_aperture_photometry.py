@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 08/24/2023
+Last Updated: 09/09/2023
 """
 
 # Python imports
@@ -55,7 +55,7 @@ def main(path="", pipeline=False, radec_list=None, obj_name=""):
     if not pipeline:
         # path = "D:\Research\Data\\NSVS_254037\\2018.09.18-reduced"  # For testing purposes
         path = input(
-            "Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the reduced images are or type "
+            "Please enter a file pathway (i.e. C:\\folder1\\folder2\\[reduced]) to where the reduced images are or type "
             "the word 'Close' to leave: ")
         # allows the user to input where the raw images are and where the calibrated images go to
         radec_file = ""
@@ -105,7 +105,7 @@ def main(path="", pipeline=False, radec_list=None, obj_name=""):
             multiple_AP(filtered_image_list, images_path, filt, pipeline=pipeline, radec_file=radec_file)
 
 
-def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
+def multiple_AP(image_list, path, filter, pipeline=False, radec_file="", df=pd.DataFrame({})):
     """
     Perform multi-aperture photometry on a list of images for a single target
 
@@ -121,10 +121,13 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
         Path to the folder containing the images.
     image_list : List
         Images to perform multi-aperture photometry on.
+    df : DataFrame
+        DataFrame containing the RA, DEC, and magnitudes of the target and comparison stars.
 
     Returns
     -------
     None
+    :param df:
     """
 
     # Define the aperture parameters
@@ -146,8 +149,8 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
                 print("File not found. Please try again.")
                 radec_file = input("Please enter the RADEC file (i.e. C://folder1//folder2//[file name]: ")
     else:
-        df = pd.read_csv(radec_file, skiprows=7, sep=",", header=None)
-        print("RADEC file found.\n")
+        if df.empty:
+            df = pd.read_csv(radec_file, skiprows=7, sep=",", header=None)
 
     magnitudes_comp = df[4]
 
@@ -163,7 +166,11 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
     hjd = []
     bjd = []
 
-    for icount, image_file in tqdm(enumerate(image_list), desc="Performing aperture photometry on {} images".format(len(image_list))):
+    # Create a figure and axis
+    _, ax = plt.subplots(figsize=(11, 8))
+
+    for icount, image_file in tqdm(enumerate(image_list), desc="Performing aperture photometry on {} images in the {} "
+                                                               "filter.".format(len(image_list), filter)):
         image_data, header = fits.getdata(path / image_file, header=True)
         # All the following up till the 'if' statement stays under the for loop due to needing the header information
         wcs_ = WCS(header)
@@ -193,10 +200,27 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
         target_phot_table = aperture_photometry(image_data, target_aperture)
         # comparison_phot_table = aperture_photometry(image_data, comparison_aperture)
 
+        # Identify invalid apertures
+        image_shape = image_data.shape  # Get the shape of the image
+        image_height, image_width = image_shape[0], image_shape[1]
+        invalid_aperture_indices = []
+        for idx, aperture in enumerate(comparison_aperture):
+            x, y, r = aperture.positions[0], aperture.positions[1], aperture.r
+            if not (x - r >= 0 and x + r < image_width and y - r >= 0 and y + r < image_height):
+                invalid_aperture_indices.append(idx)
+
+        # Remove invalid annuli and apertures
+        comparison_aperture = [ap for i, ap in enumerate(comparison_aperture) if
+                               i not in invalid_aperture_indices]
+        comparison_annulus = [an for i, an in enumerate(comparison_annulus) if
+                              i not in invalid_aperture_indices]
+
         if icount == 0:
-            im_plot(image_data, target_aperture, comparison_aperture, target_annulus, comparison_annulus)
-            # Create a figure and axis
-            _, ax = plt.subplots(figsize=(11, 8))
+            # Update DataFrame
+            # df.drop(index=invalid_aperture_indices, inplace=True)
+            # df.reset_index(drop=True, inplace=True)
+            if not pipeline:
+                im_plot(image_data, target_aperture, comparison_aperture, target_annulus, comparison_annulus)
 
         comparison_phot_table = []
         for comp_aperture, comp_annulus in zip(comparison_aperture, comparison_annulus):
@@ -330,7 +354,13 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
     ax.legend(loc="upper right", fontsize=fontsize).set_draggable(True)
     ax.tick_params(axis='both', which='major', labelsize=fontsize)
 
-    plt.show()
+    # Replace 'Empty/B' with '_B' or another acceptable string
+    filter_sanitized = filter.replace("Empty/", "")
+
+    if not pipeline:
+        plt.show()
+    else:
+        plt.savefig(str(path) + "\\APASS_254037_" + filter_sanitized + "_LC_dat.jpg")
 
     light_curve_data = pd.DataFrame({
         'HJD': hjd,
@@ -340,10 +370,10 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file=""):
     })
 
     if not pipeline:
-        output_file = input("Enter an output file name and location for the final light curve data in the {} filter "
-                            "(ex: C:\\folder1\\folder2\\APASS_254037_B.txt): ".format(filter))
+        output_file = input(f"Enter an output file name and location for the final light curve data in the {filter_sanitized} filter "
+                            "(ex: C:\\folder1\\folder2\\APASS_254037_B.txt): ")
     else:
-        output_file = path + "//APASS_254037_" + filter + "_LC_dat.txt"
+        output_file = str(path) + "\\APASS_254037_" + filter_sanitized + "_LC_dat.txt"
 
     light_curve_data.to_csv(output_file, index=False)
 

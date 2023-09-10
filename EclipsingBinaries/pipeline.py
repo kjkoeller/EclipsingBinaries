@@ -3,7 +3,7 @@ This script checks for new files in a directory every second for the start of a 
 
 Author: Kyle Koeller
 Created: 06/15/2023
-Last Edited: 08/21/2023
+Last Edited: 09/09/2023
 """
 
 from os import path, listdir
@@ -34,6 +34,8 @@ def monitor_directory():
                         help="The declination of the target (if negative -00:00:00). Default is 00:00:00.", required=True)
     parser.add_argument("--name", metavar="Object Name", type=str, default="NSVS_254037",
                         help="The name of the target and must include '_' instead of spaces. Default is NSVS_254037.")
+    parser.add_argument("--mem", metavar="Memory Usage", type=str, default="1600e6",
+                        help="The memory usage maximum for the program. Default is 1600e6.")
 
     # parse the arguments
     args = parser.parse_args()

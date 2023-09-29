@@ -56,11 +56,13 @@ def conversion(a):
             num2 = abs((num1 - int(num1)) * 60)
             num3 = format((num2 - int(num2)) * 60, ".3f")
             num4 = float(num3)
-            b.append(str(int(num1)) + ":" + str(int(num2)) + ":" + str(abs(num4)))
+            formatted_time = f"{int(num1):02d}:{int(num2):02d}:{abs(num4):06.3f}"
+            b.append(formatted_time)
         else:
             num2 = (num1 - int(num1)) * 60
             num3 = format((num2 - int(num2)) * 60, ".3f")
-            b.append(str(int(num1)) + ":" + str(int(num2)) + ":" + str(num3))
+            formatted_time = f"{int(num1):02d}:{int(num2):02d}:{float(num3):06.3f}"
+            b.append(formatted_time)
 
     return b
 
@@ -75,6 +77,7 @@ def splitter(a):
     # makes the coordinate string into a decimal number from the text file
     step = []
     final = []
+
     for i in a:
         new = i.split(":")
         num1 = int(new[0])

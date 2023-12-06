@@ -48,7 +48,7 @@ def check_num():
             exit()
         else:
             print("You have not entered a number or the word 'Close', please try again.\n")
-    return num
+    return int(num)
 
 
 def file_path(i):

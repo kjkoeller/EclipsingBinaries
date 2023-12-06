@@ -38,6 +38,8 @@ def main():
     if system_name.lower() == "close":
         exit()
 
+    # The ccd info comes from this paper:
+    # https://archive.stsci.edu/files/live/sites/mast/files/home/missions-and-data/active-missions/tess/_documents/TESS_Instrument_Handbook_v0.1.pdf
     filename = pkg_resources.resource_filename(__name__, 'tess_ccd_info.txt')
     dc = pd.read_csv(filename, header=None, sep="\t", skiprows=[0])
 

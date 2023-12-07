@@ -43,7 +43,7 @@ def main():
     filename = pkg_resources.resource_filename(__name__, 'tess_ccd_info.txt')
     dc = pd.read_csv(filename, header=None, sep="\t", skiprows=[0])
 
-    gain = dc[6]  # gain for the individual camera/ccd
+    gain = dc[3]  # videoscale, gain for the individual camera/ccd
     tess_camera = dc[0]  # camera number
     tess_ccd = dc[1]  # ccd number
     # slice = dc[2]  # could be used in the future

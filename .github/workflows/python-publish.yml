@@ -17,10 +17,9 @@ jobs:
         python-version: "3.x"
     - name: Install pypa/build
       run: >-
-        python3 -m
-        pip install
-        build
-        setuptools
+        python -m pip install --upgrade setuptools
+        python -m pip install --upgrade pip
+        python -m pip install --upgrade build
         --user
     - name: Build a binary wheel and a source tarball
       run: python3 -m build

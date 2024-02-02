@@ -68,9 +68,9 @@ jobs:
 
     steps:
     - name: Check out repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v2.312
     - name: Set up Python ${{ matrix.python }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v2.312
       with:
         python-version: ${{ matrix.python }}
     - name: Install base dependencies

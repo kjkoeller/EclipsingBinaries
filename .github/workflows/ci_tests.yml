@@ -71,11 +71,6 @@ jobs:
             python: '3.8'
             tox_env: 'py310-test-alldeps'
 
-          - name: 'ubuntu-build_docs'
-            os: ubuntu-latest
-            python: '3.10'
-            tox_env: 'build_docs'
-
           - name: 'ubuntu-py310-test-alldeps-devdeps'
             os: ubuntu-latest
             python: '3.10'

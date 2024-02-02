@@ -55,16 +55,31 @@ jobs:
             os: windows-latest
             python: '3.10'
             tox_env: 'py310-test-alldeps'
+            
+          - name: 'windows-py39'
+            os: windows-latest
+            python: '3.9'
+            tox_env: 'py310-test-alldeps'
 
           - name: 'windows-py38'
             os: windows-latest
             python: '3.8'
             tox_env: 'py310-test-alldeps'
-
-          - name: 'windows-py39'
-            os: windows-latest
-            python: '3.9'
+          
+          - name: 'ubuntu-codestyle'
+            os: ubuntu-latest
+            python: '3.8'
             tox_env: 'py310-test-alldeps'
+
+          - name: 'ubuntu-build_docs'
+            os: ubuntu-latest
+            python: '3.10'
+            tox_env: 'build_docs'
+
+          - name: 'ubuntu-py310-test-alldeps-devdeps'
+            os: ubuntu-latest
+            python: '3.10'
+            tox_env: 'py310-test-alldeps-devdeps'
 
     steps:
     - name: Check out repository
@@ -90,6 +105,5 @@ jobs:
       if: "! matrix.use_remote_data"
       run: |
         tox -e ${{ matrix.tox_env }} -- ${{ matrix.toxposargs }}
-    # - name: Run tests with remote data
-    #   if: "matrix.use_remote_data"
-    #   run: tox -e ${{ matrix.tox_env }} -- --remote-data=any
+
+        

@@ -70,7 +70,7 @@ This will print out all the options that are available to edit and change. The `
 *   tqdm>=4.64.1
 *   numba>=0.56.3
 *   seaborn>=0.12.2
-*   pyia>=1.3
+*   pyia>=1.41
 
 ***
 

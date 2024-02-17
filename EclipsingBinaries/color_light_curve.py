@@ -4,12 +4,12 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 08/15/2022
+Last Edited: 02/16/2024
 Editor: Kyle Koeller
 """
 
-# import vseq_updated as vseq  # testing purposes
-from . import vseq_updated as vseq
+# from vseq_updated import io, calc, FT, binning, plot, Flower  # testing purposes
+from .vseq_updated import io, calc, FT, binning, plot, Flower
 import numpy as np
 import matplotlib.pyplot as plt
 import statistics as st
@@ -85,15 +85,15 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
 
     :return: returns the B-V value and other assorted values
     """
-    B_HJD, B_mag, B_magerr = vseq.io.importFile_pd(Bfile)[:3:]
-    V_HJD, V_mag, V_magerr = vseq.io.importFile_pd(Vfile)[:3:]
+    B_HJD, B_mag, B_magerr = io.importFile_pd(Bfile)[:3:]
+    V_HJD, V_mag, V_magerr = io.importFile_pd(Vfile)[:3:]
 
-    Bpoly = vseq.binning.polybinner(Bfile, Epoch, period, sections=2, section_order=8)
+    Bpoly = binning.polybinner(Bfile, Epoch, period, sections=2, section_order=8)
     Bphase = Bpoly[1][0][0][1]
     aB = Bpoly[0][0]
     bB = Bpoly[0][1]
     Bnorm = Bpoly[1][0][4]
-    Vphase = list(vseq.calc.astro.convert.HJD_phase(V_HJD, period, Epoch))
+    Vphase = list(calc.astro.convert.HJD_phase(V_HJD, period, Epoch))
     B_flux = np.array(10 ** (-0.4 * np.array(B_mag))) / Bnorm
     obs = len(V_HJD)
     tolerance = best_tol(B_HJD, V_HJD, period, lower_lim=lower_lim, max_tol=max_tol)
@@ -107,7 +107,7 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     B_interp_flux = []
     for n in range(obs):
         if len(befores[n]) == 0 or len(afters[n]) == 0:
-            B_interp_flux.append(vseq.FT.sumatphase(Vphase[n], 10, aB, bB))
+            B_interp_flux.append(FT.sumatphase(Vphase[n], 10, aB, bB))
         else:
             B_interp_flux.append(lin_interp(V_HJD[n], befores[n][-1], afters[n][0],
                                             B_flux[i_before[n][-1]], B_flux[i_after[n][0]]))
@@ -131,9 +131,9 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     BV_err = st.stdev(B_minus_V, xbar=BV_mean)
 
     print('ave diff =', round(mean_diff * 100, 3), '% of period')
-    aVphase, aV_mag, aB_interp_mag = vseq.plot.aliasing2(Vphase, V_mag, B_interp_mag)[:3:]
-    aBphase, aB_mag = vseq.plot.aliasing2(Bphase, B_mag, B_mag)[:2:]
-    aB_minus_V = vseq.plot.aliasing2(Vphase, B_minus_V, B_minus_V)[1]
+    aVphase, aV_mag, aB_interp_mag = plot.aliasing2(Vphase, V_mag, B_interp_mag)[:3:]
+    aBphase, aB_mag = plot.aliasing2(Bphase, B_mag, B_mag)[:2:]
+    aB_minus_V = plot.aliasing2(Vphase, B_minus_V, B_minus_V)[1]
     B_V = [B_minus_V, BV_mean, BV_err, aB_minus_V]
     B = [aBphase, aB_mag, aB_interp_mag]
     V = [aVphase, aV_mag]
@@ -142,9 +142,9 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     if index == "BV":
         temp = []
         # temp = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1), colorerr)
-        t1 = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1))
-        temp_high = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1) - colorerr)
-        temp_low = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1) + colorerr)
+        t1 = Flower.T.Teff(quadcolor - (0.641 / 3.1))
+        temp_high = Flower.T.Teff(quadcolor - (0.641 / 3.1) - colorerr)
+        temp_low = Flower.T.Teff(quadcolor - (0.641 / 3.1) + colorerr)
 
         temp_err = (temp_high - temp_low)/2
         temp.append(t1)
@@ -153,17 +153,18 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     elif index == "VR":
         # temp = vseq.Pecaut.T.Teff(quadcolor - (0.58 / 3.1), colorerr)
         temp = []
-        t1 = vseq.Flower.T.Teff(quadcolor - 0.561 * (0.641 / 3.1))
+        t1 = Flower.T.Teff(quadcolor - 0.561 * (0.641 / 3.1))
         # E_V-R = 0.561*E_B-V
-        temp_high = vseq.Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) - colorerr)
-        temp_low = vseq.Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) + colorerr)
+        temp_high = Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) - colorerr)
+        temp_low = Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) + colorerr)
 
         temp_err = (temp_high - temp_low) / 2
         temp.append(t1)
         temp.append(temp_err)
         if temp[0] == 0:
             print("V-R color cannot be used to determine temperature.")
-        print('T_VR =', temp[0], '+/-', temp[1])
+        else:
+            print('T_VR =', temp[0], '+/-', temp[1])
 
     return B_V, B, V, quadcolor, colorerr, temp
 
@@ -193,7 +194,7 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
     aB_minus_V = B_V[0][3]
     quadcolor, colorerr = B_V[3:5:]
     if Rfile == '':
-        axs, fig = vseq.plot.multiplot((7, 7.5), height_ratios=[8, 4.5])
+        axs, fig = plot.multiplot((7, 7.5), height_ratios=[8, 4.5])
         mag = axs[0]
         bv = axs[1]
         mag.plot(Vphase, Vmag, 'og', ms=2)
@@ -202,9 +203,9 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
         bv.margins(y=0.1, x=1 / 24)
         mag.set_ylim(mag.get_ylim()[::-1])
         bv.set_ylim(bv.get_ylim()[::-1])
-        vseq.plot.sm_format(mag, X=0.25, x=0.05, Y=None, numbersize=fs, xbottom=False, bottomspine=False, tickwidth=1,
+        plot.sm_format(mag, X=0.25, x=0.05, Y=None, numbersize=fs, xbottom=False, bottomspine=False, tickwidth=1,
                             Xsize=7, xsize=3.5)
-        vseq.plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, tickwidth=1, Xsize=7,
+        plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, tickwidth=1, Xsize=7,
                             xsize=3.5)
 
         maxtick = max(list(map(len, (list(map(str, np.array(mag.get_yticks()).round(8)))))))
@@ -224,7 +225,7 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
         Rphase, Rmag = V_R[2][:2:]
         V_interp_mag = V_R[1][2]
         aV_minus_R = V_R[0][3]
-        axs, fig = vseq.plot.multiplot((7, 9), height_ratios=[8, 3, 3])
+        axs, fig = plot.multiplot((7, 9), height_ratios=[8, 3, 3])
         mag = axs[0]
         bv = axs[2]
         vr = axs[1]
@@ -240,10 +241,10 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
         mag.set_ylim(mag.get_ylim()[::-1])
         bv.set_ylim(bv.get_ylim()[::-1])
         vr.set_ylim(vr.get_ylim()[::-1])
-        vseq.plot.sm_format(mag, X=0.25, x=0.05, numbersize=fs, xbottom=False, bottomspine=False)
-        vseq.plot.sm_format(vr, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, xbottom=False,
+        plot.sm_format(mag, X=0.25, x=0.05, numbersize=fs, xbottom=False, bottomspine=False)
+        plot.sm_format(vr, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, xbottom=False,
                             bottomspine=False)
-        vseq.plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False)
+        plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False)
         maxtick = max(list(map(len, (list(map(str, np.array(mag.get_yticks()).round(8)))))))
         if maxtick == 5:
             ytickpad = -0.835
@@ -450,6 +451,10 @@ def color_gui(developer=False):
     VRL_temp = Label(root, text='')
     VRL.grid(row=len(entries) + 4, column=0, columnspan=2)
     VRL_temp.grid(row=len(entries) + 5, column=0, columnspan=2)
+    max1 = Label(root, text='')
+    max2 = Label(root, text='')
+    max1.grid(row=len(entries) + 8, column=0, columnspan=2)
+    max2.grid(row=len(entries) + 9, column=0, columnspan=2)
     # B2=gui.Field(root,'B file',2,0)
     fs = 14
 
@@ -475,7 +480,7 @@ def color_gui(developer=False):
             fig = Figure(figsize=(7, 7.8), dpi=90, tight_layout=True)
             # canvas = FigureCanvasTkAgg(fig, master=root)
             # canvas.destroy()
-            axs, _ = vseq.plot.multiplot(height_ratios=[8, 4.5], fig=fig)
+            axs, _ = plot.multiplot(height_ratios=[8, 4.5], fig=fig)
             mag = axs[0]
             bv = axs[1]
             mag.plot(Vphase, Vmag, 'o', ms=2, color='#00FF00')
@@ -484,9 +489,9 @@ def color_gui(developer=False):
             bv.margins(y=0.1, x=1 / 24)
             mag.set_ylim(mag.get_ylim()[::-1])
             bv.set_ylim(bv.get_ylim()[::-1])
-            vseq.plot.sm_format(mag, X=0.25, x=0.05, Y=None, numbersize=fs, xbottom=False, bottomspine=False,
+            plot.sm_format(mag, X=0.25, x=0.05, Y=None, numbersize=fs, xbottom=False, bottomspine=False,
                                 tickwidth=1, Xsize=7, xsize=3.5)
-            vseq.plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, tickwidth=1, Xsize=7,
+            plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, tickwidth=1, Xsize=7,
                                 xsize=3.5)
 
             maxtick = max(list(map(len, (list(map(str, np.array(mag.get_yticks()).round(8)))))))
@@ -520,7 +525,7 @@ def color_gui(developer=False):
             fig = Figure(figsize=(7, 9), dpi=90, tight_layout=True)
             # canvas = FigureCanvasTkAgg(fig, master=root)
             # canvas.destroy()
-            axs, _ = vseq.plot.multiplot(height_ratios=[8, 3, 3], fig=fig)
+            axs, _ = plot.multiplot(height_ratios=[8, 3, 3], fig=fig)
             mag = axs[0]
             bv = axs[2]
             vr = axs[1]
@@ -536,10 +541,10 @@ def color_gui(developer=False):
             mag.set_ylim(mag.get_ylim()[::-1])
             bv.set_ylim(bv.get_ylim()[::-1])
             vr.set_ylim(vr.get_ylim()[::-1])
-            vseq.plot.sm_format(mag, X=0.25, x=0.05, numbersize=fs, xbottom=False, bottomspine=False)
-            vseq.plot.sm_format(vr, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, xbottom=False,
+            plot.sm_format(mag, X=0.25, x=0.05, numbersize=fs, xbottom=False, bottomspine=False)
+            plot.sm_format(vr, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, xbottom=False,
                                 bottomspine=False)
-            vseq.plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False)
+            plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False)
             maxtick = max(list(map(len, (list(map(str, np.array(mag.get_yticks()).round(8)))))))
             if maxtick == 5:
                 ytickpad = -0.835
@@ -594,8 +599,13 @@ def color_gui(developer=False):
 
         BVL.config(text='(B-V) = ' + str(round(quadcolor, 6)) + ' +/- ' + str(round(colorerr, 6)), bg='white',
                    relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
-        BVL_temp.config(text='T_(B-V) = ' + str(format(BV_temp[0], ".4f")) + " +/- " + str(format(BV_temp[1], ".4f")), bg='white', relief='solid', borderwidth=1, padx=5,
-                        pady=5, font=('None', 14))
+        BVL_temp.config(text='T_(B-V) = ' + str(format(BV_temp[0], ".4f")) + " +/- " + str(format(BV_temp[1], ".4f")),
+                        bg='white', relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
+
+        max1.config(text='Phase -0.25 = ' + str(round(quadcolor, 6)), bg='white',
+                   relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
+        max2.config(text='Phase 0.25 = ' + str(format(BV_temp[0], ".4f")), bg='white',
+                    relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
         CreateToolTip(BVL, text=autowrap(
             'These values are calculated using an average of the (X-Y) values within phase 0.075 of quadrature (phase = +/- 0.25).'
             ' The given error is the standard\ndeviation of these values.', 50))
@@ -634,7 +644,7 @@ def color_gui(developer=False):
 # =======================
 
 # If you want to use the gui
-# color_gui(False)
+color_gui(False)
 
 # or just the function itself
 # color_plot('Bfile','Vfile',Epoch,period)

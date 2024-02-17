@@ -18,7 +18,7 @@ The list of OS's and Python versions listed below have been tested to be able to
 
 *  Macos- 3.8, 3.9, 3.10
 *  Ubuntu- 3.8, 3.9, 3.10
-*  Winsows- 3.8, 3.9, 3.10
+*  Windows- 3.8, 3.9, 3.10
 
 ***
 

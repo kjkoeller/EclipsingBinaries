@@ -194,7 +194,7 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
     aB_minus_V = B_V[0][3]
     quadcolor, colorerr = B_V[3:5:]
     if Rfile == '':
-        axs, fig = plot.multiplot((7, 7.5), height_ratios=[8, 4.5])
+        axs, _ = plot.multiplot((7, 7.5), height_ratios=[8, 4.5])
         mag = axs[0]
         bv = axs[1]
         mag.plot(Vphase, Vmag, 'og', ms=2)
@@ -451,10 +451,10 @@ def color_gui(developer=False):
     VRL_temp = Label(root, text='')
     VRL.grid(row=len(entries) + 4, column=0, columnspan=2)
     VRL_temp.grid(row=len(entries) + 5, column=0, columnspan=2)
-    max1 = Label(root, text='')
-    max2 = Label(root, text='')
-    max1.grid(row=len(entries) + 8, column=0, columnspan=2)
-    max2.grid(row=len(entries) + 9, column=0, columnspan=2)
+    # max1 = Label(root, text='')
+    # max2 = Label(root, text='')
+    # max1.grid(row=len(entries) + 8, column=0, columnspan=2)
+    # max2.grid(row=len(entries) + 9, column=0, columnspan=2)
     # B2=gui.Field(root,'B file',2,0)
     fs = 14
 
@@ -602,10 +602,10 @@ def color_gui(developer=False):
         BVL_temp.config(text='T_(B-V) = ' + str(format(BV_temp[0], ".4f")) + " +/- " + str(format(BV_temp[1], ".4f")),
                         bg='white', relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
 
-        max1.config(text='Phase -0.25 = ' + str(round(quadcolor, 6)), bg='white',
-                   relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
-        max2.config(text='Phase 0.25 = ' + str(format(BV_temp[0], ".4f")), bg='white',
-                    relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
+        # max1.config(text='Phase -0.25 = ' + str(round(quadcolor, 6)), bg='white',
+        #            relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
+        # max2.config(text='Phase 0.25 = ' + str(format(BV_temp[0], ".4f")), bg='white',
+        #             relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
         CreateToolTip(BVL, text=autowrap(
             'These values are calculated using an average of the (X-Y) values within phase 0.075 of quadrature (phase = +/- 0.25).'
             ' The given error is the standard\ndeviation of these values.', 50))

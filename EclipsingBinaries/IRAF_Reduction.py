@@ -140,7 +140,7 @@ def main(path="", calibrated="", pipeline=False, location="", dark_bool=True):
         flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region)
         science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region)
 
-
+# more observatory sites can be found here: https://github.com/astropy/astropy-data/blob/gh-pages/coordinates/sites.json
 def kpno():
     """
     Kitt Peak National Observatory default values
@@ -554,21 +554,11 @@ def add_header(pathway, fname, imagetyp, filter_name, hjd, ra, dec, trim_region,
     fits.setval(image_name, "EPOCH", value="J2000.0")
     # fits.setval(bias_image, "FILTER", value=filter_name)
     if imagetyp == "LIGHT":
-        if location.lower() == "bsuo":
-            # location of BSUO
-            obs_location = {
-                'lon': -85.411896,  # degrees
-                'lat': 40.199879,  # degrees
-                'elevation': 0.2873  # kilometers
-            }
-            bjd = BJD_TDB(hjd, obs_location, ra, dec)
-            fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
-        else:
-            bjd = BJD_TDB(hjd, location, ra, dec)
-            fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
+        bjd = BJD_TDB(hjd, location, ra, dec)
+        fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
 
 
-def BJD_TDB(hjd, loc, ra, dec):
+def BJD_TDB(hjd, site_name, ra, dec):
     """
     Converts HJD to BJD_TDB
 
@@ -578,8 +568,21 @@ def BJD_TDB(hjd, loc, ra, dec):
     :param loc: location of the observations
     :return: Newly calculated BJD_TDB that is light time corrected
     """
+    
+    if site_name == "bsuo":
+        # set the latitude and longitude of the BSUO site manually
+        loc = {
+            'lon': -85.411896,  # degrees
+            'lat': 40.199879,  # degrees
+            'elevation': 0.2873  # kilometers
+        }
+        obs = EarthLocation.from_geodetic(loc["lat"], loc["lon"], loc["elevation"])
+    else:
+        loc = EarthLocation.of_site(site_name)
+        # need to gather the specific lat, long, and elev. from the .geodetic command. This specifically lists information on each of the parameters but we only want the value and not the units
+        obs = EarthLocation.from_geodetic(loc.geodetic[0].value, loc.geodetic[1].value, loc.geodetic[2].value/1000) # converts the meters of the elevation to km
+        
     helio = Time(hjd, scale='utc', format='jd')
-    obs = EarthLocation.from_geodetic(loc["lon"], loc["lat"], loc["elevation"])
     star = SkyCoord(ra, dec, unit=(u.hour, u.deg))
     ltt = helio.light_travel_time(star, 'heliocentric', location=obs)
     guess = helio - ltt

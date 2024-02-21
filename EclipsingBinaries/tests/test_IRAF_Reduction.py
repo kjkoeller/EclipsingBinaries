@@ -1,7 +1,7 @@
 import unittest
 # from unittest import mock
 from unittest.mock import patch
-from .IRAD_Reduction import BJD_TDB
+from .IRAF_Reduction import BJD_TDB
 
 
 class TestBJDTDB(unittest.TestCase):

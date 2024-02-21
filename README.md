@@ -1,4 +1,5 @@
 [![Python OS 3.8, 3.9, 3.10](https://github.com/kjkoeller/Binary_Star_Research_Package/actions/workflows/ci_tests.yml/badge.svg)](https://github.com/kjkoeller/Binary_Star_Research_Package/actions/workflows/ci_tests.yml)
+[![Unit Tests](https://github.com/kjkoeller/EclipsingBinaries/actions/workflows/tests.yml/badge.svg)](https://github.com/kjkoeller/EclipsingBinaries/actions/workflows/tests.yml)
 [![Documentation Status](https://readthedocs.org/projects/eclipsingbinaries/badge/?version=latest)](https://eclipsingbinaries.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/EclipsingBinaries.svg)](https://badge.fury.io/py/EclipsingBinaries)
 [![GitHub release](https://img.shields.io/github/v/release/kjkoeller/Variable_Star_Research_Package)](https://github.com/kjkoeller/Variable_Star_Research_Package/releases/)
@@ -6,9 +7,15 @@
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/9cd9a15e47ab4ed7b78071d096ea099d)](https://www.codacy.com/gh/kjkoeller/EclipsingBinaries/dashboard?utm_source=github.com\&utm_medium=referral\&utm_content=kjkoeller/EclipsingBinaries\&utm_campaign=Badge_Grade)
 [![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
 
-# Binary Star Research Package
+# EclipsingBinaries
 
-A Python project for Ball State University's Variable Star Research Group. Check the [Wiki](https://eclipsingbinaries.readthedocs.io/en/latest/?badge=latest) for more detailed descriptions than the ones below and for usage details of each program.
+A Python project for Ball State University's Variable Star Research Group. The package can currently reduce data, find comparison stars from the APASS catalog, calculate and plot O-C values, find the color index and effective temperature, O'Connell effect parameters, and download TESS data and calculate TESS magnitudes from Gaia data.
+
+***
+
+## Documentation
+
+You can find the documentation at this [site](https://eclipsingbinaries.readthedocs.io/en/latest/?badge=latest#) and any questions can be talked about in the discussions page or in an issue.
 
 ***
 
@@ -73,7 +80,3 @@ This will print out all the options that are available to edit and change. The `
 *   pyia>=1.41
 
 ***
-
-## Documentation
-
-You can find the documentation at this site https://eclipsingbinaries.readthedocs.io/en/latest/?badge=latest# and any questions can be talked about in the discussions page or in an issue.

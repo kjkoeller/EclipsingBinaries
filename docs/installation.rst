@@ -7,19 +7,20 @@ Requirements
 
 EclipsingBinaries has the following requirements:
 
-- astropy>=5.1.1
+- astropy>=6.0.0
 - astroquery>=0.4.6
 - ccdproc>=2.4.0
-- matplotlib>=3.3.1
-- numpy>=1.19.1
-- pandas>=1.1.0
-- PyAstronomy>=0.18.0
-- scipy>=1.5.2
+- matplotlib>=3.5.1
+- numpy>=1.22.3
+- pandas>=1.4.2
+- PyAstronomy>=0.18.1
+- scipy>=1.9.3
 - statsmodels>=0.13.5
 - tqdm>=4.64.1
-- numba>=0.56.3
+- numba>=0.57.0
 - seaborn>=0.12.2
-- pyia>=1.3
+- pyia>=1.41
+- photutils>=1.8.0
 
 
 Installing EclipsingBinaries

@@ -1,4 +1,4 @@
-astropy>=5.2.2
+astropy>=6.0.0
 astroquery>=0.4.6
 ccdproc>=2.4.0
 matplotlib>=3.5.1

@@ -3,6 +3,9 @@
 Created on Sat Feb 22 16:09:28 2020
 @author: Alec Neal
 
+Last Updated: 04/05/2024
+Last Editor: Kyle Koeller
+
 Collection of functions, coefficients and equations commonly used
 with short-period variable stars, but many can be used more
 generally
@@ -107,57 +110,6 @@ def decimal_limit(a):
         b.append(num2)
     return b
 
-
-# import statsmodels.api as sm
-# from tqdm import tqdm
-
-# ======================================
-def importFile(inputFile, delimit='\t'):  # supports arbitrary # of columns
-    # begin making separate lists for each parameter
-    import csv
-    obslist = []
-    with open(inputFile, newline='') as Vvalues:
-        value_reader = csv.reader(Vvalues, delimiter=delimit)  # reads a tab delimited file (.txt)
-        for row in value_reader:  # makes list with all rows sequentially
-            obslist.append(row)
-
-    def makesplit(row):  # separates each row into a diff. list
-        rowlist = obslist[row]
-        rowlist2 = []
-        for para in rowlist:
-            rowlist2.append(float(para))
-        return rowlist2, len(rowlist2)
-
-    def makelist(parameter):
-        # parameter # inputs for makelist(#):
-        paralist = []
-        for n in range(len(obslist)):
-            paralist.append(makesplit(n)[0][parameter])
-        return paralist
-
-    columns = makesplit(0)[1]
-    masterlist = []
-    for column in range(columns):
-        masterlist.append(makelist(column))
-
-    return masterlist
-
-
-# ======================================
-def importFile_pd(inputFile, delimit='\t', header=None, file_type='text'):
-    if file_type == 'text':
-        file = pd.read_csv(inputFile, sep=delimit, header=header)
-    elif file_type == 'excel':
-        file = pd.read_excel(inputFile, sep=delimit, header=header)
-    else:
-        print('File type not currently supported. Choose text or excel type.')
-    columnlist = []
-    for column in range(len(list(file))):
-        columnlist.append(np.array(file[column]))
-        # print(columnlist)
-    return columnlist
-
-
 # ======================================
 class io:
     def importFile_pd(inputFile, delimit=None, header=None, file_type='text', engine='python', delim_whitespace=True):
@@ -175,32 +127,6 @@ class io:
             columnlist.append(list(file[column]))
             # print(columnlist)
         return columnlist
-
-    def print_and_save(rowlist, outName, save=False, _print=True, write='w', precision=8):
-        if _print == True:
-            for row in range(len(rowlist)):
-                # if rowlist[row][0] == float:
-                print(rowlist[row])
-        if save == True:
-            with open(outName, write) as output:
-                for row in range(len(rowlist)):
-                    print(rowlist[row], file=output)
-
-    def PaS_lists(masterlist, outName, rowlist=[], save=False, _print=True,
-                  write='w', sep='\t', index=False):
-        for row in range(len(masterlist[0])):
-            if index == True:
-                rowstring = str(row) + sep
-            else:
-                rowstring = ''
-            for column in range(len(masterlist)):
-                if column == len(masterlist) - 1:
-                    rowstring += str(masterlist[column][row])
-                else:
-                    rowstring += str(masterlist[column][row]) + sep
-            rowlist.append(rowstring)
-        io.print_and_save(rowlist, outName, save=save, _print=_print, write=write)
-
 
 # =======================================
 class calc:  # assortment of functions
@@ -238,25 +164,6 @@ class calc:  # assortment of functions
                 return x
 
     class poly:
-        def result(coeflist, value, deriv=False):
-            """
-            Result of a polynomial given an ascending order coefficient list, and
-            an x value.
-            """
-            # n0=0
-            # n=n0
-            # termlist=[]
-            # while(n<len(coeflist)):
-            # termlist.append(coeflist[n]*value**n)
-            # n+=1
-            # return sum(termlist)
-            # deg = len(coeflist)-1
-            # coeflist=np.array(coeflist)
-            # if deriv == True:
-            #
-
-            return sum(np.array(coeflist) * value ** np.arange(len(coeflist)))
-
         def error(coeflist, value, error):
             """
             Propagated uncertainty of a standard polynomial.
@@ -339,72 +246,6 @@ class calc:  # assortment of functions
             #                sum(np.array(coeferror) * value ** np.arange(len(coeflist)) ** 2))
 
     class error:
-        def per_diff(x1, x2):
-            return 100 * (abs(x1 - x2) / np.mean([x1, x2]))
-
-        def avg(errorlist):
-            error2list = []
-            for error in errorlist:
-                error2list.append(error ** 2)
-            return np.sqrt(sum(error2list)) * (1 / len(errorlist))
-
-        def sig_sum(errorlist):
-            SS = 0
-            for n in range(len(errorlist)):
-                SS += errorlist[n] ** 2
-            return np.sqrt(SS)
-
-        def weighted_average(valuelist, errorlist):
-            """
-            Returns the weighted average of a list of values, with
-            their corresponding errors. Also returns the uncertainty in the
-            weighted average, which is the reciprocal of the square
-            root of the sum of the reciprocal squared errors.
-            """
-            M = sum(1 / np.array(errorlist) ** 2)
-            w_average = 0
-            for n in range(len(errorlist)):
-                w_average += valuelist[n] / errorlist[n] ** 2
-            w_average /= M
-            ave_error = 1 / np.sqrt(M)
-            return w_average, ave_error, M
-
-        def binflux(fluxinbin, errorlist, average='N/A'):
-            if average == 'N/A':
-                return (calc.error.STD(fluxinbin) ** 2 + calc.error.avg(errorlist) ** 2) ** 0.5
-            else:
-                return (calc.error.STD(fluxinbin, average) ** 2 + calc.error.avg(errorlist) ** 2) ** 0.5
-
-        def truncnorm(size, lower=-3.0, upper=3.0, mean=0.0, sigma=1.0):
-            """
-            Returns a list (of specified size) of Gaussian deviates
-            from a capped standard deviation range.
-
-            Defaults to the traditional 3 sigma rule.
-            """
-            import scipy.stats as sci
-            return sci.truncnorm.rvs(lower, upper, loc=mean, scale=sigma, size=size)
-
-        def dnorm(x, mu=0, s=1):
-            return np.exp(-0.5 * ((x - mu) / s) ** 2) / (s * np.sqrt(2 * np.pi))
-
-        def red_X2(obslist, modellist, obserror):
-            """
-            Calculates the reduced chi squared.
-            Requires observed values, expected values (model),
-            and ideally the observed error. However, if the errors are not known,
-            simply make all values in obserror 1. This will then return the residual sum
-            of squares, which isn't really chi squared
-            """
-            X2v0 = 0
-            X2v = X2v0
-            for n in range(len(obslist)):
-                # print(X2v)
-                X2v += ((obslist[n] - modellist[n]) / obserror[n]) ** 2
-            return X2v
-            # return ((np.array(obslist)-np.array(modellist))/np.array(obserror))**2
-
-        # -----coefficient of determination-------------------------------------
         def SS_residuals(obslist, modellist):
             SS_res = 0
             for n in range(len(obslist)):
@@ -480,7 +321,6 @@ class calc:  # assortment of functions
 
                 def error(flux, fluxerr):
                     return (2.5 * fluxerr) / (flux * np.log(10))
-
 
 # ======================================
 class binning:
@@ -843,7 +683,6 @@ class binning:
         # print(len(section_polyphase))
         return [a, b], [c_MB, nc_MB], [section_polyphase, section_polyflux]
 
-
 # ======================================
 class FT:  # Fourier transform
     def coefficients(binnedvaluelist):
@@ -873,51 +712,6 @@ class FT:  # Fourier transform
         coslist[0] = np.mean(binnedvaluelist)
         sinlist[0] = 0
         return Fbfli, coslist, sinlist
-
-    def a_sigma(a, b, term, aterm, ob_phaselist, ob_fluxlist, ob_fluxerr, order, X2min, incr):
-        X20 = 0
-        X2 = X20
-        while (X2 < X2min + 1):
-            a[term] += abs(aterm * incr)
-            X2 = calc.error.red_X2(ob_fluxlist, FT.synth(a, b, ob_phaselist, order), ob_fluxerr)
-        uppersig = abs(a[term] - aterm)
-        print('\na' + str(term), '=', aterm)
-        print('bound\trelerr\tdX2')
-        print('upper\t' + str(round(uppersig / abs(aterm), 8)) + '\t' + str(round(X2 - X2min, 8)))
-
-        X2 = 0
-        a[term] = aterm
-        while (X2 < X2min + 1):
-            a[term] -= abs(aterm * incr)
-            X2 = calc.error.red_X2(ob_fluxlist, FT.synth(a, b, ob_phaselist, order), ob_fluxerr)
-        lowersig = abs(aterm - a[term])
-        print('lower\t' + str(round(lowersig / abs(aterm), 8)) + '\t' + str(round(X2 - X2min, 8)))
-        avgsig = (uppersig + lowersig) / 2
-        a[term] = aterm
-
-        return avgsig, uppersig, lowersig
-
-    def b_sigma(a, b, term, bterm, ob_phaselist, ob_fluxlist, ob_fluxerr, order, X2min, incr):
-        X20 = 0
-        X2 = X20
-        while (X2 < X2min + 1):
-            b[term] += abs(bterm * incr)
-            X2 = calc.error.red_X2(ob_fluxlist, FT.synth(a, b, ob_phaselist, order), ob_fluxerr)
-        uppersig = abs(b[term] - bterm)
-        print('\nb' + str(term), '=', bterm)
-        print('bound\trelerr\tdX2')
-        print('upper\t' + str(round(uppersig / abs(bterm), 8)) + '\t' + str(round(X2 - X2min, 8)))
-
-        X2 = 0
-        b[term] = bterm
-        while (X2 < X2min + 1):
-            b[term] -= abs(bterm * incr)
-            X2 = calc.error.red_X2(ob_fluxlist, FT.synth(a, b, ob_phaselist, order), ob_fluxerr)
-        lowersig = abs(bterm - b[term])
-        print('lower\t' + str(round(lowersig / abs(bterm), 8)) + '\t' + str(round(X2 - X2min, 8)))
-        avgsig = (uppersig + lowersig) / 2
-        b[term] = bterm
-        return avgsig, uppersig, lowersig
 
     def a_sig_fast(a, b, term, aterm, ob_phase, ob_flux, ob_fluxerr, order, dx0=1):
         C = calc.error.red_X2(ob_flux, FT.synth(a, b, ob_phase, order), ob_fluxerr) + 1
@@ -1045,7 +839,6 @@ class FT:  # Fourier transform
         int_unc *= 0.25 / np.pi ** 2
         int_unc += (a_unc[0] * phase) ** 2
         return np.sqrt(int_unc)
-
 
 # ======================================
 class OConnell:  # O'Connell effect
@@ -1266,8 +1059,6 @@ class OConnell:  # O'Connell effect
                 Islist.append(ob_fluxlist[n])
         dI_mean_obs = np.mean(Iplist) - np.mean(Islist)
         return dI_mean_obs
-    # ======================================
-
 
 # weighted averages
 def M(errorlist):  # sum of 1/errors
@@ -1282,19 +1073,6 @@ def M(errorlist):  # sum of 1/errors
 def wfactor(errorlist, n, M):
     return 1 / (errorlist[n] ** 2 * M)
 
-
-#
-def waverage(valuelist, errorlist):
-    if len(valuelist) != len(errorlist):
-        return print('value and errorlist must be the same length!')
-    else:
-        eM = M(errorlist)
-        weightlist = []
-        for n in range(len(valuelist)):
-            weightlist.append(valuelist[n] * wfactor(errorlist, n, eM))
-        return sum(weightlist)
-
-
 # ======================================
 class Flower:  # stuff from Flower 1996, Torres 2010
     class T:
@@ -1307,7 +1085,6 @@ class Flower:  # stuff from Flower 1996, Torres 2010
             temp = calc.poly.power(Flower.T.c, BV, 10)
             err = calc.poly.t_eff_err(Flower.T.c, BV, error, temp)
             return temp, err
-
 
 # ======================================
 class Harmanec:
@@ -1334,65 +1111,12 @@ class Red:  # interstellar reddening
             return Av * Red.J_H
         elif excess == 'V_R':
             return Av * Red.V_R
-            # ======================================
-            """
-class Mamajek:
-    class Neal:
-        class J_H:
-            c_mid=[3.934920128041114,0.8895591395282212,1.3185226299038,-1.1365787045090023]
-            c_mid_err=[0.0013808377120558396,0.01926953796459709,0.07206490291341995,0.07552387373486376]
-            index_mid=[20,61]
-            c_hot=[3.9253006273521307,-0.9392488066124933,32.67582345941105,102.26042302428266]
-            c_hot_err=[0.005195929961795398,0.2374344240357947,4.040173189461849,17.494703934010136]
-            index_mid=[0,21]
-        class J_K:
-            c_mid=[3.963409400157085,-0.8738766674313547,1.1370698408604998,-0.762949832900679]
-            c_mid_err=[0.0018735370947813071,0.017994316880777652,0.04788580544148338,0.03647350239691727]
-            index_mid=[20,65]
-            c_hot=[3.9771191568462094,-1.5700875569403,7.480410956406473,19.53906934141527]
-            c_hot_err=[0.004330082112926256,0.08274280036915709,1.3115844746167675,4.548730409302273]
-            index_mid=[0,21]"""
-
-
-# ======================================
-class classification:
-    def binary_type(alist):
-        a = alist
-        if a[4] > a[2] * (0.125 - a[2]):
-            qual = 'contact'
-        else:
-            qual = 'detached'
-
-        if qual == 'contact':
-            if abs(a[1]) < 0.05:
-                return 'W UMa'
-            else:
-                return 'Beta Lyrae'
-        else:
-            return 'Algol'
-
 
 # ======================================
 class plot:
     def amp(valuelist):
         # test documentation
         return max(valuelist) - min(valuelist)
-
-    def aliasing(phaselist, maglist, errorlist, alias=0.6):
-        phaselist_minus = np.array(phaselist) - 1
-        a_phaselist = []
-        a_maglist = []
-        a_errorlist = []
-        for n in range(len(phaselist)):
-            if phaselist[n] < alias:
-                a_phaselist.append(phaselist[n])
-                a_maglist.append(maglist[n])
-                a_errorlist.append(errorlist[n])
-            if phaselist_minus[n] > -alias:
-                a_phaselist.append(phaselist_minus[n])
-                a_maglist.append(maglist[n])
-                a_errorlist.append(errorlist[n])
-        return a_phaselist, a_maglist, a_errorlist
 
     def aliasing2(phaselist, maglist, errorlist, alias=0.6):
         phase = list(np.array(phaselist) - 1) + list(phaselist)
@@ -1408,236 +1132,12 @@ class plot:
                 a_error.append(error[n])
         return a_phase, a_mag, a_error
 
-    def magylim(maglist, pad=0.04, flip='on'):  # doc
-        amp = plot.amp(maglist)
-        if flip == 'off':
-            return plt.ylim(bottom=min(maglist) - pad * amp, top=max(maglist) + pad * amp)
-        else:
-            return plt.ylim(top=min(maglist) - pad * amp, bottom=max(maglist) + pad * amp)
-
-    # phase_major=0.25
-    # phase_minor=0.05
-    # top_major=0.1
-    # top_minor=0.025
-    # bottom_major=0.025
-    # bottom_minor=0.005
-    def residlist(obslist, modellist):
-        if len(obslist) != len(modellist):
-            print('ERROR: lists must be the same length!')
-            exit()
-        residlist = []
-        for n in range(len(obslist)):
-            residlist.append(obslist[n] - modellist[n])
-        return residlist
-
     def multiplot(figsize=(8, 8), dpi=256, height_ratios=[3, 1], hspace=0, sharex=True, sharey=False, fig=None):
         if fig == None:
             fig = plt.figure(1, figsize=figsize, dpi=dpi)
         axs = fig.subplots(len(height_ratios), sharex=sharex, sharey=sharey,
                            gridspec_kw={'hspace': hspace, 'height_ratios': height_ratios})
         return axs, fig
-
-    def value_resid_plot(ob_phase, ob_mag, synth_phase, synth_mag, resid, figsize=(8, 8), dpi=512,
-                         X=0.25, x=0.05, Y1=0.1, y1=0.025, Y2=0.025, y2=0.005, tickwidth=None,
-                         filterName='', h_ratios=[4, 1], synth_color='red', obs_color='black',
-                         obs_size=3.5, Y2label='', save=False, outputName='modelfit.png',
-                         usetex=False, synth_width=None, fontS=12, labelScale=1.2, tickScale=1,
-                         tickRatio=0.5):  # X=major ticks, x=minor
-        """
-        Creates two graphs on the same plot. Designed for the top part to be
-        the actual/synthetic data values, and the bottom the residuals.
-
-        -------required parameters------
-
-        ob_phase, ob_mag: Observational phases and magnitdues respectively
-
-        synth_phase, synth_mag: Synthetic or model phases/mags
-
-        resid: list of the residuals of obs - model
-
-        -------optional------
-
-        figsize: entered as tuple, of (length, height). Default is (8,8)
-
-        dpi: dots per inch, entered as integer, default is 512
-
-        X: major ticks on the x-axis (phase)
-
-        x: minor ticks on x-axis
-
-        Y1: major y-axis ticks for top plot
-
-        y1: minor y-axis ticks for top plot
-
-        """
-        fig = plt.figure(1, figsize, dpi=dpi)
-        axs = fig.subplots(2, sharex=True, sharey=False, gridspec_kw={'hspace': 0, 'height_ratios': h_ratios})
-        value = axs[0]
-        resids = axs[1]
-        # print(ob_phase)
-        value.plot(ob_phase, ob_mag, 'o', color=obs_color, ms=obs_size)
-        value.plot(synth_phase, synth_mag, '-', color=synth_color, linewidth=synth_width)
-        allvalues = list(ob_mag) + list(synth_mag)
-        value.set_ylim(bottom=max(allvalues) + plot.amp(allvalues) * 0.05,
-                       top=min(allvalues) - plot.amp(allvalues) * 0.06)
-        value.set_ylabel(filterName, usetex=usetex, fontsize=fontS * labelScale)
-
-        resids.plot(ob_phase, resid, 'o', color=obs_color, ms=obs_size)
-        resids.plot([-0.6, 0.6], [0, 0], '-', color=synth_color, linewidth=synth_width)
-        resids.set_ylim(bottom=max(resid) + plot.amp(resid) * 0.2, top=min(resid) - plot.amp(resid) * 0.2)
-        # resids.set_ylabel(r'$obs.-FT$')
-        resids.set_xlabel('$\Phi$', usetex=usetex, fontsize=fontS * labelScale)
-
-        plt.xlim(-0.65, 0.65)
-        value.spines['bottom'].set_visible(False)
-        resids.spines['top'].set_visible(False)
-
-        # tick nonsense
-        # top plot
-        bigtick = figsize[0] * 1.1 * tickScale
-        smalltick = bigtick * tickRatio
-        value.tick_params(axis='x', which='major', length=bigtick, width=tickwidth, direction='in', top=True,
-                          bottom=False, labelsize=fontS)
-        value.tick_params(axis='y', which='major', length=bigtick, width=tickwidth, direction='in', right=True,
-                          labelsize=fontS)
-        value.tick_params(axis='x', which='minor', length=smalltick, width=tickwidth, direction='in', top=True,
-                          bottom=False)
-        value.tick_params(axis='y', which='minor', length=smalltick, width=tickwidth, direction='in', right=True)
-        value.xaxis.set_major_locator(MultipleLocator(X))
-        value.xaxis.set_minor_locator(MultipleLocator(x))
-        value.yaxis.set_major_locator(MultipleLocator(Y1))
-        value.yaxis.set_minor_locator(MultipleLocator(y1))
-        value.spines['top'].set_linewidth(tickwidth)
-        value.spines['left'].set_linewidth(tickwidth)
-        value.spines['right'].set_linewidth(tickwidth)
-        # residual plot
-        resids.tick_params(axis='x', which='major', length=bigtick, width=tickwidth, direction='in', top=False,
-                           bottom=True, labelsize=fontS)
-        resids.tick_params(axis='y', which='major', length=bigtick, width=tickwidth, direction='in', right=True,
-                           labelsize=fontS)
-        resids.tick_params(axis='x', which='minor', length=smalltick, width=tickwidth, direction='in', top=False,
-                           bottom=True)
-        resids.tick_params(axis='y', which='minor', length=smalltick, width=tickwidth, direction='in', right=True)
-        resids.xaxis.set_major_locator(MultipleLocator(X))
-        resids.xaxis.set_minor_locator(MultipleLocator(x))
-        resids.yaxis.set_major_locator(MultipleLocator(Y2))
-        resids.yaxis.set_minor_locator(MultipleLocator(y2))
-        resids.spines['bottom'].set_linewidth(tickwidth)
-        resids.spines['left'].set_linewidth(tickwidth)
-        resids.spines['right'].set_linewidth(tickwidth)
-        # plt.savefig('NSVS_3792718_R_modelfit.eps')
-        plt.gca().xaxis.set_major_formatter(FormatStrFormatter('$%g$'))
-        if save == True:
-            plt.savefig(outputName, bbox_inches='tight')
-        plt.show()
-
-        return 'not-DONE'
-
-    """location 0-->1, normally goes from bottom to top, but will be reverse for 
-    stuff like magnitudes"""
-
-    def placetext(valuelist, location):
-        return min(valuelist) + plot.amp(valuelist) * location
-
-    def BVR_comphalves(aB, bB, aV, bV, aR, bR, order, resolution, fluxoff=0.2, save=False, outputName='noname.png',
-                       figsize=(6, 10), dpi=512, height_ratio=[7, 3], tickwidth=1.1, BRorder=-1,
-                       numbersize=12, str_scale=1.2, X=0.125, x=0.025, Y1=0.1,
-                       y1=0.02, Y2=0.01, y2=0.002):
-        Bft = FT.FT_plotlist(aB, bB, order, resolution)
-        FTphaselist = Bft[0]
-        B_FTlist = np.array(Bft[1])
-        V_FTlist = np.array(FT.FT_plotlist(aV, bV, order, resolution)[1])
-        R_FTlist = np.array(FT.FT_plotlist(aR, bR, order, resolution)[1])
-
-        res = resolution
-        halfway = int(res / 2)
-        firstphase = FTphaselist[:halfway + 1:]
-        # print(FTphaselist[halfway])
-        # print(firstphase)
-
-        B_1stflux = B_FTlist[:halfway + 1:]
-        B_2ndflux = np.array([B_1stflux[0]] + list(B_FTlist[res:halfway - 1:-1]))
-
-        V_1stflux = V_FTlist[:halfway + 1:]
-        V_2ndflux = np.array([V_1stflux[0]] + list(V_FTlist[res:halfway - 1:-1]))
-
-        R_1stflux = R_FTlist[:halfway + 1:]
-        R_2ndflux = np.array([R_1stflux[0]] + list(R_FTlist[res:halfway - 1:-1]))
-
-        # print(R_1stflux)
-        # print(R_2ndflux)
-
-        B_resid = B_1stflux - B_2ndflux
-        V_resid = V_1stflux - V_2ndflux
-        R_resid = R_1stflux - R_2ndflux
-        # -----------------------------------
-        firststyle = '-'
-        # ---------------
-        fig = plt.figure(1, figsize, dpi=dpi)
-        axs = fig.subplots(2, sharex=True, sharey=False, gridspec_kw={'hspace': 0, 'height_ratios': height_ratio})
-        flux = axs[0]
-        resid = axs[1]
-        plt.xlim(-0.025, 0.525)
-
-        flux.plot(firstphase, B_2ndflux - fluxoff * BRorder, firststyle, color='blue')
-        flux.plot(firstphase, B_1stflux - fluxoff * BRorder, '--', color='blue')
-        flux.plot(firstphase, V_2ndflux, firststyle, color='green')
-        flux.plot(firstphase, V_1stflux, '-.', color='green')
-        flux.plot(firstphase, R_2ndflux + fluxoff * BRorder, firststyle, color='red')
-        flux.plot(firstphase, R_1stflux + fluxoff * BRorder, ':', color='red')
-
-        #
-        resid.plot([-1, 1], [0, 0], '-', color='black', linewidth=tickwidth)
-        resid.plot(firstphase, B_resid, '--', color='blue')
-        resid.plot(firstphase, V_resid, '-.', color='green')
-        resid.plot(firstphase, R_resid, ':', color='red')
-
-        #
-        flux.spines['bottom'].set_visible(False)
-        resid.spines['top'].set_visible(False)
-        # X,x,Y1,y1,tickwidth,Y2,y2
-
-        flux.tick_params(axis='x', which='major', length=8, width=tickwidth, direction='in', top=True, bottom=False,
-                         labelsize=numbersize)
-        flux.tick_params(axis='y', which='major', length=8, width=tickwidth, direction='in', right=True,
-                         labelsize=numbersize)
-        flux.tick_params(axis='x', which='minor', length=4, width=tickwidth, direction='in', top=True, bottom=False)
-        flux.tick_params(axis='y', which='minor', length=4, width=tickwidth, direction='in', right=True)
-        flux.xaxis.set_major_locator(MultipleLocator(X))
-        flux.xaxis.set_minor_locator(MultipleLocator(x))
-        flux.yaxis.set_major_locator(MultipleLocator(Y1))
-        flux.yaxis.set_minor_locator(MultipleLocator(y1))
-        flux.spines['top'].set_linewidth(tickwidth)
-        flux.spines['left'].set_linewidth(tickwidth)
-        flux.spines['right'].set_linewidth(tickwidth)
-        flux.set_ylabel('Normalized Flux', fontsize=numbersize * str_scale)
-        # residual plot
-        resid.tick_params(axis='x', which='major', length=8, width=tickwidth, direction='in', top=False, bottom=True,
-                          labelsize=numbersize)
-        resid.tick_params(axis='y', which='major', length=8, width=tickwidth, direction='in', right=True,
-                          labelsize=numbersize)
-        resid.tick_params(axis='x', which='minor', length=4, width=tickwidth, direction='in', top=False, bottom=True)
-        resid.tick_params(axis='y', which='minor', length=4, width=tickwidth, direction='in', right=True)
-        resid.xaxis.set_major_locator(MultipleLocator(X))
-        resid.xaxis.set_minor_locator(MultipleLocator(x))
-        # resid.yaxis.set_major_locator(MultipleLocator(Y2))
-        # resid.yaxis.set_minor_locator(MultipleLocator(y2))
-        # resid.xaxis.set_major_locator(AutoLocator())
-        # resid.xaxis.set_minor_locator(AutoMinorLocator())
-        resid.yaxis.set_major_locator(AutoLocator())
-        resid.yaxis.set_minor_locator(AutoMinorLocator())
-        resid.spines['bottom'].set_linewidth(tickwidth)
-        resid.spines['left'].set_linewidth(tickwidth)
-        resid.spines['right'].set_linewidth(tickwidth)
-
-        resid.set_ylabel(r'$\Delta I(\Phi)_{\rm FT}$', fontsize=numbersize * str_scale)
-        resid.set_xlabel('Φ', fontsize=numbersize * str_scale)
-        plt.gca().xaxis.set_major_formatter(FormatStrFormatter('$%g$'))
-        if save == True:
-            plt.savefig(outputName, bbox_inches='tight')
-            print(outputName + ' saved.')
-        plt.show()
-        return 'notDONE'
 
     def sm_format(ax, X=None, x=None, Y=None, y=None, Xsize=7, xsize=3.5, tickwidth=1,
                   xtop=True, xbottom=True, yright=True, yleft=True, numbersize=12, autoticks=True,
@@ -1690,15 +1190,6 @@ class plot:
         # label.set_fontproperties('DejaVu Sans')
         return 'DONE'
 
-    def sm_phaseplot(figsize=(8, 6), dpi=256, xlabel='$\Phi$', ylabel='Intensity',
-                     X=0.25, x=0.05, Y=None, y=None, numbersize=12, labelscale=1.2):
-        ax = plt.figure(1, figsize, dpi).subplots()
-        plot.sm_format(ax, X=X, x=x, Y=Y, y=y, numbersize=numbersize)
-        plt.xlabel(xlabel, fontsize=numbersize * labelscale)
-        plt.ylabel(ylabel, fontsize=numbersize * labelscale)
-        return ax
-
-
 # ======================================
 class Roche:
     def Kopal_cyl(rho, phi, z, q):
@@ -1722,32 +1213,6 @@ class Roche:
         rw2 = rho ** 2 - 2 * (xcm * X + ycm * Y) + xcm ** 2 + ycm ** 2
         potent = 1 / s1 + q / s2 + 0.5 * (1 + q) * rw2 - 0.5 * q ** 2 / (1 + q)
         return potent
-
-    def gen_Kopal_cyl_x(rho, phi, x, q,
-                        xcm=None, ycm=0, zcm=0):
-        a1 = q / (1 + q)
-        a2 = 1 / (1 + q)
-        if xcm == None:
-            xcm = a1
-        xp = x - xcm
-        yp = rho * np.sin(phi) - ycm
-        zp = rho * np.cos(phi) - zcm
-        return 1 / np.sqrt((xp + a1) ** 2 + yp ** 2 + zp ** 2) + q / np.sqrt(
-            (xp - a2) ** 2 + yp ** 2 + zp ** 2) + 0.5 * (1 + q) * (xp ** 2 + yp ** 2) - 0.5 * q ** 2 / (1 + q)
-
-    def Kopal_xyz(x, y, z, q, xcm=0, ycm=0, zcm=0):
-        xp = x - xcm
-        yp = y - ycm
-        zp = z - zcm
-        return 1 / np.sqrt((xp + q / (1 + q)) ** 2 + yp ** 2 + zp ** 2) + q / np.sqrt(
-            (xp - 1 / (1 + q)) ** 2 + yp ** 2 + zp ** 2) + 0.5 * (1 + q) * (xp ** 2 + yp ** 2) - 0.5 * q ** 2 / (1 + q)
-
-    def gen2_Kopal_cyl(rho, phi, z, q, x0y0z0=(0, 0, 0)):
-        xp = rho * np.cos(phi) + x0y0z0[0]
-        yp = rho * np.sin(phi) + x0y0z0[1]
-        zp = z + x0y0z0[2]
-        rp = np.sqrt(xp ** 2 + yp ** 2 + zp ** 2)
-        return 1 / rp + q / np.sqrt(1 + rp ** 2 - 2 * xp) - q * xp + 0.5 * (1 + q) * (xp ** 2 + yp ** 2)
 
     def Lagrange_123(q, e=1e-8):
         L1 = lambda x: q / x ** 2 - x * (1 + q) - 1 / (1 - x) ** 2 + 1
@@ -1780,103 +1245,7 @@ class Roche:
                        xcm=None, ycm=0, zcm=0):
         return Roche.gen_Kopal_cyl(rho, phi, z, q, xcm=xcm, ycm=ycm, zcm=zcm) - Kopal
 
-    def Kopal_solve_rho(q, Kopal,
-                        z=0, guess=0.2, body='M1',
-                        azim_res=1000, azim_range=(0, 2 * np.pi), max_iter=500):
-        philist = np.linspace(azim_range[0], azim_range[1], azim_res)[:int(azim_res / 2):]
-        rholist = []
-        new_phi = []
-        for phi in philist:
-            pot = lambda rho: Roche.Kopal_zero(rho, phi, z, q, Kopal, body=body)
-            dpot = lambda rho: Roche.Kopal_zero(rho, phi, z, q, Kopal, 'd' + body)
-            rh = calc.Newton(pot, guess, fprime=dpot, e=1e-6, max_iter=max_iter)
-            if rh != False:
-                rholist.append(rh)
-                new_phi.append(phi)
-        rholist = np.array(rholist)
-        new_phi = np.array(new_phi)
-        if body == 'M2':
-            bodcorr = 1
-        else:
-            bodcorr = 0
-        x = rholist * np.cos(new_phi) + bodcorr
-        y = rholist * np.sin(new_phi)
-        return list(x) + list(x)[::-1], list(y) + list(-y)[::-1]
-
-    def gen_Kopal_solve_rho(q, Kopal,
-                            z=0, guess=0.2, xcm=None, ycm=0, zcm=0,
-                            azim_res=1000, azim_range=(0, 2 * np.pi), max_iter=500,
-                            reflect=False):
-        philist = np.linspace(azim_range[0], azim_range[1], azim_res)
-        rholist = []
-        new_phi = []
-        for phi in philist:
-            pot = lambda rho: Roche.gen_Kopal_zero(rho, phi, z, q, Kopal, xcm=xcm, ycm=ycm, zcm=zcm)
-            # dpot=lambda rho: Roche.Kopal_zero(rho,phi,z,q,Kopal,'d'+body)
-            rh = calc.Newton(pot, guess, e=1e-6, max_iter=max_iter)
-            if rh != False:
-                rholist.append(rh)
-                new_phi.append(phi)
-        rholist = np.array(rholist)
-        new_phi = np.array(new_phi)
-        # if body == 'M2':
-        # bodcorr=1
-        # else:
-        # bodcorr=0
-        x = rholist * np.cos(new_phi) - (xcm - q / (1 + q))
-        y = rholist * np.sin(new_phi) - ycm
-
-        if ycm != 0 and reflect == True:
-            return list(x) + list(x)[::-1], list(y) + list(-y)[::-1]
-        else:
-            return x, y
-
-    def Kopal_solve_rho_phi_x(q, Kopal, x,
-                              guess=0.3, xcm=None, ycm=0, zcm=0, azim_res=100,
-                              azim_range=(0, 2 * np.pi), max_iter=500, return_extra=False, weird_phi=False):
-        philist = np.linspace(azim_range[0], azim_range[1], azim_res)
-        if weird_phi == True:
-            philist = np.array(list(philist) + list(philist)[1:-1:])
-        rholist = []
-        new_phi = []
-        for phi in philist:
-            pot = lambda rho: Roche.gen_Kopal_cyl_x(rho, phi, x, q, xcm=xcm, ycm=ycm, zcm=zcm) - Kopal
-            rh = calc.Newton(pot, guess, max_iter=max_iter)
-            if rh != False:
-                rholist.append(rh)
-                new_phi.append(phi)
-        rholist = np.array(rholist)
-        new_phi = np.array(new_phi)
-        y = rholist * np.sin(new_phi) - ycm
-        z = rholist * np.cos(new_phi) - zcm
-        if return_extra == True:
-            return y, z, rholist, new_phi
-        else:
-            return y, z
-
-    def Kopal_one_solve(q, Kopal, phi, z, xcm=None, ycm=0, zcm=0, guess=0.3):
-        sol = lambda rho: Roche.gen_Kopal_cyl(rho, phi, z, q, xcm=xcm, ycm=ycm, zcm=zcm) - Kopal
-        return calc.Newton(sol, guess)
-
-    def crit_potentials(q):
-        L1, L2, L3 = Roche.Lagrange_123(q)
-        pL1 = Roche.gen_Kopal_cyl(1 - L1, 0, 0, q)
-        if q > 1:
-            pL23 = Roche.gen_Kopal_cyl(-L3, 0, 0, q)
-        else:
-            pL23 = Roche.gen_Kopal_cyl(1 + L2, 0, 0, q)
-        return pL1, pL23
-
-    def fill_factor(q, Kopal):
-        pL1, pL23 = Roche.crit_potentials(q)
-        return (Kopal - pL1) / (pL23 - pL1)
-
-    def rev_fill_factor(FF, q):
-        pL1, pL2 = Roche.crit_potentials(q)
-        return FF * (pL2 - pL1) + pL1
-
-
-class Pecaut:  # stuff from Pecaut and Mamajek 2013 https://arxiv.org/pdf/1307.2657.pdf
+class Pecaut:  # V-R effective temperature fit from Pecaut and Mamajek 2013 https://arxiv.org/pdf/1307.2657.pdf
     class T:
         # c=[c0,c1,c2,c3]
         c1 = [3.98007, -1.2742, 32.41373, 98.06855]  # -0.115 < V-R < 0.019

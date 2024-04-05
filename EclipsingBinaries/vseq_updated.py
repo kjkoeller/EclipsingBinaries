@@ -56,13 +56,11 @@ def conversion(a):
             num2 = abs((num1 - int(num1)) * 60)
             num3 = format((num2 - int(num2)) * 60, ".3f")
             num4 = float(num3)
-            formatted_time = f"{int(num1):02d}:{int(num2):02d}:{abs(num4):06.3f}"
-            b.append(formatted_time)
+            b.append(str(int(num1)) + ":" + str(int(num2)) + ":" + str(abs(num4)))
         else:
             num2 = (num1 - int(num1)) * 60
             num3 = format((num2 - int(num2)) * 60, ".3f")
-            formatted_time = f"{int(num1):02d}:{int(num2):02d}:{float(num3):06.3f}"
-            b.append(formatted_time)
+            b.append(str(int(num1)) + ":" + str(int(num2)) + ":" + str(num3))
 
     return b
 
@@ -77,7 +75,6 @@ def splitter(a):
     # makes the coordinate string into a decimal number from the text file
     step = []
     final = []
-
     for i in a:
         new = i.split(":")
         num1 = int(new[0])
@@ -345,25 +342,6 @@ class calc:  # assortment of functions
         def per_diff(x1, x2):
             return 100 * (abs(x1 - x2) / np.mean([x1, x2]))
 
-        def STD(valuelist, average='N/A', dof='population'):
-            """
-            Just use statistics.stdev, this is janky.
-            """
-            if average == 'N/A':
-                mean = sum(valuelist) / len(valuelist)
-            else:
-                mean = average
-            resid2list = []
-            for x in valuelist:
-                resid2list.append((x - mean) ** 2)
-            if dof == 'sample':
-                deg = 1
-            elif dof == 'population':
-                deg = 0
-            else:
-                return print('Invalid input, default is sample standard deviation, type p for population.')
-            return (sum(resid2list) / (len(valuelist) - deg)) ** 0.5
-
         def avg(errorlist):
             error2list = []
             for error in errorlist:
@@ -425,19 +403,6 @@ class calc:  # assortment of functions
                 X2v += ((obslist[n] - modellist[n]) / obserror[n]) ** 2
             return X2v
             # return ((np.array(obslist)-np.array(modellist))/np.array(obserror))**2
-
-        def X2_Pearson(obslist, modellist):
-            """
-            Calculates Pearson's chi squared. Application unknown.
-            """
-            X2 = 0
-            for n in range(len(obslist)):
-                X2 += ((obslist[n] - modellist[n]) ** 2) / modellist[n]
-            return X2
-
-        def polymodel_power(coeflist, value, obslist, modellist, obserror, incr, base=10, conf=1):
-            # X2min=
-            return 'idk'
 
         # -----coefficient of determination-------------------------------------
         def SS_residuals(obslist, modellist):
@@ -1015,31 +980,6 @@ class FT:  # Fourier transform
             unc_I += (a_unc[k] * np.cos(2 * np.pi * k * phase)) ** 2 + (b_unc[k] * np.sin(2 * np.pi * k * phase)) ** 2
         return np.sqrt(unc_I)
 
-    def FT_list(binnedfluxlist, order, resolution, start):
-        """
-        Similar to FT_plotlist(), but creates the coefficients from binnedfluxlist.
-        This code isn't really useful, use FT_plotlist
-        """
-        a = FT.coefficients(binnedfluxlist)[1]  # cosine coefficients
-        b = FT.coefficients(binnedfluxlist)[2]  # sine coeff.
-
-        phase0 = start
-        phase = phase0
-
-        FTfluxlist = []
-        FTphaselist = []
-        while (phase < 1 + start):  # makes a list of calculated flux amplitudes given a resolution
-            FTfluxlist.append(FT.sumatphase(phase, order, a, b))
-            FTphaselist.append(round(phase, 7))
-            phase += (1 / resolution)
-
-        FTmaglist = []
-        for flux in FTfluxlist:  # convert to magnitude
-            FTmaglist.append(-2.5 * np.log10(flux))
-
-        # ----------0-----------1----------2-----3-4
-        return FTphaselist, FTfluxlist, FTmaglist, a, b
-
     def FT_plotlist(a, b, order, resolution):
         """
         Generates the results of a FT given the coefficients.
@@ -1055,22 +995,6 @@ class FT:  # Fourier transform
             FTphaselist.append(round(phase, 7))
             phase += (1 / resolution)
         return FTphaselist, FTfluxlist, FTderivlist
-
-    def sim_ob_flux(FT, ob_fluxerr, lower=-3.0, upper=3.0):
-        """
-        Modifies a pre-generated synthetic Fourier light-curve amplitude list,
-        and alters each value by a capped 3 sigma Gaussian deviate of the observational
-        error given the index in ob_fluxerr. The two lists should be sorted by the same
-        phase, but sim_FT_curve does this naturally.
-
-        This is really only for the sim_FT_curve program, and not a standalone fucntion.
-        """
-        obs = len(ob_fluxerr)
-        devlist = calc.error.truncnorm(obs, lower=lower, upper=upper)
-        sim_ob_flux = []
-        for n in range(obs):
-            sim_ob_flux.append(FT[n] + devlist[n] * ob_fluxerr[n])
-        return sim_ob_flux
 
     def synth(a, b, ob_phaselist, order):
         """
@@ -1125,86 +1049,6 @@ class FT:  # Fourier transform
 
 # ======================================
 class OConnell:  # O'Connell effect
-    def OER(binnedfluxlist):  # don't use
-        """
-        Don't use
-        """
-        bins = len(binnedfluxlist)
-        i0 = 0
-        i = i0
-        firstmax = []
-        while (i < len(binnedfluxlist) / 2):
-            firstmax.append(binnedfluxlist[i])
-            i += 1
-        j0 = int(bins / 2)
-        j = j0
-        secondmax = []
-        while (j < len(binnedfluxlist)):
-            secondmax.append(binnedfluxlist[j])
-            j += 1
-        OER = (sum(secondmax) / sum(firstmax))
-        return OER
-
-    def OER2(binnedfluxlist):  # use this, actually don't
-        """
-        Don't use either really
-        """
-        bins = len(binnedfluxlist)
-        i0 = 0
-        i = i0
-        firstmax = []
-        while (i < len(binnedfluxlist) / 2):
-            firstmax.append(binnedfluxlist[i])
-            i += 1
-        j0 = int(bins / 2)
-        j = j0
-        secondmax = []
-        while (j < len(binnedfluxlist)):
-            secondmax.append(binnedfluxlist[j])
-            j += 1
-        OER = (sum(firstmax) / sum(secondmax))
-        return OER, sum(firstmax), sum(secondmax), firstmax, secondmax
-
-    def OER_error(binnedfluxlist, binnederrorlist):
-        """
-        Nope. I haven't touched these in a while.
-        Just use the FT stuff.
-        """
-        bins = len(binnederrorlist)
-        i0 = 0
-        i = i0
-        firsterrors2 = []
-        while (i < len(binnederrorlist) / 2):
-            firsterrors2.append(binnederrorlist[i] ** 2)
-            i += 1
-        sigmafirst = np.sqrt(sum(firsterrors2))
-
-        j0 = int(bins / 2)
-        j = j0
-        seconderrors2 = []
-        while (j < len(binnederrorlist)):
-            seconderrors2.append((binnederrorlist[j]) ** 2)
-            j += 1
-        sigmasecond = np.sqrt(sum(seconderrors2))
-
-        firsthalf = OConnell.OER2(binnedfluxlist)[1]
-        secondhalf = OConnell.OER2(binnedfluxlist)[2]
-
-        OER = firsthalf / secondhalf
-        sigmaOER = np.sqrt((sigmafirst / firsthalf) ** 2 + (sigmasecond / secondhalf) ** 2)
-
-        return sigmaOER, OER, sigmafirst, sigmasecond, firsthalf, secondhalf
-        # ==================================
-        # def OER_FT(a,b,order):
-        """
-        Calculates the O'Connell Effect Ratio (OER)
-        given the a and b coefficients.
-        """
-        # I0=sum(a[:order+1:])
-        # firsthalf=FT.integral(a,b,order,0,0.5)-I0*0.5
-        # secondhalf=FT.integral(a,b,order,0.5,1)-I0*0.5
-        # return firsthalf/secondhalf
-
     def OER_FT(a, b, order):
         nlist = np.arange(order + 1)[1::]
         A = 0.5 * sum(a[nlist])
@@ -1239,63 +1083,6 @@ class OConnell:  # O'Connell effect
         sig_A2 = 0.25 * sum(a_unc[nlist] ** 2)
         sig_B2 = sum((b_unc[nlist[::2]] / nlist[::2]) ** 2) / (np.pi ** 2)
         return np.sqrt(sig_A2 / A ** 2 + sig_B2 / B ** 2) / abs(1 + A / (2 * B) + B / (2 * A))
-        # h=
-
-    # ==================================
-    def LCA(binnedfluxlist):  # don't use
-        """
-        Don't use
-        """
-        bins = len(binnedfluxlist)
-        rev_binnedfluxlist = binnedfluxlist[::-1]
-        k0 = 0
-        k = k0
-        LCAaddlist = []
-        while (k < len(binnedfluxlist) / 2):
-            # kLCA=((binnedfluxlist[k]-rev_binnedfluxlist[k])**2)/((binnedfluxlist[k])**2)
-            kbin = binnedfluxlist[k]
-            revkbin = rev_binnedfluxlist[k]
-            LCAaddlist.append(((kbin - revkbin) ** 2) / (kbin) ** 2)
-            k += 1
-        LCA = ((sum(LCAaddlist)) / bins) ** (1 / 2)
-        # print('Light Curve Asymmetry (LCA):',LCA)
-        return LCA
-
-    def LCA2(binnedfluxlist):
-        """
-        Don't use
-        """
-        bins = len(binnedfluxlist)
-        rev_binnedfluxlist = binnedfluxlist[::-1]
-        k0 = 0
-        k = k0
-        LCAaddlist = []
-        while (k < len(binnedfluxlist) / 2):
-            # kLCA=((binnedfluxlist[k]-rev_binnedfluxlist[k])**2)/((binnedfluxlist[k])**2)
-            kbin = binnedfluxlist[k]
-            revkbin = rev_binnedfluxlist[k]
-            LCAaddlist.append(((kbin - revkbin) ** 2) / (kbin) ** 2)
-            k += 1
-        LCA = ((sum(LCAaddlist)) / bins) ** (1 / 2)
-        # print('Light Curve Asymmetry (LCA):',LCA)
-        return LCA
-
-    def LCA_error(binnedfluxlist, binnederrorlist):
-        """
-        Don't use
-        """
-        f = binnedfluxlist
-        sf = binnederrorlist  # 'sigma' f
-        g = f[::-1]  # reverse of binnedfluxlist
-        sg = sf[::-1]
-        k0 = 0
-        k = k0
-        sAddlist = []
-        while (k < len(binnedfluxlist) / 2):
-            sAddlist.append(2 * np.sqrt((sf[k] * (g[k] / (f[k] ** 2) - (g[k] ** 2) / (f[k] ** 3))) ** 2 + (
-                    sg[k] * g[k] / (f[k] ** 2) - 1 / (f[k])) ** 2))
-            k += 1
-        return 'not finished'
 
     # ==================================
     def LCA_FT(a, b, order, resolution):
@@ -1515,14 +1302,11 @@ class Flower:  # stuff from Flower 1996, Torres 2010
         c = [3.97914510671409, -0.654992268598245, 1.74069004238509, -4.60881515405716, 6.79259977994447,
              -5.39690989132252, 2.19297037652249, -0.359495739295671]
 
-        def Teff(BV, error=None):
+        def Teff(BV, error):
             # return 10**((Flower.T.c[0]*BV**0)+(Flower.T.c[1]*BV**1)+(Flower.T.c[2]*BV**2)+(Flower.T.c[3]*BV**3)+(Flower.T.c[4]*BV**4)+(Flower.T.c[5]*BV**5)+(Flower.T.c[6]*BV**6)+(Flower.T.c[7]*BV**7))
             temp = calc.poly.power(Flower.T.c, BV, 10)
-            if error is None:
-                return temp
-            else:
-                err = calc.poly.t_eff_err(Flower.T.c, BV, error, temp)
-                return temp, err
+            err = calc.poly.t_eff_err(Flower.T.c, BV, error, temp)
+            return temp, err
 
 
 # ======================================
@@ -2101,46 +1885,14 @@ class Pecaut:  # stuff from Pecaut and Mamajek 2013 https://arxiv.org/pdf/1307.2
         c1_err = [0.00499, 0.25431, 6.60765, 41.6003]
         c2_err = [0.00179, 0.01409, 0.03136, 0.0197]
 
-        def Teff(VR, error=None):
-            if error is None:
-                if -0.115 < VR < 0.019:
-                    temp = calc.poly.power(Pecaut.T.c1, VR, 10)
-                    return temp
-                elif 0.019 < VR < 1.079:
-                    temp = calc.poly.power(Pecaut.T.c2, VR, 10)
-                    return temp
-                else:
-                    return 0
+        def Teff(VR, error):
+            if -0.115 < VR < 0.019:
+                temp = calc.poly.power(Pecaut.T.c1, VR, 10)
+                err = calc.poly.t_eff_err(Pecaut.T.c1, VR, error, temp, coeferror=Pecaut.T.c1_err)
+                return temp, err
+            elif 0.019 < VR < 1.079:
+                temp = calc.poly.power(Pecaut.T.c2, VR, 10)
+                err = calc.poly.t_eff_err(Pecaut.T.c2, VR, error, temp, coeferror=Pecaut.T.c2_err)
+                return temp, err
             else:
-                if -0.115 < VR < 0.019:
-                    temp = calc.poly.power(Pecaut.T.c1, VR, 10)
-                    err = calc.poly.t_eff_err(Pecaut.T.c1, VR, error, temp, coeferror=Pecaut.T.c1_err)
-                    return temp, err
-                elif 0.019 < VR < 1.079:
-                    temp = calc.poly.power(Pecaut.T.c2, VR, 10)
-                    err = calc.poly.t_eff_err(Pecaut.T.c2, VR, error, temp, coeferror=Pecaut.T.c2_err)
-                    return temp, err
-                else:
-                    return 0, 0
-
-
-#######################################
-"""stuff
-
-BV=1.11
-Av=3.459
-VQuad=12.8708
-ob_RQuad=3.9371125
-
-VRc=Mamajek.Neal.VmRc.calcVmRc(BV,Av)
-print(VRc)
-RQuad=Mamajek.Neal.VmRc.RcQuad(BV,Av,VQuad)
-print(RQuad)
-Roffset=Mamajek.Neal.VmRc.Roffset(BV,Av,VQuad,ob_RQuad)
-print(Roffset)
-
-#print(Mamajek.Neal.JmK.T(12.082,11.812,0.181))
-"""
-#######################################
-
-# print(calc.error.weighted_average([11,10],[1,2]))
+                return 0, 0

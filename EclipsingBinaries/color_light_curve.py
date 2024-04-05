@@ -4,7 +4,7 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 02/16/2024
+Last Edited: 04/05/2024
 Editor: Kyle Koeller
 """
 
@@ -644,7 +644,7 @@ def color_gui(developer=False):
 # =======================
 
 # If you want to use the gui
-color_gui(False)
+# color_gui(False)
 
 # or just the function itself
 # color_plot('Bfile','Vfile',Epoch,period)

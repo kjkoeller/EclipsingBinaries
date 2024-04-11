@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 06/17/2023
+Last Edited: 09/09/2023
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -337,9 +337,12 @@ def bias(files, calibrated_data, path, pipeline):
 
         list_of_words = file_name.split(".")
         new_fname = "{}.fits".format(list_of_words[0])
+        # original_header = new_ccd.header  # save the original header
 
         # Save the result
         new_ccd.write(calibrated_data / new_fname, overwrite=overwrite)
+        # fits.writeto(calibrated_data / new_fname, new_ccd.data.astype('float32'), header=original_header,
+        #              overwrite=overwrite)
 
         add_header(calibrated_data, new_fname, "BIAS", "None", None, None, None, trim_region, overscan_region)
 
@@ -361,7 +364,10 @@ def bias(files, calibrated_data, path, pipeline):
 
     fname = "zero.fits"
     combined_bias.meta['combined'] = True
+    # original_header = combined_bias.header  # save the original header
     combined_bias.write(calibrated_data / fname, overwrite=overwrite)
+    # this only outputs the data image and not the mask or uncertainty and in single precision
+    # fits.writeto(calibrated_data / fname, combined_bias.data.astype('float32'), header=original_header, overwrite=overwrite)
 
     add_header(calibrated_data, fname, "BIAS", "None", None, None, None, trim_region, overscan_region)
 
@@ -409,9 +415,12 @@ def dark(files, zero, calibrated_path, overscan_region, trim_region):
         # new file name that uses the number from the original image
         list_of_words = file_name.split(".")
         new_fname = "{}.fits".format(list_of_words[0])
+        # original_header = sub_ccd.header  # save the original header
 
         # Save the result
         sub_ccd.write(calibrated_path / new_fname, overwrite=overwrite)
+        # fits.writeto(calibrated_path / new_fname, sub_ccd.data.astype('float32'), header=original_header,
+        #              overwrite=overwrite)
 
         add_header(calibrated_path, new_fname, "DARK", "None", None, None, None, trim_region, overscan_region)
 
@@ -433,7 +442,11 @@ def dark(files, zero, calibrated_path, overscan_region, trim_region):
 
     fname = "master_dark.fits"
     combined_dark.meta['combined'] = True
+    # original_header = combined_dark.header  # save the original header
+
     combined_dark.write(calibrated_path / fname, overwrite=overwrite)
+    # this only outputs the data image and not the mask or uncertainty and in single precision
+    # fits.writeto(calibrated_path / new_fname, combined_dark.data.astype('float32'), header=original_header, overwrite=overwrite)
 
     add_header(calibrated_path, fname, "DARK", "None", None, None, None, trim_region, overscan_region)
 
@@ -462,9 +475,12 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
         # new file name with the filter and number from the original file
         list_of_words = file_name.split(".")
         new_fname = "{}.fits".format(list_of_words[0])
+        original_header = final_ccd.header  # save the original header
 
         # Save the result
         final_ccd.write(calibrated_path / new_fname, overwrite=overwrite)
+        # fits.writeto(calibrated_path / new_fname, final_ccd.data.astype('float32'), header=original_header,
+        #              overwrite=overwrite)
 
         add_header(calibrated_path, new_fname, "FLAT", "None", None, None, None, trim_region, overscan_region)
 
@@ -488,8 +504,12 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
 
         combined_flats.meta['combined'] = True
         flat_file_name = 'master_flat_{}.fits'.format(filt.replace("Empty/", ""))
+        # original_header = combined_flats.header  # save the original header
 
         combined_flats.write(calibrated_path / flat_file_name, overwrite=overwrite)
+        # this only outputs the data image and not the mask or uncertainty and in single precision
+        # fits.writeto(calibrated_path / new_fname, combined_flats.data.astype('float32'),
+        #              header=original_header, overwrite=overwrite)
 
         add_header(calibrated_path, flat_file_name, "FLAT", "None", None, None, None, trim_region, overscan_region)
 
@@ -516,7 +536,10 @@ def science_images(files, calibrated_data, zero, combined_dark, trim_region, ove
         new_fname = "{}.fits".format(list_of_words[0])
 
         all_reds.append(reduced)
+        original_header = reduced.header  # save the original header
         reduced.write(calibrated_data / new_fname, overwrite=overwrite)
+        # this only outputs the data image and not the mask or uncertainty and in single precision
+        # fits.writeto(calibrated_data / new_fname, reduced.data.astype('float32'), header=original_header, overwrite=overwrite)
 
         hjd = light.header["JD-HELIO"]
         ra = light.header["RA"]

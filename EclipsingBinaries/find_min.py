@@ -4,7 +4,7 @@ Created:  07/03/2021
 Original Author: Alec Neal
 
 Last Edits Done By: Kyle Koeller
-Last Edited: 06/15/2023
+Last Edited: 04/19/2024
 """
 
 # from vseq_updated import calc, FT, io, plot  # testing purposes
@@ -79,7 +79,7 @@ def best_root(coef, lb, rb, filter_files):
 
 def calc_S(fracHJD, flux, guess_min, npairs=None):
     # if interp == None:
-    interp = scipy.interpolate.interp1d(fracHJD, flux)
+    interp = scipy.interpolate.interp1d(fracHJD, flux, fill_value="extrapolate")
     max_range = min([guess_min - min(fracHJD), max(fracHJD) - guess_min])
     N = 0  # represents the total number of obs. in the range
     for time in fracHJD:
@@ -103,6 +103,7 @@ def calc_S(fracHJD, flux, guess_min, npairs=None):
     # thing=100 # better signal with +10 but cheating?
     step = max_range / npairs
     klist = np.arange(1, npairs + 1, 1)
+    # print(guess_min)
     S = sum((interp(guess_min - klist * step) - interp(guess_min + klist * step)) ** 2)
 
     return S, K
@@ -192,7 +193,7 @@ def KvW(fracHJD, flux, discard=0.1, resolution=100, para_range=None, plot=False,
         polyx, polyy = calc.poly.polylist(coef, min(paraHJD), max(paraHJD), 100)
         ax.plot(polyx, polyy, 'b', lw=1)
         # plt.plot(paraHJD,results,'b',lw=1,label=r'${S}^{\prime}$')
-        ax.axvline(T_kw, color='b', label=r'$T_{\rm KW}=' + str(round(T_kw, 6)) + '$', linewidth=1, ls='--')
+        ax.axvline(T_kw, color='b', label=r"$T_{\rm KW}=" + str(round(T_kw, 6)) + '$', linewidth=1, ls='--')
         # ax.axvline(best_min[1], color='gray', label=r'$T_{\rm BF}=' + str(round(best_min[1], 6)) + '$', linewidth=1,
         #            ls='-.')
 
@@ -334,7 +335,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
         MIN.errorbar(fracHJD, all_flux[day], all_fluxerr[day], fmt='ok', ms=3, capsize=3, elinewidth=0.6, ecolor='gray',
                      capthick=0.6)  # ,'ok',ms=3)
 
-        fig.canvas.mpl_connect('key_press_event', lambda event: press(event, Z))
+        fig.canvas.mpl_connect('key_press_event', lambda event: press(event, Z, filter_files))
         # fig.canvas.get_tk_widget().focus_force()
 
         HJD_inbounds, flux_inbounds, fluxerr_inbounds = [], [], []
@@ -411,9 +412,9 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
         # totalerr = np.sqrt(sigt_kw ** 2 + kweeer ** 2)
         if sigt_kw != float(sigt_kw):
             MIN.axvline(t_kw, color='blue',
-                        label=r' $T_{\rm KW}=' + str(round(intday * 0 + t_kw, 6)) + '\pm$' + 'ERROR')
+                        label=r'$T_{\mathrm{KW}}=' + str(round(intday * 0 + t_kw, 6)) + '\pm$' + 'ERROR')
         else:
-            MIN.axvline(t_kw, color='blue', label=r' $  T_{\rm KW}=' + str(round(intday * 0 + t_kw, 6)) + '\pm' + str(
+            MIN.axvline(t_kw, color='blue', label=r'T_{\mathrm{KW}}=' + str(round(intday * 0 + t_kw, 6)) + '\pm' + str(
                 round(sigt_kw, 6)) + '$')
             print('err_kw:   ' + str(round(sigt_kw, 16)))
         print('')
@@ -456,7 +457,7 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
     return 'Done'
 
 
-def press(event, Z):
+def press(event, Z, filter_files):
     """
     Pressing a key will do something
 
@@ -479,14 +480,14 @@ def press(event, Z):
         lb = lb
         rb = event.xdata
         plt.close()
-        plot_obs(["896797_B.txt"], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
+        plot_obs(filter_files, day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
                  para_range=None, norm_method="norm")
     elif event.key == "a":
         # left boundary line
         lb = event.xdata
         rb = rb
         plt.close()
-        plot_obs(["896797_B.txt"], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
+        plot_obs(filter_files, day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
                  para_range=None, norm_method="norm")
     elif event.key == "w":
         # writes to a file
@@ -497,7 +498,7 @@ def press(event, Z):
     elif event.key == "n":
         # goes to the next "day"
         day += 1
-        plot_obs(["896797_B.txt"], day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
+        plot_obs(filter_files, day=day, lb=lb, rb=rb, order=order, resolution=resolution, npairs=npairs,
                  para_range=None, norm_method="norm")
     elif event.key == "h":
         print("\nPress 'a' for right boundary, 'd' for left boundary, 'n' for the next day, 'w' to write to a file, "

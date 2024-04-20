@@ -3,7 +3,7 @@ This script checks for new files in a directory every second for the start of a 
 
 Author: Kyle Koeller
 Created: 06/15/2023
-Last Edited: 08/21/2023
+Last Edited: 04/19/2024
 """
 
 from os import path, listdir
@@ -24,16 +24,22 @@ def monitor_directory():
     parser.add_argument("output", metavar="Output File", type=str, help="The path of the folder where the reduced images "
                                                                         "and all files will go.")
     parser.add_argument("--time", metavar="Time Threshold", type=int, default=3600,
-                        help="The time threshold in seconds. If no new file is added within this time, an alert is "
+                        help="Time threshold in seconds. If no new file is added within this time, an alert is "
                              "raised. Default is 3600 seconds (1 hour).")
-    parser.add_argument("--loc", metavar="Location", type=str, default="BSUO",
-                        help="The location of the telescope (BSUO, CTIO, LaPalma, KPNO). Default is BSUO.")
+    parser.add_argument("--loc", metavar="Location", type=str, default="None",
+                        help="Location of the telescope (BSUO, CTIO, LaPalma, KPNO). Default is None.")
     parser.add_argument("--ra", type=str, default="00:00:00",
-                        help="The right ascension of the target. Default is 00:00:00.", required=True)
+                        help="Right ascension of the target. Default is 00:00:00.", required=True)
     parser.add_argument("--dec", type=str, default="00:00:00",
-                        help="The declination of the target (if negative -00:00:00). Default is 00:00:00.", required=True)
+                        help="Declination of the target (if negative -00:00:00). Default is 00:00:00.", required=True)
     parser.add_argument("--name", metavar="Object Name", type=str, default="NSVS_254037",
-                        help="The name of the target and must include '_' instead of spaces. Default is NSVS_254037.")
+                        help="Name of the target and must include '_' instead of spaces. Default is NSVS_254037.")
+    parser.add_argument("--mem", metavar="Memory Usage", type=str, default="450e6",
+                        help="Memory maximum of 4.5 Gb is recommended which is 450e6 (i.e. 8.0 Gb would be 800e6). Default is 450e6.")
+    parser.add_argument("--gain", metavar="Gain", type=float, default=1.43,
+                        help="Gain of the camera used. Default is 1.43.")
+    parser.add_argument("--rdnoise", metavar="Readout Noise", type=float, default=10.83,
+                        help="Readout noise of the camera used. Default is 10.83.")
 
     # parse the arguments
     args = parser.parse_args()
@@ -76,7 +82,7 @@ def monitor_directory():
             current_latest_file = latest_file
 
     print("\n\nStarting data reduction.\n")
-    IRAF(path=args.input, calibrated=args.output, pipeline=True, location=args.loc)
+    IRAF(path=args.input, calibrated=args.output, pipeline=True, location=args.loc, gain=args.gain, rdnoise=args.rdnoise, mem_limit=args.mem)
     print("\n\nStarting comparison star selection.\n")
     radec_files = comparison_selector(ra=args.ra, dec=args.dec, pipeline=True, folder_path=args.output, obj_name=args.name)
     print("\n\nStarting photometry.\n")

@@ -217,7 +217,7 @@ def new_default():
     return gain, rdnoise, dark_bool
 
 
-def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_flat, gain=gain, rdnoise=rdnoise):
+def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_flat, gain, rdnoise):
     """
     This function takes the information for each section of the reduction process into a singular function for
     limits in duplication of the code.

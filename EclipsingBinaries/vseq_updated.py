@@ -164,6 +164,25 @@ class calc:  # assortment of functions
                 return x
 
     class poly:
+        def result(coeflist, value, deriv=False):
+            """
+            Result of a polynomial given an ascending order coefficient list, and
+            an x value.
+            """
+            # n0=0
+            # n=n0
+            # termlist=[]
+            # while(n<len(coeflist)):
+            # termlist.append(coeflist[n]*value**n)
+            # n+=1
+            # return sum(termlist)
+            # deg = len(coeflist)-1
+            # coeflist=np.array(coeflist)
+            # if deriv == True:
+            #
+
+            return sum(np.array(coeflist) * value ** np.arange(len(coeflist)))
+        
         def error(coeflist, value, error):
             """
             Propagated uncertainty of a standard polynomial.

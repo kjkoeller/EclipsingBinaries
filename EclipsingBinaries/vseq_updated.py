@@ -3,7 +3,7 @@
 Created on Sat Feb 22 16:09:28 2020
 @author: Alec Neal
 
-Last Updated: 04/05/2024
+Last Updated: 04/22/2024
 Last Editor: Kyle Koeller
 
 Collection of functions, coefficients and equations commonly used
@@ -246,11 +246,20 @@ class calc:  # assortment of functions
             #                sum(np.array(coeferror) * value ** np.arange(len(coeflist)) ** 2))
 
     class error:
+        def per_diff(x1, x2):
+            return 100 * (abs(x1 - x2) / np.mean([x1, x2]))
+
         def SS_residuals(obslist, modellist):
             SS_res = 0
             for n in range(len(obslist)):
                 SS_res += (obslist[n] - modellist[n]) ** 2
             return SS_res
+
+        def sig_sum(errorlist):
+            SS = 0
+            for n in range(len(errorlist)):
+                SS += errorlist[n] ** 2
+            return np.sqrt(SS)
 
         def SS_total(obslist):
             mean = np.mean(obslist)
@@ -274,6 +283,42 @@ class calc:  # assortment of functions
             times N-1
             """
             return 1 - calc.error.SS_residuals(obslist, modellist) / calc.error.SS_total(obslist)
+
+        def weighted_average(valuelist, errorlist):
+            """
+            Returns the weighted average of a list of values, with
+            their corresponding errors. Also returns the uncertainty in the
+            weighted average, which is the reciprocal of the square
+            root of the sum of the reciprocal squared errors.
+            """
+            M = sum(1 / np.array(errorlist) ** 2)
+            w_average = 0
+            for n in range(len(errorlist)):
+                w_average += valuelist[n] / errorlist[n] ** 2
+            w_average /= M
+            ave_error = 1 / np.sqrt(M)
+            return w_average, ave_error, M
+
+        def avg(errorlist):
+            error2list = []
+            for error in errorlist:
+                error2list.append(error ** 2)
+            return np.sqrt(sum(error2list)) * (1 / len(errorlist))
+
+        def red_X2(obslist, modellist, obserror):
+            """
+            Calculates the reduced chi squared.
+            Requires observed values, expected values (model),
+            and ideally the observed error. However, if the errors are not known,
+            simply make all values in obserror 1. This will then return the residual sum
+            of squares, which isn't really chi squared
+            """
+            X2v0 = 0
+            X2v = X2v0
+            for n in range(len(obslist)):
+                # print(X2v)
+                X2v += ((obslist[n] - modellist[n]) / obserror[n]) ** 2
+            return X2v
 
     # -------------------
     class astro:

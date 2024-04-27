@@ -3,7 +3,7 @@
 Created on Sat Feb 22 16:09:28 2020
 @author: Alec Neal
 
-Last Updated: 04/22/2024
+Last Updated: 04/27/2024
 Last Editor: Kyle Koeller
 
 Collection of functions, coefficients and equations commonly used
@@ -110,6 +110,7 @@ def decimal_limit(a):
         b.append(num2)
     return b
 
+
 # ======================================
 class io:
     def importFile_pd(inputFile, delimit=None, header=None, file_type='text', engine='python', delim_whitespace=True):
@@ -127,6 +128,7 @@ class io:
             columnlist.append(list(file[column]))
             # print(columnlist)
         return columnlist
+
 
 # =======================================
 class calc:  # assortment of functions
@@ -182,7 +184,7 @@ class calc:  # assortment of functions
             #
 
             return sum(np.array(coeflist) * value ** np.arange(len(coeflist)))
-        
+
         def error(coeflist, value, error):
             """
             Propagated uncertainty of a standard polynomial.
@@ -259,7 +261,8 @@ class calc:  # assortment of functions
                 return temp * np.log(base) * calc.poly.error(coeflist, value, error)
             else:
                 return temp * np.log(base) * np.sqrt(calc.poly.error(coeflist, value, error) ** 2 +
-                                                     sum(np.array(coeferror) * ((value ** np.arange(len(coeflist))) ** 2)))
+                                                     sum(np.array(coeferror) * (
+                                                                 (value ** np.arange(len(coeflist))) ** 2)))
             # return np.log(base) * calc.poly.power(coeflist, value, base) * \
             #        np.sqrt(calc.poly.error(coeflist, value, error) ** 2 + \
             #                sum(np.array(coeferror) * value ** np.arange(len(coeflist)) ** 2))
@@ -385,6 +388,7 @@ class calc:  # assortment of functions
 
                 def error(flux, fluxerr):
                     return (2.5 * fluxerr) / (flux * np.log(10))
+
 
 # ======================================
 class binning:
@@ -747,6 +751,7 @@ class binning:
         # print(len(section_polyphase))
         return [a, b], [c_MB, nc_MB], [section_polyphase, section_polyflux]
 
+
 # ======================================
 class FT:  # Fourier transform
     def coefficients(binnedvaluelist):
@@ -903,6 +908,7 @@ class FT:  # Fourier transform
         int_unc *= 0.25 / np.pi ** 2
         int_unc += (a_unc[0] * phase) ** 2
         return np.sqrt(int_unc)
+
 
 # ======================================
 class OConnell:  # O'Connell effect
@@ -1124,6 +1130,7 @@ class OConnell:  # O'Connell effect
         dI_mean_obs = np.mean(Iplist) - np.mean(Islist)
         return dI_mean_obs
 
+
 # weighted averages
 def M(errorlist):  # sum of 1/errors
     M0 = 0
@@ -1137,6 +1144,7 @@ def M(errorlist):  # sum of 1/errors
 def wfactor(errorlist, n, M):
     return 1 / (errorlist[n] ** 2 * M)
 
+
 # ======================================
 class Flower:  # stuff from Flower 1996, Torres 2010
     class T:
@@ -1149,6 +1157,7 @@ class Flower:  # stuff from Flower 1996, Torres 2010
             temp = calc.poly.power(Flower.T.c, BV, 10)
             err = calc.poly.t_eff_err(Flower.T.c, BV, error, temp)
             return temp, err
+
 
 # ======================================
 class Harmanec:
@@ -1175,6 +1184,7 @@ class Red:  # interstellar reddening
             return Av * Red.J_H
         elif excess == 'V_R':
             return Av * Red.V_R
+
 
 # ======================================
 class plot:
@@ -1254,6 +1264,7 @@ class plot:
         # label.set_fontproperties('DejaVu Sans')
         return 'DONE'
 
+
 # ======================================
 class Roche:
     def Kopal_cyl(rho, phi, z, q):
@@ -1309,6 +1320,7 @@ class Roche:
                        xcm=None, ycm=0, zcm=0):
         return Roche.gen_Kopal_cyl(rho, phi, z, q, xcm=xcm, ycm=ycm, zcm=zcm) - Kopal
 
+
 class Pecaut:  # V-R effective temperature fit from Pecaut and Mamajek 2013 https://arxiv.org/pdf/1307.2657.pdf
     class T:
         # c=[c0,c1,c2,c3]
@@ -1319,11 +1331,11 @@ class Pecaut:  # V-R effective temperature fit from Pecaut and Mamajek 2013 http
         c2_err = [0.00179, 0.01409, 0.03136, 0.0197]
 
         def Teff(VR, error):
-            if -0.115 < VR < 0.019:
+            if -0.115 < VR <= 0.019: # B1V to A1V
                 temp = calc.poly.power(Pecaut.T.c1, VR, 10)
                 err = calc.poly.t_eff_err(Pecaut.T.c1, VR, error, temp, coeferror=Pecaut.T.c1_err)
                 return temp, err
-            elif 0.019 < VR < 1.079:
+            elif 0.019 < VR < 1.079: # A1V to M3V
                 temp = calc.poly.power(Pecaut.T.c2, VR, 10)
                 err = calc.poly.t_eff_err(Pecaut.T.c2, VR, error, temp, coeferror=Pecaut.T.c2_err)
                 return temp, err

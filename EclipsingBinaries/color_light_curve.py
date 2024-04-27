@@ -4,12 +4,12 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 04/05/2024
+Last Edited: 04/27/2024
 Editor: Kyle Koeller
 """
 
-# from vseq_updated import io, calc, FT, binning, plot, Flower  # testing purposes
-from .vseq_updated import io, calc, FT, binning, plot, Flower
+# from vseq_updated import io, calc, FT, binning, plot, Flower, Pecaut  # testing purposes
+from .vseq_updated import io, calc, FT, binning, plot, Flower, Pecaut
 import numpy as np
 import matplotlib.pyplot as plt
 import statistics as st
@@ -142,24 +142,28 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     if index == "BV":
         temp = []
         # temp = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1), colorerr)
-        t1 = Flower.T.Teff(quadcolor - (0.641 / 3.1))
-        temp_high = Flower.T.Teff(quadcolor - (0.641 / 3.1) - colorerr)
-        temp_low = Flower.T.Teff(quadcolor - (0.641 / 3.1) + colorerr)
+        t1 = Flower.T.Teff(quadcolor - (0.641 / 3.1), colorerr)
+        temp_high = Flower.T.Teff(quadcolor - (0.641 / 3.1) - colorerr, colorerr)
+        temp_low = Flower.T.Teff(quadcolor - (0.641 / 3.1) + colorerr, colorerr)
 
-        temp_err = (temp_high - temp_low)/2
-        temp.append(t1)
+        # temp_err = (temp_high[0] - temp_low[0])/2
+        temp_err = np.sqrt(temp_high[1]**2 + temp_low[1]**2)
+        temp.append(t1[0])
         temp.append(temp_err)
         print('T_BV =', temp[0], '+/-', temp[1])
     elif index == "VR":
-        # temp = vseq.Pecaut.T.Teff(quadcolor - (0.58 / 3.1), colorerr)
+        t1 = Pecaut.T.Teff(quadcolor - (0.58 / 3.1), colorerr)
         temp = []
-        t1 = Flower.T.Teff(quadcolor - 0.561 * (0.641 / 3.1))
+        # t1 = Flower.T.Teff(quadcolor - 0.561 * (0.641 / 3.1), colorerr)
         # E_V-R = 0.561*E_B-V
-        temp_high = Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) - colorerr)
-        temp_low = Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) + colorerr)
+        temp_high = Pecaut.T.Teff(quadcolor - (0.58 / 3.1) - colorerr, colorerr)
+        temp_low = Pecaut.T.Teff(quadcolor - (0.58 / 3.1) + colorerr, colorerr)
+        # temp_high = Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) - colorerr, colorerr)
+        # temp_low = Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) + colorerr, colorerr)
 
-        temp_err = (temp_high - temp_low) / 2
-        temp.append(t1)
+        # temp_err = (temp_high[0] - temp_low[0]) / 2
+        temp_err = np.sqrt(temp_high[1] ** 2 + temp_low[1] ** 2)
+        temp.append(t1[0])
         temp.append(temp_err)
         if temp[0] == 0:
             print("V-R color cannot be used to determine temperature.")
@@ -344,7 +348,7 @@ def color_gui(developer=False):
     # disp=3
     # T=Text(root,height=disp,width=25)
     # T.grid(row=0,column=1)
-    Intro = Label(root, text='Color Light Curve - gui\nversion 0.4.1 (2/19/21)\nby Alec Neal\n')
+    Intro = Label(root, text='Color Light Curve - gui\nversion 0.4.2 (4/27/24)\nby Alec Neal\n')
     Intro.grid(row=0, column=0, columnspan=2)
     # Intro.config(font=('Arial',12))
     # T.insert(END,'Hello world!')

@@ -342,6 +342,16 @@ class calc:  # assortment of functions
                 X2v += ((obslist[n] - modellist[n]) / obserror[n]) ** 2
             return X2v
 
+        def truncnorm(size, lower=-3.0, upper=3.0, mean=0.0, sigma=1.0):
+            """
+            Returns a list (of specified size) of Gaussian deviates
+            from a capped standard deviation range.
+
+            Defaults to the traditional 3 sigma rule.
+            """
+            import scipy.stats as sci
+            return sci.truncnorm.rvs(lower, upper, loc=mean, scale=sigma, size=size)
+
     # -------------------
     class astro:
         class convert:
@@ -858,6 +868,22 @@ class FT:  # Fourier transform
             FTphaselist.append(round(phase, 7))
             phase += (1 / resolution)
         return FTphaselist, FTfluxlist, FTderivlist
+
+    def sim_ob_flux(FT, ob_fluxerr, lower=-3.0, upper=3.0):
+        """
+        Modifies a pre-generated synthetic Fourier light-curve amplitude list,
+        and alters each value by a capped 3 sigma Gaussian deviate of the observational
+        error given the index in ob_fluxerr. The two lists should be sorted by the same
+        phase, but sim_FT_curve does this naturally.
+
+        This is really only for the sim_FT_curve program, and not a standalone fucntion.
+        """
+        obs = len(ob_fluxerr)
+        devlist = calc.error.truncnorm(obs, lower=lower, upper=upper)
+        sim_ob_flux = []
+        for n in range(obs):
+            sim_ob_flux.append(FT[n] + devlist[n] * ob_fluxerr[n])
+        return sim_ob_flux
 
     def synth(a, b, ob_phaselist, order):
         """

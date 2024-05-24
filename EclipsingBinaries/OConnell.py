@@ -3,94 +3,115 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 02/27/2023
+Last Edited: 05/24/2024
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
 """
 
+# Importing necessary libraries
 import matplotlib.pyplot as plt
 from .vseq_updated import plot, binning, calc, FT, OConnell
+# from vseq_updated import plot, binning, calc, FT, OConnell  # testing purposes
 from tqdm import tqdm
 import numpy as np
 import statistics as st
 from os import path
 
+# Lambda function to calculate sigma of a function
 sig_f = lambda f, x, sig_x: abs(f(x + sig_x) - f(x - sig_x)) / 2
 
 
-def main():
-    print("How many filters are you going to use?")
-    while True:
-        prompt = input("Enter 3 if you are going to use BVR or less than 3 for a combination of them of type 'Close' "
-                       "to close the program: ")
-        if prompt.isnumeric():
-            if 0 < int(prompt) < 4:
-                break
+# Main function for calculating O'Connell Effect
+def main(filepath="", pipeline=False, radec_list=None, obj_name="", period=0, hjd=0):
+    if not pipeline:
+        # User interaction for number of filters
+        print("How many filters are you going to use?")
+        while True:
+            prompt = input(
+                "Enter 3 if you are going to use BVR or less than 3 for a combination of them of type 'Close' "
+                "to close the program: ")
+            if prompt.isnumeric():
+                if 0 < int(prompt) < 4:
+                    break
+                else:
+                    print("\nYou have entered in a wrong number not between 1-3. Please try again.\n")
+            elif prompt.lower() == "close":
+                exit()
             else:
-                print("\nYou have entered in a wrong number not between 1-3. Please try again.\n")
-        elif prompt.lower() == "close":
-            exit()
+                print("\nYou have entered a wrong value. Please try entering a number or the word 'Close'.\n")
+
+        # Logic to handle different numbers of filters
+        if prompt == "3":
+            # For 3 filters (BVR)
+            print("\nPlease enter full file pathways for the following prompt.\n")
+            while True:
+                infile1 = input("File 1 name: ")
+                infile2 = input("File 2 name: ")
+                infile3 = input("File 3 name: ")
+                if path.exists(infile1) and path.exists(infile2) and path.exists(infile3):
+                    break
+                else:
+                    print("\nOne of the files you have entered does not exist, please try all three again.\n")
+                    continue
+            hjd = float(input("What is the HJD: "))
+            period = float(input("What is the period: "))
+            outputile = input(
+                "What is the output file name and pathway with .pdf extension (i.e. C:\\folder1\\test.pdf): ")
+            multi_OConnell_total([infile1, infile2, infile3], hjd, period, order=10, sims=1000,
+                                 sections=4, section_order=7, plot_only=False, save=True, outName=outputile,
+                                 pipeline=pipeline)
+        elif prompt == "2":
+            # For 2 filters
+            print("\nPlease enter full file pathways for the following prompt.\n")
+            while True:
+                infile1 = input("File 1 name: ")
+                infile2 = input("File 2 name: ")
+                if path.exists(infile1) and path.exists(infile2):
+                    break
+                else:
+                    print("\nOne of the files you have entered does not exist, please try all three again.\n")
+                    continue
+            hjd = float(input("What is the HJD: "))
+            period = float(input("What is the period: "))
+            outputile = input(
+                "What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
+            multi_OConnell_total([infile1, infile2], hjd, period, order=10, sims=1000,
+                                 sections=4, section_order=7, plot_only=False, save=True, outName=outputile,
+                                 pipeline=pipeline)
         else:
-            print("\nYou have entered a wrong value. Please try entering a number or the word 'Close'.\n")
-    # If statement checks which value was entered for the 'prompt' and corresponds the correct number of files to enter
-    # for the O'Connel calculations
-    if prompt == "3":
-        print("\nPlease enter full file pathways for the following prompt.\n")
-        while True:
-            infile1 = input("File 1 name: ")
-            infile2 = input("File 2 name: ")
-            infile3 = input("File 3 name: ")
-            if path.exists(infile1) and path.exists(infile2) and path.exists(infile3):
-                break
-            else:
-                print("\nOne of the files you have entered does not exist, please try all three again.\n")
-                continue
-        hjd = float(input("What is the HJD: "))
-        period = float(input("What is the period: "))
-        outputile = input("What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
-        multi_OConnell_total([infile1, infile2, infile3], hjd, period, order=10, sims=1000,
-                             sections=4, section_order=7, plot_only=False, save=True, outName=outputile)
-    elif prompt == "2":
-        print("\nPlease enter full file pathways for the following prompt.\n")
-        while True:
-            infile1 = input("File 1 name: ")
-            infile2 = input("File 2 name: ")
-            if path.exists(infile1) and path.exists(infile2):
-                break
-            else:
-                print("\nOne of the files you have entered does not exist, please try all three again.\n")
-                continue
-        hjd = float(input("What is the HJD: "))
-        period = float(input("What is the period: "))
-        outputile = input("What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
-        multi_OConnell_total([infile1, infile2], hjd, period, order=10, sims=1000,
-                             sections=4, section_order=7, plot_only=False, save=True, outName=outputile)
+            # For 1 filter
+            print("\nPlease enter full file pathways for the following prompt.\n")
+            while True:
+                infile1 = input("File 1 name: ")
+                if path.exists(infile1):
+                    break
+                else:
+                    print("\nThe file you have entered does not exist, please try all three again.\n")
+                    continue
+            hjd = float(input("What is the HJD: "))
+            period = float(input("What is the period: "))
+            outputile = input(
+                "What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
+            multi_OConnell_total([infile1], hjd, period, order=10, sims=1000,
+                                 sections=4, section_order=7, plot_only=False, save=True, outName=outputile,
+                                 pipeline=pipeline)
     else:
-        print("\nPlease enter full file pathways for the following prompt.\n")
-        while True:
-            infile1 = input("File 1 name: ")
-            if path.exists(infile1):
-                break
-            else:
-                print("\nThe file you have entered does not exist, please try all three again.\n")
-                continue
-        hjd = float(input("What is the HJD: "))
-        period = float(input("What is the period: "))
-        outputile = input("What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
-        multi_OConnell_total([infile1], hjd, period, order=10, sims=1000,
-                             sections=4, section_order=7, plot_only=False, save=True, outName=outputile)
+        # If running in a pipeline mode
+        multi_OConnell_total([radec_list], hjd, period, order=10, sims=1000,
+                             sections=4, section_order=7, plot_only=False, save=True,
+                             outName=(filepath + "\\" + obj_name + ".pdf"), pipeline=pipeline)
 
-
-# print(sig_f(lambda x:1/x,3.4,0.01))
-# print(0.01/3.4**2)
 
 def quick_tex(thing):
+    """
+    Quick TeX formatting function.
+    """
     plt.rcParams['text.usetex'] = True
-    # thing
     plt.rcParams['text.usetex'] = False
 
 
+# Lambda function to calculate dI_phi
 dI_phi = lambda b, phase, order: 2 * sum(b[1:order + 1:] * np.sin(2 * np.pi * phase * np.arange(order + 1)[1::]))
 
 
@@ -98,6 +119,7 @@ def Half_Comp(filter_files, Epoch, period,
               FT_order=10, sections=4, section_order=8,
               resolution=512, offset=0.25, save=False, outName='noname_halfcomp.png',
               title=None, filter_names=None, sans_font=False):
+    # Setting font family if not using sans font
     if sans_font == False:
         plt.rcParams['font.family'] = 'serif'
         plt.rcParams['mathtext.fontset'] = 'dejavuserif'
@@ -112,14 +134,13 @@ def Half_Comp(filter_files, Epoch, period,
     dI.axhline(0, linestyle='-', color='black', linewidth=1)
     for band in range(bands):
         a, b = binning.polybinner(filter_files[band], Epoch, period, sections=sections,
-                                       norm_factor='alt', section_order=section_order)[0][:2:]
+                                  norm_factor='alt', section_order=section_order)[0][:2:]
         half = int(0.5 * resolution) + 1
         FT1 = FT.FT_plotlist(a, b, FT_order, resolution)
         FT2 = FT.FT_plotlist(a, -1 * b, FT_order, resolution)
         FTphase1, FTflux1 = FT1[0][:half:], FT1[1][:half:]
         FTphase2, FTflux2 = FT2[0][:half:], FT2[1][:half:]
 
-        # R2_halves.append(np.mean([calc.error.CoD(FTflux1,FTflux2),calc.error.CoD(FTflux2,FTflux1)]))
         R2_halves.append(calc.error.CoD(FTflux1, FTflux2))
         R2_halves.append(calc.error.CoD(FTflux2, FTflux1))
 
@@ -130,7 +151,7 @@ def Half_Comp(filter_files, Epoch, period,
         FTflux2 = np.array(FTflux2) + (1 - band) * offset
         flux.plot(FTphase1, FTflux1, linestyle=styles[band], color=colors[band])
         flux.plot(FTphase2, FTflux2, '-', color=colors[band])
-        # flux.annotate('B',xy=(-0.1,min(FTflux1)))
+
         if filter_names is not None:
             if len(filter_names) == bands:
                 flux.text(-0.12, FTflux1[0], filter_names[band], fontsize=18, rotation=0)
@@ -140,29 +161,13 @@ def Half_Comp(filter_files, Epoch, period,
     if filter_names is None:
         flux.set_ylabel('Flux', fontsize=16)
 
-    # mpl.rcParams['mathtext.fontset'] = 'dejavusans'
     plot.sm_format(flux, numbersize=15, X=0.125, x=0.025, xbottom=False, bottomspine=False, Y=None)
     plot.sm_format(dI, numbersize=15, X=0.125, x=0.025, xtop=False, topspine=False)
-    # plt.rcParams['text.usetex'] = True
-    # mpl.rcParams['mathtext.fontset'] = 'cm'
     dI.set_xlabel(r'$\Phi$', fontsize=18)
-    # plt.rcParams['text.usetex'] = False
     dI.set_ylabel(r'$\Delta I(\Phi)_{\rm FT}$', fontsize=18)
-    # dI.set_ylabel(r'$\Delta I(\Phi)_{\rm FT}$',fontsize=14.4)
     if title != '':
         flux.set_title(title, fontsize=14.4, loc='left')
-    '''
-    print(flux.get_ylim())
-    data_int=flux.yaxis.get_data_interval()
-    print(data_int)
-    allticks=sorted(list(flux.yaxis.get_minorticklocs())+list(flux.yaxis.get_majorticklocs()))
-    minorticks=flux.yaxis.get_minorticklocs()
-    tick_spacing=min(abs(np.array(minorticks[1::])-np.array(minorticks[:-1:])))
-    print(allticks)
-    print(tick_spacing)
-    flux.set_ylim(top=max(allticks[1:-1])+tick_spacing)#-tick_spacing)
-    '''
-    # print(flux.yaxis.get_ticks())
+
     if save:
         plt.savefig(outName, bbox_inches='tight')
         print(outName + ' saved.')
@@ -193,7 +198,7 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     """
     Generating master parameters from the observational data.
     """
-    # ============== DO NOT CHANGE ┬─┬ノ( º _ ºノ) ==============================
+    # ============================== DO NOT CHANGE ==============================
     PB = binning.polybinner(inputFile, Epoch, period, sections=sections, norm_factor=norm_factor,
                                  section_order=section_order, FT_order=FT_order)
     c_MB = PB[1][0]
@@ -205,8 +210,7 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     nc_sec_phases = nc_MB[5][0]
     c_sec_index = c_MB[5][3]
     nc_sec_index = nc_MB[5][3]
-    # norm_f = c_MB[4]
-    # ob_magerr = c_MB[3][2]
+
     a = PB[0][0]
     b = PB[0][1]  # Fourier coefficients
     # ==========================================================================
@@ -272,8 +276,6 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
         dIlist.append(OConnell.Delta_I_fixed(master_b[sim], FT_order))
         dIavelist.append(OConnell.Delta_I_mean_obs_noerror(ob_phaselist, ob_fluxlist, phase_range=0.05))
     # = end sim loop =
-
-    # dIaveerror=st.stdev(dIavelist)#no purpose, compining MC errors with observation errors is double-counting
 
     # === end Monte Carlo ===
 
@@ -358,25 +360,11 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
         OER, OER_total_err], [LCA, LCA_total_err], [a2_0125_a2, a2_0125_a2_err]
 
 
-# OConnell_total('NSVS3792718_B_apasscorr.txt',2457288.809054,0.438168,10,1000,sections=2,section_order=8)
-# OConnell_total('NSVS3792718_V_apasscorr.txt',2457288.809054,0.438168,10,1000,sections=2,section_order=8)
-# OConnell_total('NSVS3792718_R_apasscorr.txt',2457288.809054,0.438168,10,100,sections=2,section_order=8)
-
-# OConnell_total("254037_B.txt", 2458403.58763, 0.317471, 10, 1000, sections=2, section_order=8)
-
-# OConnell_total('NSVS5214334_B3_mags.txt',2459016.769744,0.345551,10,10000,sections=8,section_order=3)
-# OConnell_total('NSVS5214334_V4_mags.txt',2459016.769744,0.345551,10,10000,sections=8,section_order=3)
-# OConnell_total('NSVS5214334_R3_mags.txt',2459016.769744,0.345551,10,10000,sections=8,section_order=3)
-
 def multi_OConnell_total(filter_files, Epoch, period, order=10,
                          sims=1000, sections=4, section_order=8,
                          norm_factor='alt', starName='', filterNames=[r'$\rm B$', r'$\rm V$', r'$\rm R_C$'],
                          FT_order=10, FTres=500, plot_only=False,
-                         plotoff=0.25, save=False, outName='noname.png'):
-    """
-    does multiple things.
-    """
-
+                         plotoff=0.25, save=False, outName='noname.png', pipeline=False):
     """
     Half comparison plot. The light curve is mirroed along phase = 0, so that
     similar phases can be compared (should be the in theory). This gives an
@@ -391,7 +379,7 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
     Actual OConnell stuff, set plot_only=True if you just want the
     half-comparison plot---so you don't have to wait forever just for a plot!
     """
-    if plot_only != True:
+    if not plot_only:
         filters = len(filter_files)
         a_all = []
         a_err_all = []  # list set up crap
@@ -431,10 +419,9 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
             LCAs_err.append(oc[5][1])
             a22s.append(oc[6][0])
             a22s_err.append(oc[6][1])
-            # there's probably an easier way to do this (?), oh well.
 
         """
-        LaTeX table stuff, don't change unless you know what you're doing!
+        LaTeX table creation, don't change unless you know what you're doing!
         """
         table_header = '\\begin{table}[H]\n' + '\\begin{center}\n' + '\\begin{tabular}{c|'
         for band in range(filters):
@@ -476,7 +463,7 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
         output += '\\hline\n' + '\\end{tabular}\n' + '\\caption{Fourier and O\'Connell stuff (' + str(
             sims) + ' sims)}\n' + '\\label{tbl:OConnell}\n' + '\\end{center}\n' + '\\end{table}\n'
         """
-        End LaTeX table stuff.
+        End LaTeX table creation
         """
         print(output)
         outputfile = input("Please enter an output file name without the extension: ")
@@ -484,13 +471,6 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
         file.write(output)
         file.close()
     return 'nada'
-
-
-# multi_OConnell_total(['NSVS5214334_B3_mags.txt','NSVS5214334_V4_mags.txt','NSVS5214334_R3_mags.txt'],2459016.769744,0.345551,
-# order=10,sims=100,sections=8,section_order=3,plot_only=True,plotoff=0.2,save=False,outName='NSVS5214334_BVR_comps.pdf')
-
-# multi_OConnell_total(['NSVS3792718_B_apasscorr.txt','NSVS3792718_V_apasscorr.txt','NSVS3792718_R_apasscorr.txt'],2457288.809054,0.438168,
-# order=10,sims=10000,sections=4,section_order=7,plot_only=True)
 
 if __name__ == '__main__':
     main()

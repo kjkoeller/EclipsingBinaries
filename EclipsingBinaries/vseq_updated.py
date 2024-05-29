@@ -318,7 +318,7 @@ class calc:  # assortment of functions
             Returns:
                 float: Propagated uncertainty of the power polynomial.
             """
-            return abs(error * np.log(base) * power(coeflist, value, base))
+            return abs(calc.poly.error(coeflist, value, error) * np.log(base) * calc.poly.power(coeflist, value, base))
 
         def t_eff_err(coeflist, value, error, temp, coeferror=[], base=10):
             """
@@ -640,7 +640,7 @@ class binning:
         phase = phase0
         while (phase < 1):
             binnedphaselist.append(phase)
-            binnedfluxlist.append(np.mean(makebin(phase, bins, phasefluxlist)[1]))
+            binnedfluxlist.append(np.mean(binning.makebin(phase, bins, phasefluxlist)[1]))
             phase += dphase
         return binnedphaselist, binnedfluxlist
 
@@ -683,7 +683,7 @@ class binning:
         binned = binall(bins, phaseflux)
         binnedphaselist = binned[0]
         binnedfluxlist = binned[1]
-        normed = norm_flux(binnedfluxlist, fluxlist, fluxlist)
+        normed = binning.norm_flux(binnedfluxlist, fluxlist, fluxlist)
         n_binnedfluxlist = normed[0]
         n_ob_fluxlist = normed[1]
         return binnedphaselist, binnedfluxlist, n_binnedfluxlist, n_ob_fluxlist

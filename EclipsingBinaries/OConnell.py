@@ -3,7 +3,7 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 05/24/2024
+Last Edited: 05/29/2024
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -121,98 +121,122 @@ def Half_Comp(filter_files, Epoch, period,
               title=None, filter_names=None, sans_font=False):
     # Setting font family if not using sans font
     if sans_font == False:
-        plt.rcParams['font.family'] = 'serif'
-        plt.rcParams['mathtext.fontset'] = 'dejavuserif'
-    bands = len(filter_files)
-    axs, fog = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
-    flux = axs[0]
-    dI = axs[1]
-    colors = ['blue', 'limegreen', 'red', 'm']
-    styles = ['--', '-.', ':', '--']
+        plt.rcParams['font.family'] = 'serif'  # Set font family to serif if sans_font is False
+        plt.rcParams['mathtext.fontset'] = 'dejavuserif'  # Set math font to serif if sans_font is False
 
-    R2_halves = []
+    # Calculate the number of bands
+    bands = len(filter_files)
+
+    # Create subplots for flux and dI
+    axs, fog = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
+    flux = axs[0]  # Flux subplot
+    dI = axs[1]  # dI subplot
+
+    colors = ['blue', 'limegreen', 'red', 'm']  # Color list for plots
+    styles = ['--', '-.', ':', '--']  # Line styles for plots
+
+    R2_halves = []  # List to store R^2 values for each band
+
+    # Draw horizontal line at y=0 on dI subplot
     dI.axhline(0, linestyle='-', color='black', linewidth=1)
+
+    # Loop over each band
     for band in range(bands):
+        # Binning of data
         a, b = binning.polybinner(filter_files[band], Epoch, period, sections=sections,
                                   norm_factor='alt', section_order=section_order)[0][:2:]
-        half = int(0.5 * resolution) + 1
+
+        half = int(0.5 * resolution) + 1  # Calculate half index for resolution
+
+        # Compute Fourier Transform for positive and negative bins
         FT1 = FT.FT_plotlist(a, b, FT_order, resolution)
         FT2 = FT.FT_plotlist(a, -1 * b, FT_order, resolution)
-        FTphase1, FTflux1 = FT1[0][:half:], FT1[1][:half:]
-        FTphase2, FTflux2 = FT2[0][:half:], FT2[1][:half:]
+        FTphase1, FTflux1 = FT1[0][:half:], FT1[1][:half:]  # Positive phase and flux
+        FTphase2, FTflux2 = FT2[0][:half:], FT2[1][:half:]  # Negative phase and flux
 
+        # Calculate coefficient of determination (R^2) between positive and negative fluxes
         R2_halves.append(calc.error.CoD(FTflux1, FTflux2))
         R2_halves.append(calc.error.CoD(FTflux2, FTflux1))
 
-        dIlist = []
+        dIlist = []  # List to store dI values
         for phase in FTphase1:
-            dIlist.append(dI_phi(b, phase, FT_order))
+            dIlist.append(dI_phi(b, phase, FT_order))  # Calculate dI values
+
+        # Adjust flux values for plotting
         FTflux1 = np.array(FTflux1) + (1 - band) * offset
         FTflux2 = np.array(FTflux2) + (1 - band) * offset
+
+        # Plot flux and dI
         flux.plot(FTphase1, FTflux1, linestyle=styles[band], color=colors[band])
         flux.plot(FTphase2, FTflux2, '-', color=colors[band])
 
+        # Add filter names to flux subplot if provided
         if filter_names is not None:
             if len(filter_names) == bands:
                 flux.text(-0.12, FTflux1[0], filter_names[band], fontsize=18, rotation=0)
+
+        # Plot dI
         dI.plot(FTphase1, dIlist, linestyle=styles[band], color=colors[band])
 
+    # Set x-axis limit for flux subplot
     plt.xlim(-0.025, 0.525)
+
+    # Set y-axis label for flux subplot if filter_names is None
     if filter_names is None:
         flux.set_ylabel('Flux', fontsize=16)
 
+    # Format subplots
     plot.sm_format(flux, numbersize=15, X=0.125, x=0.025, xbottom=False, bottomspine=False, Y=None)
     plot.sm_format(dI, numbersize=15, X=0.125, x=0.025, xtop=False, topspine=False)
-    dI.set_xlabel(r'$\Phi$', fontsize=18)
-    dI.set_ylabel(r'$\Delta I(\Phi)_{\rm FT}$', fontsize=18)
+    dI.set_xlabel(r'$\Phi$', fontsize=18)  # Set x-axis label for dI subplot
+    dI.set_ylabel(r'$\Delta I(\Phi)_{\rm FT}$', fontsize=18)  # Set y-axis label for dI subplot
+
+    # Set title for flux subplot if title is not empty
     if title != '':
         flux.set_title(title, fontsize=14.4, loc='left')
 
+    # Save figure if save is True
     if save:
         plt.savefig(outName, bbox_inches='tight')
         print(outName + ' saved.')
-    plt.show()
 
-    # reset to mpl default style
+    plt.show()  # Show the plot
+
+    # Reset font settings to default
     plt.rcParams['font.family'] = 'sans'
     plt.rcParams['mathtext.fontset'] = 'dejavusans'
 
-    # print('R^2 half =',(calc.error.CoD(FTflux1,FTflux2)+calc.error.CoD(FTflux2,FTflux1))/2)
-    # print(R2_halves)
-    # print(1-np.mean(R2_halves),'+/-',statistics.stdev(R2_halves))
-    # print()
-
-    return print('\nDone.')
+    return print('\nDone.')  # Return "Done" message
 
 
 def OConnell_total(inputFile, Epoch, period, order, sims=1000,
                    sections=4, section_order=8, norm_factor='alt',
                    starName='', filterName='', FT_order=10, FTres=500):
     """
-    This does things.
-    Monte Carlo errors are probably underestimates.
+    This function calculates various parameters related to the O'Connell Effect.
+    It performs Monte Carlo simulations to estimate errors.
     Approximate runtime: ~ sims/1000 minutes.
-    glhf
     """
 
     """
     Generating master parameters from the observational data.
     """
     # ============================== DO NOT CHANGE ==============================
+    # Binning the data
     PB = binning.polybinner(inputFile, Epoch, period, sections=sections, norm_factor=norm_factor,
-                                 section_order=section_order, FT_order=FT_order)
-    c_MB = PB[1][0]
-    nc_MB = PB[1][1]
-    ob_phaselist = c_MB[0][1]
-    ob_fluxlist = c_MB[1][1]
-    ob_fluxerr = c_MB[1][2]
-    c_sec_phases = c_MB[5][0]
-    nc_sec_phases = nc_MB[5][0]
-    c_sec_index = c_MB[5][3]
-    nc_sec_index = nc_MB[5][3]
+                            section_order=section_order, FT_order=FT_order)
+    c_MB = PB[1][0]  # Correct phase bins and fluxes
+    nc_MB = PB[1][1]  # Non-corrected phase bins and fluxes
+    ob_phaselist = c_MB[0][1]  # Corrected phase list
+    ob_fluxlist = c_MB[1][1]  # Corrected flux list
+    ob_fluxerr = c_MB[1][2]  # Corrected flux error list
+    c_sec_phases = c_MB[5][0]  # Corrected section phases
+    nc_sec_phases = nc_MB[5][0]  # Non-corrected section phases
+    c_sec_index = c_MB[5][3]  # Corrected section index
+    nc_sec_index = nc_MB[5][3]  # Non-corrected section index
 
-    a = PB[0][0]
-    b = PB[0][1]  # Fourier coefficients
+    a = PB[0][0]  # Fourier coefficients (cosine terms)
+    b = PB[0][1]  # Fourier coefficients (sine terms)
     # ==========================================================================
 
     FTsynth = FT.synth(a, b, ob_phaselist, FT_order)  # synthetic FT curve
@@ -226,7 +250,7 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     nc_master_simflux = []
     master_polyflux = []
     """
-    ^List of the resampled polynomial fluxes. Each embedded list is different 
+    List of the resampled polynomial fluxes. Each embedded list is different 
     because the generating data has been Monte Carloed.
     """
     master_FTflux = []  # FT fluxes resulting from the simulations
@@ -262,8 +286,8 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
 
         # Generating polynomial resampled fluxes for each simulation.
         minipoly = binning.minipolybinner(c_sec_phases, c_master_simflux[sim],
-                                               nc_sec_phases, nc_master_simflux[sim],
-                                               section_order)
+                                          nc_sec_phases, nc_master_simflux[sim],
+                                          section_order)
         master_polyflux.append(minipoly[1])
 
         # Calculating various parameters for each simulation.
@@ -329,11 +353,10 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     Delta_I_ave = DIave[0]
     Delta_I_ave_err = DIave[1]
 
-    # == pizza time ==
+    # == print parameters ==
     r = lambda x: round(x, 5)
 
     valerr = lambda x, dx, label, PRECISION=6: print(label + ' =', round(x, PRECISION), '+/-', round(dx, PRECISION))
-    # print('\nOER =',r(OER),'+/-',r(OER_total_err))
 
     print('\n')
     valerr(a[1], a_total_err[1], 'a1')
@@ -353,9 +376,6 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
 
     valerr(Delta_I_ave, Delta_I_ave_err, 'Delta_I_ave')
 
-    # print('LCA =',r(LCA),'+/-',LCA_total_err)
-    # print('Delta_I =',Delta_I_025,'+/-',Delta_I_025_total_err)
-    # print('')
     return [a, a_total_err], [b, b_total_err], [Delta_I_025, Delta_I_025_total_err], [Delta_I_ave, Delta_I_ave_err], [
         OER, OER_total_err], [LCA, LCA_total_err], [a2_0125_a2, a2_0125_a2_err]
 
@@ -366,23 +386,20 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
                          FT_order=10, FTres=500, plot_only=False,
                          plotoff=0.25, save=False, outName='noname.png', pipeline=False):
     """
-    Half comparison plot. The light curve is mirroed along phase = 0, so that
-    similar phases can be compared (should be the in theory). This gives an
-    intuitive visual of the O'Connell effect, unlike the barrage of numbers
-    this program otherwise spits out.
+    This function generates a half-comparison plot and calculates various parameters related to the O'Connell Effect.
+    If plot_only is set to True, only the half-comparison plot will be generated.
     """
+
+    # Generate half-comparison plot
     Half_Comp(filter_files, Epoch, period, FT_order=order, sections=sections,
               section_order=section_order, offset=plotoff, save=save, outName=outName,
               filter_names=filterNames)
 
-    """
-    Actual OConnell stuff, set plot_only=True if you just want the
-    half-comparison plot---so you don't have to wait forever just for a plot!
-    """
+    # Perform O'Connell analysis
     if not plot_only:
         filters = len(filter_files)
         a_all = []
-        a_err_all = []  # list set up crap
+        a_err_all = []
         b_all = []
         b_err_all = []
         dI_FT = []
@@ -395,11 +412,8 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
         LCAs_err = []
         a22s = []
         a22s_err = []
-        """
-        Running the O'Connell function on each filter, and placing the resulting
-        parameters in corresponding value, value_err lists. E.g. once this completes,
-        OERs will contain the OER values for filter 1,2,... and OERs_err contains the errors.
-        """
+
+        # Running the O'Connell function on each filter
         for band in range(len(filter_files)):
             oc = OConnell_total(filter_files[band], Epoch, period, order, sims=sims,
                                 sections=sections, section_order=section_order,
@@ -420,9 +434,7 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
             a22s.append(oc[6][0])
             a22s_err.append(oc[6][1])
 
-        """
-        LaTeX table creation, don't change unless you know what you're doing!
-        """
+        # LaTeX table creation
         table_header = '\\begin{table}[H]\n' + '\\begin{center}\n' + '\\begin{tabular}{c|'
         for band in range(filters):
             table_header += 'c'
@@ -446,7 +458,7 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
             a1_line += '& $' + strr(a_all[band][1]) + '\pm ' + strr(a_err_all[band][1]) + '$ '
             a2_line += '& $' + strr(a_all[band][2]) + '\pm ' + strr(a_err_all[band][2]) + '$ '
             a4_line += '& $' + strr(a_all[band][4]) + '\pm ' + strr(a_err_all[band][4]) + '$ '
-            a22_line += '& $' + strr(a22s[band]) + '\pm ' + strr(a22s_err[band]) + '$ '  # fix
+            a22_line += '& $' + strr(a22s[band]) + '\pm ' + strr(a22s_err[band]) + '$ '
             b1_line += '& $' + strr(2 * b_all[band][1]) + '\pm ' + strr(2 * b_err_all[band][1]) + '$ '
             dIFT_line += '& $' + strr(dI_FT[band]) + '\pm ' + strr(dI_FT_err[band]) + '$ '
             dIave_line += '& $' + strr(dI_ave[band]) + '\pm ' + strr(dI_ave_err[band]) + '$ '
@@ -462,15 +474,16 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
             output += line
         output += '\\hline\n' + '\\end{tabular}\n' + '\\caption{Fourier and O\'Connell stuff (' + str(
             sims) + ' sims)}\n' + '\\label{tbl:OConnell}\n' + '\\end{center}\n' + '\\end{table}\n'
-        """
-        End LaTeX table creation
-        """
-        print(output)
+        # End LaTeX table creation
+
+        print(output)  # Output LaTeX table to console
         outputfile = input("Please enter an output file name without the extension: ")
-        file = open(outputfile+".txt", "w")
-        file.write(output)
+        file = open(outputfile + ".txt", "w")
+        file.write(output)  # Write LaTeX table to file
         file.close()
+
     return 'nada'
+
 
 if __name__ == '__main__':
     main()

@@ -189,9 +189,10 @@ class calc:  # assortment of functions
         iters = 0
         if fprime is None:
             if not central_diff:
-                fprime = lambda x, dx=dx: (f(x + dx) / dx)
+                fprime = lambda x, dx=dx, func=f: (func(x + dx) / dx)
+
             else:
-                fprime = lambda x, dx=dx: (f(x + dx) - f(x - dx)) / (2 * dx)
+                fprime = lambda x, dx=dx, func=f: (func(x + dx) - func(x - dx)) / (2 * dx)
         if max_iter is None:
             while abs(f(x)) > e:
                 x -= f(x) / fprime(x)
@@ -680,7 +681,7 @@ class binning:
         """
         obs = len(phaselist)
         phaseflux = [(phaselist[n], fluxlist[n]) for n in range(obs)]
-        binned = binall(bins, phaseflux)
+        binned = binning.binall(bins, phaseflux)
         binnedphaselist = binned[0]
         binnedfluxlist = binned[1]
         normed = binning.norm_flux(binnedfluxlist, fluxlist, fluxlist)

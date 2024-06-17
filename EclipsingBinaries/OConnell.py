@@ -3,7 +3,7 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 05/29/2024
+Last Edited: 06/11/2024
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -466,11 +466,11 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
             LCA_line += '& $' + strr(LCAs[band]) + '\pm ' + strr(LCAs_err[band]) + '$ '
 
         lines = [a1_line, a2_line, a4_line, a22_line, b1_line, dIFT_line, dIave_line, OER_line, LCA_line]
-        for count, line in enumerate(lines):
-            line += '\\\ \n'
+        for count, _ in enumerate(lines):
+            lines[count] += '\\\ \n'
 
         output = table_header
-        for count, line in enumerate(lines):
+        for _, line in enumerate(lines):
             output += line
         output += '\\hline\n' + '\\end{tabular}\n' + '\\caption{Fourier and O\'Connell stuff (' + str(
             sims) + ' sims)}\n' + '\\label{tbl:OConnell}\n' + '\\end{center}\n' + '\\end{table}\n'

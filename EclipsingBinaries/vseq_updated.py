@@ -3,7 +3,7 @@
 Created on Sat Feb 22 16:09:28 2020
 @author: Alec Neal
 
-Last Updated: 05/29/2024
+Last Updated: 07/20/2024
 Last Editor: Kyle Koeller
 
 Collection of functions, coefficients and equations commonly used
@@ -11,10 +11,8 @@ with short-period variable stars, but many can be used more
 generally
 """
 import numpy as np
-# import csv
-# import statistics as st
-# import scipy.stats as sci
-# import scipy
+from pathlib import Path
+import sys
 import matplotlib.pyplot as plt
 from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, AutoLocator, Locator)
 import pandas as pd
@@ -151,6 +149,68 @@ class io:
             columnlist.append(list(file[column]))
 
         return columnlist
+
+    def validate_file_path(prompt):
+        """
+        Prompt the user to enter a file path and validate its existence.
+
+        Parameters
+        ----------
+        prompt : str
+            The message to display when prompting the user for input.
+
+        Returns
+        -------
+        Path
+            A valid Path object representing the entered file path.
+        """
+        while True:
+            path = input(prompt)
+
+            # Exit the program if the user types "Close"
+            if path.lower() == "close":
+                sys.exit()
+
+            # Check if the entered path is valid
+            try:
+                images_path = Path(path)
+                if images_path.exists():
+                    return images_path
+                else:
+                    raise FileNotFoundError
+            except FileNotFoundError:
+                print("File not found. Please try again.")
+
+    def validate_directory_path(prompt):
+        """
+        Prompt the user to enter a directory path and validate its existence.
+
+        Parameters
+        ----------
+        prompt : str
+            The message to display when prompting the user for input.
+
+        Returns
+        -------
+        Path
+            A valid Path object representing the entered directory path.
+        """
+        while True:
+            path = input(prompt)
+
+            # Exit the program if the user types "Close"
+            if path.lower() == "close":
+                sys.exit()
+
+            # Check if the entered path is a valid directory
+            try:
+                directory_path = Path(path)
+                if directory_path.is_dir():
+                    return directory_path
+                else:
+                    raise NotADirectoryError
+            except (FileNotFoundError, NotADirectoryError):
+                print("Invalid directory. Please try again.")
 
 
 

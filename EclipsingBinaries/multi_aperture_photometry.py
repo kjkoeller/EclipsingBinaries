@@ -3,30 +3,28 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 06/04/2024
+Last Updated: 07/20/2024
 """
 
 # Python imports
 import numpy as np
 import pandas as pd
-from pathlib import Path
 import matplotlib.pyplot as plt
-# import time
 import warnings
 from tqdm import tqdm
+from pathlib import Path
+
+# from .vseq_updated import io
+from vseq_updated import io # testing purposes
 
 # Astropy imports
 import ccdproc as ccdp
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-# from astropy.nddata import CCDData
-# from astropy.stats import sigma_clipped_stats
 from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
 from astropy.wcs import WCS
 import astropy.units as u
 from astropy import wcs
-
-# from astropy.visualization import ZScaleInterval
 
 # turn off this warning that just tells the user,
 # "The warning raised when the contents of the FITS header have been modified to be standards compliant."
@@ -52,36 +50,24 @@ def main(path="", pipeline=False, radec_list=None, obj_name=""):
     N/A
     """
     filt_list = ["Empty/B", "Empty/V", "Empty/R"]
+    #filt_list = ["Bessel B", "Bessel V", "Bessel R"]
     if not pipeline:
-        # path = "D:\Research\Data\\NSVS_254037\\2018.09.18-reduced"  # For testing purposes
-        path = input(
-            "Please enter a file pathway (i.e. C:\\folder1\\folder2\\[reduced]) to where the reduced images are or type "
-            "the word 'Close' to leave: ")
-        # allows the user to input where the raw images are and where the calibrated images go to
-        radec_file = ""
-        while True:
-            try:
-                images_path = Path(path)
-                break
-            except FileNotFoundError:
-                print("File not found. Please try again.")
-                path = input(
-                    "Please enter a file pathway (i.e. C:\\folder1\\folder2\\[reduced]) to where the reduced images are or type "
-                    "the word 'Close' to leave: ")
-
-        if path.lower() == "close":
-            exit()
+        prompt_message = "Please enter a file pathway (i.e. C:\\folder1\\folder2\\[reduced]) to where the reduced images are or type 'Close' to leave: "
+        images_path = io.validate_directory_path(prompt_message)
 
         science_imagetyp = 'LIGHT'
         files = ccdp.ImageFileCollection(images_path)
 
         for filt in filt_list:
             if "/B" in filt:
-                radec_file = input("Enter the file location for the RADEC file for the B filter: ")
+                prompt_message = "Enter the file location for the RADEC file for the B filter: "
+                radec_file = io.validate_file_path(prompt_message)
             elif "/V" in filt:
-                radec_file = input("Enter the file location for the RADEC file for the V filter: ")
+                prompt_message = "Enter the file location for the RADEC file for the V filter: "
+                radec_file = io.validate_file_path(prompt_message)
             elif "/R" in filt:
-                radec_file = input("Enter the file location for the RADEC file for the R filter: ")
+                prompt_message = "Enter the file location for the RADEC file for the R filter: "
+                radec_file = io.validate_file_path(prompt_message)
 
             image_list = files.files_filtered(imagetyp=science_imagetyp, filter=filt)
             multiple_AP(image_list, images_path, filt, pipeline=pipeline, radec_file=radec_file)
@@ -236,7 +222,7 @@ def calculate_magnitude_and_error(comparison_flx, magnitudes_comp, target_flx, t
                target magnitude (target_magnitude), and target magnitude error (target_magnitude_error).
     """
     # Calculate the relative flux for each comparison star and the target star
-    rel_flux_comps = [comp_flux / (sum(comparison_flx) - comp_flux) for comp_flux in comparison_flx]
+    # rel_flux_comps = [comp_flux / (sum(comparison_flx) - comp_flux) for comp_flux in comparison_flx]
 
     # Calculate the total target magnitude
     target_magnitude = (-np.log(sum(2.512 ** -magnitudes_comp)) / np.log(2.512)) - \
@@ -273,65 +259,76 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file="", df=pd.D
     None
     :param df:
     """
-
-    # Define the aperture parameters
-    # Define the aperture and annulus radii
     aperture_radius = 20
     annulus_radii = (30, 50)
-
-    read_noise = 10.83  # * u.electron  # gathered from fits headers manually
+    read_noise = 10.83  # Example value
 
     df = load_radec_file(radec_file, df)
 
-    magnitudes_comp = df[4]
-
-    magnitudes_comp = magnitudes_comp.replace(99.999, pd.NA).dropna().reset_index(drop=True)
-
+    magnitudes_comp = df[4].replace(99.999, pd.NA).dropna().reset_index(drop=True)
     ra = df[0]
     dec = df[1]
-    # ref_star = df[2]
-    # centroid = df[3]  # Not used (I don't think at least)
 
     magnitudes = []
     mag_err = []
     hjd = []
     bjd = []
 
-    # Create a figure and axis
     _, ax = plt.subplots(figsize=(11, 8))
 
-    for icount, image_file in tqdm(enumerate(image_list), desc="Performing aperture photometry on {} images in the {} "
-                                                               "filter.".format(len(image_list), filter)):
+    def are_apertures_valid(image_shape, apertures):
+        """
+        Check if apertures are within the boundaries of the image.
+
+        Parameters
+        ----------
+        image_shape : tuple
+            A tuple representing the shape of the image (height, width).
+        apertures : list
+            A list of aperture objects, each with positions and radius.
+
+        Returns
+        -------
+        valid : list
+            A list of booleans indicating whether each aperture is valid (True) or not (False).
+        """
+        # Unpack the image dimensions
+        image_height, image_width = image_shape
+
+        # Initialize a list to store validity of each aperture
+        valid = []
+
+        # Iterate through each aperture to check its validity
+        for aperture in apertures:
+            # Get the x, y positions and radius of the aperture
+            x, y, r = aperture.positions[0], aperture.positions[1], aperture.r
+
+            # Check if the aperture is within the image boundaries
+            if x - r >= 0 and x + r < image_width and y - r >= 0 and y + r < image_height:
+                valid.append(True)
+            else:
+                valid.append(False)
+
+        # Return the list of validity flags
+        return valid
+
+    for icount, image_file in tqdm(enumerate(image_list), desc="Performing aperture photometry on {} images in the {} filter.".format(len(image_list), filter)):
         [image_data, target_phot_table, target_annulus, target_aperture, comparison_annulus, comparison_aperture] = (
             process_image(path, image_file, ra, dec, aperture_radius, annulus_radii, hjd, bjd))
 
-        # Identify invalid apertures
-        image_shape = image_data.shape  # Get the shape of the image
-        image_height, image_width = image_shape[0], image_shape[1]
-        invalid_aperture_indices = []
-        for idx, aperture in enumerate(comparison_aperture):
-            x, y, r = aperture.positions[0], aperture.positions[1], aperture.r
-            if not (x - r >= 0 and x + r < image_width and y - r >= 0 and y + r < image_height):
-                invalid_aperture_indices.append(idx)
+        valid_apertures = are_apertures_valid(image_data.shape, comparison_aperture)
 
-        # Remove invalid annuli and apertures
-        comparison_aperture = [ap for i, ap in enumerate(comparison_aperture) if
-                               i not in invalid_aperture_indices]
-        comparison_annulus = [an for i, an in enumerate(comparison_annulus) if
-                              i not in invalid_aperture_indices]
+        while not all(valid_apertures):
+            comparison_aperture = [ap for ap, valid in zip(comparison_aperture, valid_apertures) if valid]
+            comparison_annulus = [an for an, valid in zip(comparison_annulus, valid_apertures) if valid]
+            valid_apertures = are_apertures_valid(image_data.shape, comparison_aperture)
 
         comparison_phot_table = []
         for comp_aperture, comp_annulus in zip(comparison_aperture, comparison_annulus):
-            # Perform aperture photometry on the star
             aperture_phot_table = aperture_photometry(image_data, comp_aperture)
-
-            # Perform aperture photometry on the annulus (background)
             annulus_phot_table = aperture_photometry(image_data, comp_annulus)
-
-            # Store the result in the comparison_phot_table list
             comparison_phot_table.append((aperture_phot_table, annulus_phot_table))
 
-        # Perform annulus photometry to estimate the background
         target_bkg_mean = ApertureStats(image_data, target_annulus).mean
 
         [target_flx, target_flux_err, comparison_flx, comp_flux_err] = (
@@ -341,32 +338,23 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file="", df=pd.D
         [target_magnitude, target_magnitude_error] = (
             calculate_magnitude_and_error(comparison_flx, magnitudes_comp, target_flx, target_flux_err, comp_flux_err))
 
-        # Append the calculated magnitude and error to the lists
         magnitudes.append(target_magnitude.value[0])
         mag_err.append(target_magnitude_error.value[0])
 
-    # Plot the magnitudes with error bars
-    # noinspection PyUnboundLocalVariable
     ax.errorbar(hjd, magnitudes, yerr=mag_err, fmt='o', label="Source_AMag_T1")
-    # ax.scatter(hjd, magnitudes, marker='o', color='black')
-
-    # Set the labels and parameters
-    fontsize = 14
-    ax.set_xlabel('HJD', fontsize=fontsize)
-    ax.set_ylabel('Source_AMag_T1', fontsize=fontsize)
+    ax.set_xlabel('HJD', fontsize=14)
+    ax.set_ylabel('Source_AMag_T1', fontsize=14)
     ax.invert_yaxis()
     ax.grid()
+    ax.legend(loc="upper right", fontsize=14).set_draggable(True)
+    ax.tick_params(axis='both', which='major', labelsize=14)
 
-    ax.legend(loc="upper right", fontsize=fontsize).set_draggable(True)
-    ax.tick_params(axis='both', which='major', labelsize=fontsize)
-
-    # Replace 'Empty/B' with '_B' or another acceptable string
     filter_sanitized = filter.replace("Empty/", "")
 
     if not pipeline:
         plt.show()
     else:
-        plt.savefig(str(path) + "\\APASS_254037_" + filter_sanitized + "_LC_dat.jpg")
+        plt.savefig(f"{path}/APASS_254037_{filter_sanitized}_LC_dat.jpg")
 
     light_curve_data = pd.DataFrame({
         'HJD': hjd,
@@ -378,10 +366,9 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file="", df=pd.D
     im_plot(image_data, target_aperture, comparison_aperture, target_annulus, comparison_annulus)
 
     if not pipeline:
-        output_file = input(f"Enter an output file name and location for the final light curve data in the {filter_sanitized} filter "
-                            "(ex: C:\\folder1\\folder2\\APASS_254037_B.txt): ")
+        output_file = input(f"Enter an output file name and location for the final light curve data in the {filter_sanitized} filter (ex: C:\\folder1\\folder2\\APASS_254037_B.txt): ")
     else:
-        output_file = str(path) + "\\APASS_254037_" + filter_sanitized + "_LC_dat.txt"
+        output_file = f"{path}/APASS_254037_{filter_sanitized}_LC_dat.txt"
 
     light_curve_data.to_csv(output_file, index=False)
 

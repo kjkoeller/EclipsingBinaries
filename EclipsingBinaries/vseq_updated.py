@@ -11,7 +11,6 @@ with short-period variable stars, but many can be used more
 generally
 """
 import numpy as np
-import os
 from pathlib import Path
 import sys
 import matplotlib.pyplot as plt

@@ -235,13 +235,13 @@ def calculate_magnitude_and_error(comparison_flx, magnitudes_comp, target_flx, t
     return target_magnitude, target_magnitude_error
 
 
-def multiple_AP(image_list, path, filter, pipeline=False, radec_file="", df=pd.DataFrame({})):
+def multiple_AP(image_list, path, filter_list, pipeline=False, radec_file="", df=pd.DataFrame({})):
     """
     Perform multi-aperture photometry on a list of images for a single target
 
     Parameters
     ----------
-    filter: String
+    filter_list: String
         Filter used for the images
     pipeline: Boolean
         If True, then the program is being run from the pipeline and will not ask for user input.
@@ -312,7 +312,7 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file="", df=pd.D
         # Return the list of validity flags
         return valid
 
-    for icount, image_file in tqdm(enumerate(image_list), desc="Performing aperture photometry on {} images in the {} filter.".format(len(image_list), filter)):
+    for _, image_file in tqdm(enumerate(image_list), desc="Performing aperture photometry on {} images in the {} filter.".format(len(image_list), filter)):
         [image_data, target_phot_table, target_annulus, target_aperture, comparison_annulus, comparison_aperture] = (
             process_image(path, image_file, ra, dec, aperture_radius, annulus_radii, hjd, bjd))
 
@@ -349,7 +349,7 @@ def multiple_AP(image_list, path, filter, pipeline=False, radec_file="", df=pd.D
     ax.legend(loc="upper right", fontsize=14).set_draggable(True)
     ax.tick_params(axis='both', which='major', labelsize=14)
 
-    filter_sanitized = filter.replace("Empty/", "")
+    filter_sanitized = filter_list.replace("Empty/", "")
 
     if not pipeline:
         plt.show()

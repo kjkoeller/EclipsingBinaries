@@ -15,6 +15,13 @@
 #                                                                                       #
 #########################################################################################
 #
+"""
+Created By: Robert C. Berrington
+Created On: 08/03/2024
+
+Last Edited By: Kyle Koeller
+Last Edits ON: 08/17/2024
+"""
 import argparse
 from astropy.io import fits
 from astropy.time import Time
@@ -152,7 +159,7 @@ if args.debug == True or args.verbose >= 2:
 #
 # setup the header strings for the log file.  These will be written to the log file later.
 #
-if args.log_flag == True:
+if args.log_flag:
     header_comment   = args.header_comment[0]
     header_filename  = ' Filename '
     header_JD        = (26 * ' ') + ' JD' + (27 * ' ')
@@ -172,16 +179,16 @@ if args.log_flag == True:
         header_line2 = header_comment + (10 * ' ') + '|'
         header_line3 = header_comment + (10 * ' ') + '|'
     
-    if args.JD_flag == True:
+    if args.JD_flag:
         header_line1 += header_JD + '|'
         header_line2 += header_types + '|'
         header_line3 += header_units + '|'
-    if args.HJD_flag == True:
+    if args.HJD_flag:
         header_line1 += header_HJD + '|'
         header_line2 += header_types + '|'
         header_line3 += header_units + '|'
-    if args.BJD_flag == True:
-        if args.HJD_flag == True: # then HJD was calculated and we need to see how HJD and BJD differ
+    if args.BJD_flag:
+        if args.HJD_flag: # then HJD was calculated and we need to see how HJD and BJD differ
             header_line1 += header_BJDHJD
             header_line2 += header_blank
             header_line3 += header_Bunits
@@ -223,7 +230,7 @@ delimiter = args.delimiter[0]
 #
 # Write the header for the log file.
 #
-if args.log_flag == True:
+if args.log_flag:
     change_log = open(file=logfilename, mode="w+t")
     if args.debug == True or args.verbose >= 1:
         print('Opening Logfile:', logfilename)
@@ -245,7 +252,7 @@ for filename in filename_list:
     
     current_image = fits.open(filename, mode='update')
 
-    if args.log_flag == True:
+    if args.log_flag:
         if max_filename_length >= 12:
             change_log_line = filename + change_log_delimiter + ((max_filename_length + 2 - len(change_log_delimiter) - len(filename)) * ' ')
         else:
@@ -263,7 +270,7 @@ for filename in filename_list:
         image_equinox = args.specified_equinox
         current_image[0].header['EQUINOX'] = (image_equinox,'Equinox of image coordinates')
     
-    if args.filter_parse == True: # if filter_parse is set to true remove the space in the filter keyword
+    if args.filter_parse: # if filter_parse is set to true remove the space in the filter keyword
         if 'FILT_ORG' in current_image[0].header: # then we have already corrected FILT_ORG.  Skip.
             if args.debug == True or args.verbose >= 1:
                 print('We have already corrected the FLITERS parameter.  Using FILT_ORG.')
@@ -279,7 +286,7 @@ for filename in filename_list:
         if args.debug == True or args.verbose >= 1:
             print('Skipping filter keyword fix.')
 
-    if args.filter_parse == True:
+    if args.filter_parse:
         # We do not need to test to see if the FILTER or FLITERS keyword exists.  That was done above.
         if 'FILT_ORG' not in current_image[0].header:
             if ' ' in FILTER_image:
@@ -319,7 +326,7 @@ for filename in filename_list:
     # unit type.
     #
     if delimiter in RA_image_angle:
-        if args.debug == True:
+        if args.debug:
             print('Image:', filename, 'has RA is in the correct format.')
     else:
         RA_reformatted_angle = re.sub(r' ', delimiter, RA_image_angle, count=2)
@@ -332,7 +339,7 @@ for filename in filename_list:
     # unit type.
     #
     if delimiter in DEC_image_angle:
-        if args.debug == True:
+        if args.debug:
             print('Image:', filename, 'has DEC in the correct format.')
     else:
         DEC_reformatted_angle = re.sub(r' ', delimiter, DEC_image_angle, count=2)
@@ -362,39 +369,39 @@ for filename in filename_list:
             print('*WARNING* OBSERVAT keyword must be set for file:', filename)
             print('Using value:', observer_at)
         
-        if ((observer_at == 'sara-kp') or (observer_at == 'SARA-KP')):
+        if (observer_at == 'sara-kp') or (observer_at == 'SARA-KP'):
             observatory_location = coords.EarthLocation.of_site('kpno')
-            if args.debug == True:
+            if args.debug:
                 print('Using observatory location', observer_at)
-        elif ((observer_at == 'sara-n') or (observer_at == 'SARA-N')):
+        elif (observer_at == 'sara-n') or (observer_at == 'SARA-N'):
             observatory_location = coords.EarthLocation.of_site('kpno')
-            if args.debug == True:
+            if args.debug:
                 print('Using observatory location', observer_at)
-        elif ((observer_at == 'sara-ct') or (observer_at == 'SARA-CT')):
+        elif (observer_at == 'sara-ct') or (observer_at == 'SARA-CT'):
             observatory_location = coords.EarthLocation.of_site('ctio')
-            if args.debug == True:
+            if args.debug:
                 print('Using observatory location', observer_at)
-        elif ((observer_at == 'sara-s') or (observer_at == 'SARA-S')):
+        elif (observer_at == 'sara-s') or (observer_at == 'SARA-S'):
             observatory_location = coords.EarthLocation.of_site('ctio')
-            if args.debug == True:
+            if args.debug:
                 print('Using observatory location', observer_at)
-        elif ((observer_at == 'sara-rm') or (observer_at == 'SARA-RM')):
+        elif (observer_at == 'sara-rm') or (observer_at == 'SARA-RM'):
             observatory_location = coords.EarthLocation.of_site('Roque de los Muchachos')
-            if args.debug == True:
+            if args.debug:
                 print('Using observatory location', observer_at)
-        elif ((observer_at == 'bsu') or (observer_at == 'BSU')):
+        elif (observer_at == 'bsu') or (observer_at == 'BSU'):
             observatory_location = coords.EarthLocation.from_geodetic(lon=BSU_long,
                                                                       lat=BSU_lat,
                                                                       height=BSU_alt,
                                                                       ellipsoid=BSU_datum)
-            if args.debug == True:
+            if args.debug:
                 print('Using observatory location', observer_at)
-        elif ((observer_at == 'bsuo') or (observer_at == 'BSUO')):
+        elif (observer_at == 'bsuo') or (observer_at == 'BSUO'):
             observatory_location = coords.EarthLocation.from_geodetic(lon=BSU_long,
                                                                       lat=BSU_lat,
                                                                       height=BSU_alt,
                                                                       ellipsoid=BSU_datum)
-            if args.debug == True:
+            if args.debug:
                 print('Using observatory location', observer_at)
         else:
             print('WARNING: Unknown observatory location')
@@ -403,7 +410,7 @@ for filename in filename_list:
                                                                       lat=BSU_lat,
                                                                       height=BSU_alt,
                                                                       ellipsoid=BSU_datum)
-        if args.debug == True:
+        if args.debug:
             print('OBSERVAT =', observer_at)
             print('Location set', observer_at, 'to', observatory_location)
     
@@ -441,7 +448,7 @@ for filename in filename_list:
     # Calculate the Julian Date (JD).  This will require positional information like
     # date and time of observation that is read above.
     #
-    if args.JD_flag == True:
+    if args.JD_flag:
         if 'JD_START' in current_image[0].header:  # We have already run the script.  Save the original value.
             JD_original = current_image[0].header['JD_START'] # Then store the value for later use
         elif 'JD' in current_image[0].header:
@@ -465,9 +472,9 @@ for filename in filename_list:
         current_image[0].header['JD_END'] = (date_at_end.jd, 'Julian Date at exposure end.')
         JD = date_at_half_exptime
         delta_t_JD = JD.jd - JD_original
-        if args.debug == True:
+        if args.debug:
            print('JD corrected by', delta_t_JD,'sec =',(delta_t_JD * 86400.0))
-        if args.log_flag == True:
+        if args.log_flag:
             change_log_line += str(JD_original) + change_log_delimiter 
             change_log_line += str(JD.jd) + change_log_delimiter 
             change_log_line += str(delta_t_JD * 86400.0) + change_log_delimiter
@@ -494,7 +501,7 @@ for filename in filename_list:
                                         obstime=date_at_half_exptime,
                                         frame=image_equinox)
 
-    if args.HJD_flag == True:
+    if args.HJD_flag:
         HJD_correction = date_at_half_exptime.light_travel_time(target_object, 'heliocentric')
         if 'HJD' in current_image[0].header: # then HJDs are already in the headers as store.
             HJD_original = current_image[0].header['HJD']
@@ -511,14 +518,14 @@ for filename in filename_list:
             if 'HJD_ORIG' not in current_image[0].header:
                 current_image[0].header['HJD_ORIG'] = (HJD_original.jd, 'HJD value from exp start.')
         HJD = date_at_half_exptime + HJD_correction
-        if args.debug == True:
+        if args.debug:
             print('JD',date_at_half_exptime.jd,'+ correction',HJD_correction.jd, '= HJD:',HJD.jd)
         current_image[0].header['HJD'] = (HJD.jd, 'HJD_UTC at mid exposure')
         current_image[0].header['HJD_UTC'] = (HJD.jd, 'HJD_UTC at mid exposure')
         delta_t_HJD = HJD.jd - HJD_original
-        if args.debug == True:
+        if args.debug:
            print('HJD corrected by', delta_t_HJD, 'sec =', (delta_t_HJD * 86400.0))
-        if args.log_flag == True:
+        if args.log_flag:
             change_log_line += str(HJD_original) + change_log_delimiter 
             change_log_line += str(HJD.jd) + change_log_delimiter
             change_log_line += str(delta_t_HJD * 86400.0) + change_log_delimiter
@@ -532,35 +539,35 @@ for filename in filename_list:
     # Now calculate the BJDs and enter into the headers.  This will require extracting
     # positional information like observatory location, RA and Dec of target.
     #
-    if args.BJD_flag == True:
+    if args.BJD_flag:
         BJD_correction = date_at_half_exptime.light_travel_time(target_object)
         BJD_UTC = date_at_half_exptime.utc + BJD_correction
         BJD_TDB = date_at_half_exptime.tdb + BJD_correction
         if 'BJD' in current_image[0].header: # Then BJDs calculated and store for later use.
             BJD_original = current_image[0].header['BJD']
-            if args.debug == True:
+            if args.debug:
                 print('Extracting BJD from header as original BJD.')
         elif 'BJD_TDB' in current_image[0].header: # Then BJDs calculated and store for later use.
             BJD_original = current_image[0].header['BJD_TDB']
-            if args.debug == True:
+            if args.debug:
                 print('Extracting BJD_TDB from header as original BJD.')
         elif 'BJD_UTC' in current_image[0].header: # Then BJDs calculated and store for later use.
             BJD_original = current_image[0].header['BJD_UTC']
-            if args.debug == True:
+            if args.debug:
                 print('Extracting BJD_UTC from header as original BJD.')
-        if args.debug == True:
+        if args.debug:
             print('JD',date_at_half_exptime.jd,' + correction',BJD_correction.jd,'= BJD:',BJD_TDB.jd)
         current_image[0].header['BJD_UTC'] = (BJD_UTC.jd, 'BJD_UTC at mid exposure')
         current_image[0].header['BJD_TDB'] = (BJD_TDB.jd, 'BJD_TDB at mid exposure')
-        if args.HJD_flag == True: # HJDs are determined and use to see difference
+        if args.HJD_flag: # HJDs are determined and use to see difference
             delta_t_BJDHJD = BJD_TDB.jd - HJD.jd
-            if args.debug == True:
+            if args.debug:
                 print('BJD_TDB - HJD =', delta_t_BJDHJD, ': sec =', (delta_t_BJDHJD * 86400.0))
         else: # HJDs are not determined and use BJD_UTC to see difference
             delta_t_BJD = BJD_TDB.jd - BJD_UTC.jd
-            if args.debug == True:
+            if args.debug:
                 print('BJD_TDB - BJD_UTC =', delta_t_BJD, ': sec =', (delta_t_BJD * 86400.0))
-        if args.log_flag == True:
+        if args.log_flag:
             change_log_line += str(BJD_TDB.jd) + change_log_delimiter 
             change_log_line += str(delta_t_BJDHJD * 86400.0) # This is the last line added to the change log.  No need for a delimiter.
     else:
@@ -573,7 +580,7 @@ for filename in filename_list:
     # Calculate the Sideral time and enter in to the header if the sidereal flag option is set.
     # This requires information like observatory location and time of exposure information.
     #
-    if args.sidereal_flag == True:
+    if args.sidereal_flag:
         if args.debug == True or args.verbose >= 2:
             print('Calculating Sidereal time.')
         
@@ -587,14 +594,14 @@ for filename in filename_list:
             elif 'ST' in current_image[0].header:      # Then the ST keyword exists
                 sidereal_time_original = current_image[0].header['ST']
             else:
-                sidereal_time_original == None
+                sidereal_time_original is None
                 if args.debug == True or args.verbose >=2:
                     print('No sidereal time keyword exists in image header of file:',filename)
 
         mean_sidereal_time = Time.sidereal_time(date_at_half_exptime, kind='mean', longitude=observatory_location, model='IAU2006')
         apparent_sidereal_time = Time.sidereal_time(date_at_half_exptime, kind='apparent', longitude=observatory_location, model='IAU2006A')
 
-        if sidereal_time_original != None:  # Then the original sidereal time from the image header existed, write to keyword ST_ORIG
+        if sidereal_time_original is not None:  # Then the original sidereal time from the image header existed, write to keyword ST_ORIG
             current_image[0].header['ST_ORIG'] = (sidereal_time_original, 'Original sidereal time at exp start.')
         current_image[0].header['SIDEREAL']    = (apparent_sidereal_time.to_string(sep=':'), 'Local app sidereal time at exp midpt [IAU2006A]')
         current_image[0].header['MEAN_ST']     = (mean_sidereal_time.to_string(sep=':'), 'local mean sidereal time at exp midpt [IAU2006]')
@@ -609,7 +616,7 @@ for filename in filename_list:
     # Calculate the effictive airmass of the object at the time of mid exposure. This will 
     # require obervatory location, date and time of obseration, and object location.
     #
-    if args.eairmass_flag == True:
+    if args.eairmass_flag:
         if args.debug == True or args.verbose >= 1:
             print('Calculating Effictve Airmass.')
         horizon_coordinates = target_object.transform_to(coords.AltAz(obstime=date_at_half_exptime, location=observatory_location))
@@ -654,16 +661,16 @@ for filename in filename_list:
     #
     # terminate the line for this image and write to log file is log file option set.
     #
-    if args.log_flag == True:
+    if args.log_flag:
         change_log_line += '\n'
         change_log.write(change_log_line)
 #
 # Close the log file, and if debug or verbosity set (>= 2) then test to make sure it was 
 # closed successfully.
 #
-if args.log_flag == True:
+if args.log_flag:
     change_log.close()
-    if change_log.closed == True:
+    if change_log.closed:
         if args.debug == True or args.verbose >= 2:
             print('Closed file:', logfilename)
     else:

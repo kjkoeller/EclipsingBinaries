@@ -11,7 +11,7 @@
 # they are not add them with either the default value of (EPOCH -> 2000.0,              #
 # EQUINOX -> J2000.0).  It will also determine various other important observational    #
 # values like effective airmass (EAIRMASS), and Sidereal Time (ST) if they do not       #
-# exist.                                                                                # 
+# exist.                                                                                #
 #                                                                                       #
 #########################################################################################
 #
@@ -78,9 +78,9 @@ parser.add_argument("-v", "--verbose",
                     action='count',
                     default=0,
                     help='Set verbosity output. Multiple entries increment verbosity level.')
-parser.add_argument("--JD", 
+parser.add_argument("--JD",
                     dest='JD_flag',
-                    action=argparse.BooleanOptionalAction, 
+                    action=argparse.BooleanOptionalAction,
                     default=True, # default is to calculate JDs.
                     help="Calculate of JDs, and enter into the image headers.")
 parser.add_argument("--HJD",
@@ -108,7 +108,7 @@ parser.add_argument("-fp", "--filter_parse",
                     action=argparse.BooleanOptionalAction,
                     default=False, # default is not to parse filter names for spaces and replace with underscores.
                     help="Parse filter names for spaces and replace with underscores.")
-parser.add_argument("-lf", "--logfile", 
+parser.add_argument("-lf", "--logfile",
                     dest='log_flag',
                     action=argparse.BooleanOptionalAction, 
                     default=False, # default is to not open a logfile.
@@ -222,7 +222,7 @@ BSU_alt = 289.56 * u.m
 BSU_datum = 'WGS84'
 BSU_Timezone = -4
 #
-# Let's open the log file for keeping track of changes made.  
+# Let's open the log file for keeping track of changes made.
 #
 logfilename = args.logfilename[0]
 delimiter = args.delimiter[0]
@@ -474,8 +474,8 @@ for filename in filename_list:
         if args.debug:
            print('JD corrected by', delta_t_JD,'sec =',(delta_t_JD * 86400.0))
         if args.log_flag:
-            change_log_line += str(JD_original) + change_log_delimiter 
-            change_log_line += str(JD.jd) + change_log_delimiter 
+            change_log_line += str(JD_original) + change_log_delimiter
+            change_log_line += str(JD.jd) + change_log_delimiter
             change_log_line += str(delta_t_JD * 86400.0) + change_log_delimiter
     else:
         #
@@ -567,7 +567,7 @@ for filename in filename_list:
             if args.debug:
                 print('BJD_TDB - BJD_UTC =', delta_t_BJD, ': sec =', (delta_t_BJD * 86400.0))
         if args.log_flag:
-            change_log_line += str(BJD_TDB.jd) + change_log_delimiter 
+            change_log_line += str(BJD_TDB.jd) + change_log_delimiter
             change_log_line += str(delta_t_BJDHJD * 86400.0) # This is the last line added to the change log.  No need for a delimiter.
     else:
         #
@@ -612,7 +612,7 @@ for filename in filename_list:
         if args.verbose >= 1 or args.debug == True:
             print('Skipping sidereal time calculation.')
     #
-    # Calculate the effictive airmass of the object at the time of mid exposure. This will 
+    # Calculate the effictive airmass of the object at the time of mid exposure. This will
     # require obervatory location, date and time of obseration, and object location.
     #
     if args.eairmass_flag:

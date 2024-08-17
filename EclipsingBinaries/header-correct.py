@@ -18,7 +18,6 @@
 """
 Created By: Robert C. Berrington
 Created On: 08/03/2024
-
 Last Edited By: Kyle Koeller
 Last Edits ON: 08/17/2024
 """
@@ -26,7 +25,7 @@ import argparse
 from astropy.io import fits
 from astropy.time import Time
 # from astropy import time
-from astropy import coordinates as coords 
+from astropy import coordinates as coords
 from astropy import units as u # contains important time and physical units
 import glob  # Needed to allow windows to expand unix style filename wildcards
 import re
@@ -34,21 +33,21 @@ import re
 #
 # First We need to parse the command line for settings
 #
-parser = argparse.ArgumentParser(prog="HJD_correct.py", 
-                                description="Corrects (RA, Dec) values to have :s and adds JDs, HJDs, BJDs and effecitve airmass to image headers", 
+parser = argparse.ArgumentParser(prog="HJD_correct.py",
+                                description="Corrects (RA, Dec) values to have :s and adds JDs, HJDs, BJDs and effecitve airmass to image headers",
                                 epilog="\nThis is a program in the testing phase.  Please use with caution.  To report any issues or bugs, please contact rberring@bsu.edu",
                                 add_help=True)
-parser.add_argument("-f", "--file", "--filename", 
-                    dest='wildcard_list', 
+parser.add_argument("-f", "--file", "--filename",
+                    dest='wildcard_list',
                     metavar="<filename(s)>",
                     help="input FITS filename(s)",
                     nargs='+',
                     default=['temp.fits'])
-parser.add_argument("-d", "--delimiter", 
-                    dest='delimiter', 
-                    help="character to delimit the sexigesimal angle measures.", 
+parser.add_argument("-d", "--delimiter",
+                    dest='delimiter',
+                    help="character to delimit the sexigesimal angle measures.",
                     metavar="<delimiter>",
-                    nargs='?', 
+                    nargs='?',
                     default=[':'],
                     const=[':'],
                     type=str)
@@ -75,7 +74,7 @@ parser.add_argument("-de", "--debug",
                     default=False,
                     help="Print out additional debugging information.")
 parser.add_argument("-v", "--verbose",
-                    dest='verbose', 
+                    dest='verbose',
                     action='count',
                     default=0,
                     help='Set verbosity output. Multiple entries increment verbosity level.')
@@ -84,24 +83,24 @@ parser.add_argument("--JD",
                     action=argparse.BooleanOptionalAction, 
                     default=True, # default is to calculate JDs.
                     help="Calculate of JDs, and enter into the image headers.")
-parser.add_argument("--HJD", 
+parser.add_argument("--HJD",
                     dest='HJD_flag',
-                    action=argparse.BooleanOptionalAction, 
+                    action=argparse.BooleanOptionalAction,
                     default=True, # default is to calculate HJDs.
                     help="Calculate HJDs, and enter into the image headers.")
-parser.add_argument("--BJD", 
+parser.add_argument("--BJD",
                     dest='BJD_flag',
                     action=argparse.BooleanOptionalAction, 
                     default=True, # default is to calculate BJDs.
                     help="Calculate BJDs, and enter into the image headers.")
 parser.add_argument("-X", "--airmass", "--eairmass", "--effective-airmass",
                     dest='eairmass_flag',
-                    action=argparse.BooleanOptionalAction, 
+                    action=argparse.BooleanOptionalAction,
                     default=True, # default is to calculate BJDs.
                     help="Calculate the effective airmass, and enter into the image headers.")
 parser.add_argument("-st", "--sidereal", "--sidereal-time",
                     dest='sidereal_flag',
-                    action=argparse.BooleanOptionalAction, 
+                    action=argparse.BooleanOptionalAction,
                     default=True, # default is to calculate sidereal times.
                     help="Calculate the current sidereal time, and enter into the image headers.")
 parser.add_argument("-fp", "--filter_parse",
@@ -114,27 +113,27 @@ parser.add_argument("-lf", "--logfile",
                     action=argparse.BooleanOptionalAction, 
                     default=False, # default is to not open a logfile.
                     help="Write out operations into a log file.")
-parser.add_argument("-lfn", "--logfilename", 
-                    dest='logfilename', 
+parser.add_argument("-lfn", "--logfilename",
+                    dest='logfilename',
                     metavar="<logfilename>",
                     help="Output logfile name.",
                     nargs='*',
                     default=['FITS_correction.log'])
-parser.add_argument("-lc", "--logfile_comment", 
-                    dest='header_comment', 
+parser.add_argument("-lc", "--logfile_comment",
+                    dest='header_comment',
                     metavar="<#>",
                     help="Comment character to mark the header of the logfile.",
                     nargs='*',
                     default=['#'])
-parser.add_argument("-ld", "--logfile_delimiter", 
-                    dest='log_file_delimiter', 
+parser.add_argument("-ld", "--logfile_delimiter",
+                    dest='log_file_delimiter',
                     metavar="< >",
                     help="Character to delimit the values of the logfile.",
                     nargs='*',
                     default=[' '])
 args = parser.parse_args()
 #
-# Expand out any wildcards included on the command line and append to a list of images 
+# Expand out any wildcards included on the command line and append to a list of images
 # to operate on.
 #
 max_filename_length = 0
@@ -202,7 +201,7 @@ if args.log_flag:
     change_log_delimiter = args.log_file_delimiter[0]
 #
 # Setup a database of known observatory sites that are not located in the Astropy known sites.
-# 
+#
 # First entry is the Ball State University Observatory (BSUO)
 #
 # IRAF entry is as follows:
@@ -281,7 +280,7 @@ for filename in filename_list:
                 FILTER_image = current_image[0].header['FILTERS']
         else:
             print('*WARNING* no recognized FILTER keyword present in header')
-            args.filter_parse == False
+            # args.filter_parse == False
     else:
         if args.debug == True or args.verbose >= 1:
             print('Skipping filter keyword fix.')
@@ -356,7 +355,7 @@ for filename in filename_list:
                'EPOCH =', image_epoch,
                'EQUINOX =', image_equinox)
     #
-    # if either HJD (default: True), BJD (default: True), Sidereal time (default: True), or 
+    # if either HJD (default: True), BJD (default: True), Sidereal time (default: True), or
     # effective airmass (default: True) are asked to be calculated, then determine the observatory location and
     # set for later use.
     #
@@ -526,7 +525,7 @@ for filename in filename_list:
         if args.debug:
            print('HJD corrected by', delta_t_HJD, 'sec =', (delta_t_HJD * 86400.0))
         if args.log_flag:
-            change_log_line += str(HJD_original) + change_log_delimiter 
+            change_log_line += str(HJD_original) + change_log_delimiter
             change_log_line += str(HJD.jd) + change_log_delimiter
             change_log_line += str(delta_t_HJD * 86400.0) + change_log_delimiter
     else:
@@ -594,7 +593,7 @@ for filename in filename_list:
             elif 'ST' in current_image[0].header:      # Then the ST keyword exists
                 sidereal_time_original = current_image[0].header['ST']
             else:
-                sidereal_time_original is None
+                # sidereal_time_original is None
                 if args.debug == True or args.verbose >=2:
                     print('No sidereal time keyword exists in image header of file:',filename)
 
@@ -605,7 +604,7 @@ for filename in filename_list:
             current_image[0].header['ST_ORIG'] = (sidereal_time_original, 'Original sidereal time at exp start.')
         current_image[0].header['SIDEREAL']    = (apparent_sidereal_time.to_string(sep=':'), 'Local app sidereal time at exp midpt [IAU2006A]')
         current_image[0].header['MEAN_ST']     = (mean_sidereal_time.to_string(sep=':'), 'local mean sidereal time at exp midpt [IAU2006]')
-        current_image[0].header['APP_ST']      = (apparent_sidereal_time.to_string(sep=':'), 'local app sidereal time at exp midpt [IAU2006A]')    
+        current_image[0].header['APP_ST']      = (apparent_sidereal_time.to_string(sep=':'), 'local app sidereal time at exp midpt [IAU2006A]')
         current_image[0].header['ST']          = (apparent_sidereal_time.to_string(sep=':'), 'local app sidereal time at exp midpt [IAU2006A]')
         if args.debug == True or args.verbose >= 2:
             print('Wrote LMST:', mean_sidereal_time, 'and LAST:', apparent_sidereal_time, 'to file:', filename)
@@ -665,7 +664,7 @@ for filename in filename_list:
         change_log_line += '\n'
         change_log.write(change_log_line)
 #
-# Close the log file, and if debug or verbosity set (>= 2) then test to make sure it was 
+# Close the log file, and if debug or verbosity set (>= 2) then test to make sure it was
 # closed successfully.
 #
 if args.log_flag:

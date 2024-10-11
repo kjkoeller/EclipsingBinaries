@@ -32,7 +32,7 @@ The list of OS's and Python versions listed below have been tested to be able to
 
 To install type the following,
 
-    pip install EclipsingBinaires
+    pip install EclipsingBinaries
 
 Once installed, in the command line type the following:
 

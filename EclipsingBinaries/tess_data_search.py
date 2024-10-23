@@ -34,6 +34,7 @@ def main():
             break
         except astroquery.exceptions.ResolverError:
             print("\nThe TIC number you entered is invalid or there is no data for this given system.\n")
+            main() # Incase the user mistyped the number have them re-enter the TIC number or allow them to close the program
 
     if system_name.lower() == "close":
         exit()

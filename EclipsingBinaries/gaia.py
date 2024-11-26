@@ -1,6 +1,6 @@
 """
 Author: Kyle Koeller
-Date Created: 03/08/2023
+Date Created: 11/26/2024
 
 Last Edited: 04/05/2023
 This program queries Gaia DR3, to gather specific parameters
@@ -132,6 +132,11 @@ def tess_mag(ra, dec):
         RP = g.phot_rp_mean_mag[:4].value
         RP_flux = g.phot_rp_mean_flux_over_error[:4]
 
+        """
+        The paper these equations are derived from: https://arxiv.org/pdf/2301.03704 from Gaia DR3 data
+        TESS-Gaia Light Curve: a PSF-based TESS FFI light curve product
+        Authors: Te Han and Timothy D. Brandt
+        """
         if len(BP) == 0 or len(RP) == 0:
             # this equation is used if there are no BP or RP magnitudes
             if len(G) == 0 or len(G_flux) == 0:

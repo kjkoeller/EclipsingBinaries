@@ -99,7 +99,7 @@ Once the ``zero`` image has been created, the next step of the process is to cre
 The process is the exact same as above for Bias except, the ``zero`` image is subtracted off each and every dark image. The combining of these newly reduced darks is also slightly different:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 393-441
+   :lines: 400-454
 
 As we now have to take into consideration the ``read nooise`` and ``gain`` of the CCD/camera.
 
@@ -109,7 +109,7 @@ Flat
 As stated above, the process is virtually the same but now the ``zero`` and ``master dark`` are both subtracted off each and every flat image. Now the combining of the images is slightly different as we now have filters.
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 477-487
+   :lines: 457-517
 
 This created ``master flats`` in each filter that the user is using.
 
@@ -124,7 +124,7 @@ Adding to the Header
 Each of the previous four functions discussed all call the ``add_header`` function within the reduction loops. This function adds various values to the headers of each individual image:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 531-568
+   :lines: 550-580
 
 The goal of this is to make it easier in the future to tell what values were used in the reduction process.
 
@@ -134,49 +134,7 @@ BJD_TDB
 The conversion between ``HJD`` and ``BJD_TDB`` is not an easy conversion. The purpose of including this in this package is to have a single time value across multiple telescopes or satellites. `TESS <https://tess.mit.edu/>`_ uses ``BJD_TDB`` while BSUO and various `SARA <https://www.saraobservatory.org/>`_ use ``HJD``.
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 571-592
-
-Find Minimum
-------------
-
-.. note::
-    This program was originally created by Alec J. Neal but updated for interactive usage by Kyle J. Koeller.
-
-This program aims to find the times of minimum (ToM) from given light curve data. One thing this helps with is determine how accurate the period is.
-
-The ``main`` function first asks the user how many filters they are using. Again this is assumed to be between 1-3 fiflters as that is what is used for BSUO and the SARA telescopes that Ball State has access to.
-
-.. literalinclude:: ../EclipsingBinaries/find_min.py
-   :lines: 552-594
-
-Kwee van Woerdan
-^^^^^^^^^^^^^^^^
-
-Any option that the user enters, the function ``plot_obs`` is called. The point of this function is to plot the main figure that the user interacts with varying keyboard press events (talk about that later). Within this function, the function ``KvW`` (Kwee van Woerdan) is called. This is a method utilizes the symmetry of a light curve to use an estimated location.
-
-The ToM and its error is defined by the following:
-
-.. literalinclude:: ../EclipsingBinaries/find_min.py
-   :lines: 160-182
-
-Key Events
-^^^^^^^^^^
-
-When the plot gets displayed to the user, the user can interactively work with what is displayed using various key presses:
-
-.. literalinclude:: ../EclipsingBinaries/find_min.py
-   :lines: 459-507
-
-This functionaility is still a work in progress but the user can do the following:
-
-+ Left and right boundaries
-+ Move to the next "day" (next set of observations)
-+ Close the plot
-+ Display the options available
-
-.. image:: ../EclipsingBinaries/examples/min_program_demo.png
-
-The ability to write the KvW value and error to a file will be added at a later date.
+   :lines: 583-617
 
 TESS Database Search/Download
 -----------------------------
@@ -197,7 +155,7 @@ TESS ccd Information
 TESS released information regarding its ccd's (there are four on board the satellite) and this is compiled into a text file called ``tess_ccd_info.txt`` located `here <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/tess_ccd_info.txt>`_ for reference. The program determined the gain given the sector's camera and ccd values and only takes every 4th value given repeats.
 
 .. literalinclude:: ../EclipsingBinaries/tess_data_search.py
-   :lines: 49-70
+   :lines: 44-73
 
 Downloading
 ^^^^^^^^^^^
@@ -205,12 +163,12 @@ Downloading
 Starting the downloading after finding sector numbers is as simple as telling the program to download all the sectors for a first time run or to download a specific sector for new data release.
 
 .. literalinclude:: ../EclipsingBinaries/tess_data_search.py
-   :lines: 80-103
+   :lines: 83-106
 
 For either choice, the program calls the ``download`` function. This function actively retrieves the data based on system name and sector number.
 
 .. literalinclude:: ../EclipsingBinaries/tess_data_search.py
-   :lines: 108-131
+   :lines: 111-134
 
 The default size is the maximum size allowed by TESS which is a ``30x30 arcmin`` box. At this current time, there is no way to change this as an input, but if users are wanting this choice, this can be added at a later date.
 
@@ -256,7 +214,7 @@ Catalog Finder
 The first thing this program does is search the `Vizier APASS catalog <https://vizier.cds.unistra.fr/viz-bin/VizieR-3?-source=II/336/apass9&-out.max=50&-out.form=HTML%20Table&-out.add=_r&-out.add=_RAJ,_DEJ&-sort=_r&-oc.form=sexa>`_. Given a ``RA`` and ``DEC`` of a star, the program does the following:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
-   :lines: 213-221
+   :lines: 189-209
 
 This looks at a box of size 30 arcmin and gathers all APASS magnitude known stars and compiles them into a table. The first three inputs into the result variable are:
 
@@ -273,7 +231,7 @@ Cousins R
 After gathering all the comparison stars, the program then goes on to calculate the Cousins R band filter. For each and every comparison star by calling the ``calculations`` function:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
-   :lines: 448-483
+   :lines: 526-539
 
 The final equation used comes from this `paper <https://arxiv.org/pdf/astro-ph/0609736.pdf>`_ by rearranging equation 2 to solve for the Cousins R variable. The error for the ``val`` is given by the variable ``root`` and this uses basic add the errors in quadrature.
 
@@ -289,8 +247,11 @@ The ``cousins_r`` function also searches the `Gaia <https://www.cosmos.esa.int/w
 + https://iopscience.iop.org/article/10.3847/1538-3881/ab3467/pdf
 + https://arxiv.org/pdf/2012.01916.pdf
 
+
++ https://arxiv.org/pdf/2301.03704
+
 .. literalinclude:: ../EclipsingBinaries/gaia.py
-   :lines: 128-160
+   :lines: 102-165
 
 If the value of the TESS magnitude for a given comparison is ``NaN`` then the value and its error are set to ``99.999`` to effectively guarantee that it will not be used later.
 
@@ -300,7 +261,7 @@ Creating RADEC Files
 The creation of RADEC files is carried out by the function ``create_radec`` and it uses Astro ImageJ (AIJ) convention of formatting these files:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
-   :lines: 304-378
+   :lines: 383-434
 
 The function creates four RADEC files for each main filter used by BSUO (Johnson B, Johnson V, and Cousins R) and writes them to individual files.
 
@@ -310,7 +271,7 @@ Overlay
 Displaying where all the comparison stars are located is optional. The function ``overlay`` takes the list of RA and DEC of the comparison stars and overlays their locations onto an image that the user enters in. The program plots circles around the stars and numbers them underneath those circles.
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
-   :lines: 427-444
+   :lines: 437-500
 
 .. image:: ../EclipsingBinaries/examples/overlay_example.png
 
@@ -320,28 +281,17 @@ BSUO or SARA/TESSS Night Filters
 Gather Data
 ^^^^^^^^^^^
 
-When using Astro ImageJ (AIJ) produces ``.dat`` files that contain magntiude and flux data for every set of data anlyzed. The purpose of this code is to take all sets of the data files and combine them into a single file per filter, from the ``Night_Filters.py`` program.
+When using Astro ImageJ (AIJ), it produces ``.dat`` files that contain magntiude and flux data for every set of data anlyzed. The purpose of this code is to take all sets of the data files and combine them into a single file per filter, from the ``Night_Filters.py`` program.
 
-The program first checks how many nights the use will be using and then gathers each file pathway from a for loop inside the ``get_nights_AIJ`` function. 
-
-.. literalinclude:: ../EclipsingBinaries/Night_Filters.py
-   :lines: 86-162
-
-The program checks if the user has both magnitude and flux data or just magnitude data by checking if there five or seven columns in the ``.dat`` files. Once that has been determined the program then writes those values into a text file:
-
-.. literalinclude:: ../EclipsingBinaries/Night_Filters.py
-   :lines: 163-195
+The program first checks how many nights the use will be using and then gathers each file pathway from a for loop inside the ``flux_mag`` function. It then checks if the user has both magnitude and flux data or just magnitude data by checking if there five or seven columns in the ``.dat`` files. Once that has been determined the program then writes those values into a text file in a format like the following:
 
 .. literalinclude:: ../EclipsingBinaries/examples/test_B.txt
-    :lines: 1-10
-
-.. note::
-    The same thing happens for TESS data (``get_nights_TESS.py`` function) except at the time or writing this program (1-30-2023), BSUO only had the ablity to gather relative flux data but now with the ``gaia.py`` program, this needs to be updated to gather magnitude data as well.
+    :lines: 1-15
 
 O-C Plotting
 ------------
 
-Calculating Observed minus Calculated (O-C) is done by the ``OC_plot.py`` prigram. Given a period and first primary ToM the program calculates the O-C values and respctive errors. The program first asks the user if they are calculating BSUO/SARA data, TESS data, or plotting all their data.
+Calculating Observed minus Calculated (O-C) is done by the ``OC_plot.py`` program. Given a period and first primary ToM the program calculates the O-C values and respctive errors. The program first asks the user if they are calculating BSUO/SARA data, TESS data, or plotting all their data.
 
 BSUO/SARA
 ^^^^^^^^^
@@ -354,10 +304,12 @@ As seen above, the program asks the user if they know what their ``T0`` and ``To
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
    :lines: 286-300
 
-For each index value for each filter, the ToM are averaged together. This gives the user the most likely time for that ToM:
+If the user does not have an Epoch value then the program uses the first time of minimum from the data provided and its corresponding error. For each index value for each filter, the ToM are averaged together. This gives the user the most likely time for that ToM:
 
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
    :lines: 159-162
+
+The averaging only occurs for datasets that contain multiple filters. For datasets like TESS, there is no averaging to be done as there is only a single filter.
 
 Calculations
 ^^^^^^^^^^^^
@@ -365,17 +317,12 @@ Calculations
 After that, the programs calls the ``BSUO`` function which then calls the ``calculate_oc`` function that does the real calculations:
 
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
-   :lines: 303-332
+   :lines: 304-334
 
 The very first line of the above code is utilizing the `Numba <https://numba.pydata.org/>`_ package. The following lines are what calculate the eclipse number and if the ``E_act`` is positive then use the floor function and if ``E_act`` is negative use the ceiling function. The ``OC`` and ``OC_err`` only take the first five decimal places, otherwise there would be like 10 decimal places (unrealistic accuracy).
 
 .. literalinclude:: ../EclipsingBinaries/examples/example_OC_table.txt
     :lines: 1-10
-
-TESS
-^^^^
-
-The only difference between BSUO/SARA to TESS data is that, TESS assumes only a single filter. So there is no averaging for the ToM to be done.
 
 Plotting All Data
 ^^^^^^^^^^^^^^^^^

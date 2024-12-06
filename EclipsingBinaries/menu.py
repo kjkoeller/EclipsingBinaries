@@ -9,7 +9,7 @@ Last Updated: 12/06/2024
 
 
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, ttk
 from pathlib import Path
 import threading
 from astropy.nddata import CCDData
@@ -17,8 +17,8 @@ from matplotlib import pyplot as plt
 # from astropy.io import fits
 
 # Import the updated IRAF Reduction script
-from IRAF_GUI import run_reduction
-from tess_data_search import run_tess_search
+from .IRAF_GUI import run_reduction
+from .tess_data_search import run_tess_search
 
 
 class ProgramLauncher(tk.Tk):
@@ -125,13 +125,6 @@ class ProgramLauncher(tk.Tk):
         # Overscan and Trim region inputs
         overscan = self.create_input_field(self.right_frame, "Overscan Region:", row=5)
         trim = self.create_input_field(self.right_frame, "Trim Region:", row=6)
-        # self.overscan_var = tk.StringVar()
-        # self.trim_var = tk.StringVar()
-        # tk.Label(self.right_frame, text="Overscan Region:", font=self.label_font, bg="#ffffff").grid(row=5, column=0, sticky="e")
-        # tk.Entry(self.right_frame, textvariable=self.overscan_var, font=self.label_font).grid(row=5, column=1, padx=10, pady=5, sticky="w")
-
-        # tk.Label(self.right_frame, text="Trim Region:", font=self.label_font, bg="#ffffff").grid(row=6, column=0, sticky="e")
-        # tk.Entry(self.right_frame, textvariable=self.trim_var, font=self.label_font).grid(row=6, column=1, padx=10, pady=5, sticky="w")
 
         # Button to open and plot bias image
         tk.Button(self.right_frame, text="Open Bias Image", font=self.button_font, bg="#003366", fg="white",
@@ -188,47 +181,79 @@ class ProgramLauncher(tk.Tk):
         """Display the TESS Database Search panel."""
         self.clear_right_frame()
 
-        # Configure grid for centering
+        # Configure grid
         self.right_frame.grid_columnconfigure(0, weight=1)
         self.right_frame.grid_columnconfigure(1, weight=1)
 
-        # Add a title
+        # Add title
         tk.Label(self.right_frame, text="TESS Database Search", font=self.header_font, bg="#ffffff").grid(
             row=0, column=0, columnspan=2, pady=10, sticky="ew"
         )
 
-        # Input fields with proper alignment
+        # Input fields
         system_name = self.create_input_field(self.right_frame, "System Name (TIC ID):", row=1)
         download_path = self.create_input_field(self.right_frame, "Download Path:", row=2)
 
-        # Radio buttons for download option
-        download_all_var = tk.BooleanVar(value=True)
-        tk.Radiobutton(
-            self.right_frame, text="Download All Sectors", variable=download_all_var, value=True,
-            font=self.label_font, bg="#ffffff"
-        ).grid(row=3, column=0, columnspan=2, pady=5, sticky="")
-        tk.Radiobutton(
-            self.right_frame, text="Download Specific Sector", variable=download_all_var, value=False,
-            font=self.label_font, bg="#ffffff"
-        ).grid(row=4, column=0, columnspan=2, pady=5, sticky="")
+        # Checkbox for download specific sector
+        download_all_var = tk.BooleanVar(value=False)  # Default to unchecked
 
-        # Specific sector input
-        specific_sector = self.create_input_field(self.right_frame, "Specific Sector (if applicable):", row=5)
+        # not using the create_checkbox because of the dynamic GUI changing for the retrieve button and label
+        tk.Checkbutton(
+            self.right_frame, text="Download Specific Sector", variable=download_all_var,
+            font=self.label_font, bg="#ffffff", command=lambda: self.toggle_sector_options(download_all_var)
+        ).grid(row=3, column=0, columnspan=2, pady=5)
 
         # Run button
         self.create_run_button(self.right_frame, self.run_tess_search, row=6,
                                system_name=system_name,
                                download_path=download_path,
                                download_all_var=download_all_var,
-                               specific_sector=specific_sector)
+                               sector_dropdown=None)
 
         # Log display area
         tk.Label(self.right_frame, text="Output Log:", font=self.label_font, bg="#ffffff").grid(
             row=7, column=0, columnspan=2, pady=5
         )
 
-        # create the scroll bar and log area
+        # Create scrollbar for the log area
         self.create_scrollbar_and_log(8)
+
+    def toggle_sector_options(self, download_all_var):
+        """Show or hide the sector dropdown, 'Select Specific Sector' label, and Retrieve Sectors button."""
+        if download_all_var.get():  # Checkbox is selected (True)
+            # Add "Select Specific Sector" label
+            if not hasattr(self, "sector_label"):
+                self.sector_label = tk.Label(self.right_frame, text="Select Specific Sector:", font=self.label_font,
+                                             bg="#ffffff")
+                self.sector_label.grid(row=4, column=0, sticky="e")
+
+            # Add sector dropdown
+            if not hasattr(self, "sector_dropdown"):
+                self.sector_dropdown = ttk.Combobox(self.right_frame, state="readonly", values=[], font=self.label_font)
+                self.sector_dropdown.grid(row=4, column=1, padx=10, pady=5, sticky="w")
+
+            # Add "Retrieve Sectors" button
+            if not hasattr(self, "retrieve_button"):
+                self.retrieve_button = tk.Button(
+                    self.right_frame, text="Retrieve Sectors", font=self.button_font, bg="#003366", fg="white",
+                    command=lambda: self.retrieve_sectors(system_name=None, sector_dropdown=self.sector_dropdown)
+                )
+                self.retrieve_button.grid(row=5, column=0, columnspan=2, pady=10)
+        else:  # Checkbox is unselected (False)
+            # Remove "Select Specific Sector" label
+            if hasattr(self, "sector_label"):
+                self.sector_label.destroy()
+                del self.sector_label
+
+            # Remove sector dropdown
+            if hasattr(self, "sector_dropdown"):
+                self.sector_dropdown.destroy()
+                del self.sector_dropdown
+
+            # Remove "Retrieve Sectors" button
+            if hasattr(self, "retrieve_button"):
+                self.retrieve_button.destroy()
+                del self.retrieve_button
 
     def create_scrollbar_and_log(self, row):
         # Create a frame to hold the log area and scrollbar
@@ -324,7 +349,7 @@ class ProgramLauncher(tk.Tk):
         # Run the reduction in a separate thread
         threading.Thread(target=reduction_task, daemon=True).start()
 
-    def run_tess_search(self, system_name, download_path, download_all_var, specific_sector):
+    def run_tess_search(self, system_name, download_path, download_all_var, sector_dropdown):
         """Run the TESS Database Search and TESSCut processing in a separate thread."""
 
         def search_task():
@@ -332,7 +357,12 @@ class ProgramLauncher(tk.Tk):
                 system_name_value = system_name.get().strip()
                 download_path_value = download_path.get().strip()  # Correctly retrieve the string value
                 download_all = download_all_var.get()
-                specific_sector_value = int(specific_sector.get().strip()) if not download_all else None
+                specific_sector_value = None
+                if not download_all:
+                    specific_sector_value = sector_dropdown.get()
+                    if not specific_sector_value.isdigit():
+                        self.write_to_log("Error: Please select a valid sector.")
+                        return
 
                 if not system_name_value:
                     self.write_to_log("Error: System name (TIC ID) is required.")
@@ -353,8 +383,8 @@ class ProgramLauncher(tk.Tk):
                 run_tess_search(
                     system_name=system_name_value,
                     download_all=download_all,
-                    specific_sector=specific_sector_value,
-                    download_path=download_path_value,  # Pass the corrected path
+                    specific_sector=int(specific_sector_value) if specific_sector_value else None,
+                    download_path=download_path_value,
                     write_callback=self.write_to_log
                 )
 

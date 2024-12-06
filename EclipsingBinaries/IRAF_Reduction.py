@@ -40,7 +40,7 @@ dark_bool = "True"
 location = "bsuo"
 
 
-def run_reduction(path, calibrated, location, dark_bool=True, write_callback=None):
+def run_reduction(path, calibrated, location, dark_bool=True, overscan_region="[2073:2115, :]", trim_region="[20:2060, 12:2057]", write_callback=None):
     """
     Main function to run the reduction process. It replaces user input with programmatic arguments.
 
@@ -48,6 +48,8 @@ def run_reduction(path, calibrated, location, dark_bool=True, write_callback=Non
     :param calibrated: The path to the output directory for calibrated images
     :param location: The observing location (e.g., 'bsuo', 'kpno', etc.)
     :param dark_bool: Boolean to indicate whether to use dark frames
+    :param overscan_region: String for the overscan region of the CCD
+    :param trim_region: String for the trim region of the CCD
     :param write_callback: Function to write log messages to the GUI
     """
     def log(message):
@@ -67,10 +69,6 @@ def run_reduction(path, calibrated, location, dark_bool=True, write_callback=Non
         if not calibrated_data.exists():
             calibrated_data.mkdir(parents=True)
 
-        # log(f"Starting reduction process...\nRaw Path: {images_path}\nCalibrated Path: {calibrated_data}")
-        # log(f"Using location: {location}")
-        # log(f"Using dark frames: {'Yes' if dark_bool else 'No'}\n")
-
         # Configure location-specific defaults
         if location.lower() == "kpno":
             configure_kpno()
@@ -81,7 +79,8 @@ def run_reduction(path, calibrated, location, dark_bool=True, write_callback=Non
 
         # Process files
         files = ccdp.ImageFileCollection(images_path)
-        zero, overscan_region, trim_region = bias(files, calibrated_data, log)
+        # zero, overscan_region, trim_region = bias(files, calibrated_data, log)
+        zero = bias(files, calibrated_data, overscan_region, trim_region, log)
         master_dark = dark(files, zero, calibrated_data, overscan_region, trim_region, log) if dark_bool else None
         flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region, log)
         science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region, log)
@@ -228,19 +227,21 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
         return reduced
 
 
-def bias(files, calibrated_data, log):
+def bias(files, calibrated_data, overscan_region, trim_region, log):
     """
     Calibrates bias images and creates a master bias.
 
     :param files: Image file collection
     :param calibrated_data: Path to save calibrated images
+    :param overscan_region: String for the overscan region of the CCD
+    :param trim_region: String for the trim region of the CCD
     :param log: Logging function
-    :return: Master bias, overscan region, trim region
+    :return: Master bias
     """
     log("\nStarting bias calibration.")
     # Simulate overscan and trim region determination
-    overscan_region = "[2073:2115, :]"
-    trim_region = "[20:2060, 12:2057]"
+    # overscan_region = "[2073:2115, :]"
+    # trim_region = "[20:2060, 12:2057]"
 
     log(f"Overscan Region: {overscan_region}")
     log(f"Trim Region: {trim_region}")
@@ -270,27 +271,7 @@ def bias(files, calibrated_data, log):
     combined_bias.write(combined_bias_path, overwrite=overwrite)
     log(f"Master bias created: {combined_bias_path}")
 
-    return combined_bias, overscan_region, trim_region
-
-
-def bias_plot(ccd):
-    """
-    Plots the count values for row 1000 to find the overscan and trim regions
-
-    :param ccd: bias image to be looked at
-    :return: None
-    """
-    plt.figure(figsize=(10, 5))
-    plt.plot(ccd.data[1000][:], label='Raw Flat')
-    plt.grid()
-    plt.axvline(x=2077, color='black', linewidth=2, linestyle='dashed', label='Suggested Start of Overscan')
-    plt.legend()
-    # plt.ylim(0, 60000)
-    plt.xlim(-50, 2130)
-    plt.xlabel('pixel number')
-    plt.ylabel('Counts')
-    # plt.title('Count Values for Row 1000')
-    # plt.show()
+    return combined_bias # , overscan_region, trim_region
 
 
 def dark(files, zero, calibrated_path, overscan_region, trim_region, log):

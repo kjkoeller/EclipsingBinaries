@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 04/19/2024
+Last Edited: 12/06/2024
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -32,158 +32,103 @@ warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 sigma_clip_low_thresh = None
 sigma_clip_high_thresh = 3
 sigclip = 5  # sigclip for cosmic ray removal
-# rdnoise = 10.83  # * u.electron  # gathered from fits headers manually
-# gain = 1.43  # * u.electron / u.adu  # gathered from fits headers manually
+rdnoise = 10.83  # * u.electron  # gathered from fits headers manually
+gain = 1.43  # * u.electron / u.adu  # gathered from fits headers manually
 overwrite = True  # if the user wants to overwrite already existing files or not, by default it is set to True
-# mem_limit = 1600e6  # maximum memory limit 4.5 Gb is the recommended which is 450e6 (i.e. 8.0 Gb would be 800e6)
+mem_limit = 1600e6  # maximum memory limit 4.5 Gb is the recommended which is 450e6 (i.e. 8.0 Gb would be 800e6)
 dark_bool = "True"
-# location = "bsuo"
+location = "bsuo"
 
 
-def main(path="", calibrated="", pipeline=False, location="", dark_bool=True, gain=1.43, rdnoise=10.83, mem_limit=450e6):
+def run_reduction(path, calibrated, location, dark_bool=True, write_callback=None):
     """
-    This function calls all other functions in order of the calibration.
+    Main function to run the reduction process. It replaces user input with programmatic arguments.
 
-    :param path: the path to the raw images
-    :param calibrated: the path to the calibrated images
-    :param pipeline: if the user wants to use the pipeline or not
-    :param location: the location of the telescope
-    :param dark_bool: if the user wants to use dark frames or not
-
-    :return: outputs all calibration images into a new reduced folder designated by the user.
+    :param path: The path to the raw images directory
+    :param calibrated: The path to the output directory for calibrated images
+    :param location: The observing location (e.g., 'bsuo', 'kpno', etc.)
+    :param dark_bool: Boolean to indicate whether to use dark frames
+    :param write_callback: Function to write log messages to the GUI
     """
-    if not pipeline:
-        # allows the user to input where the raw images are and where the calibrated images go to
-        path = input("Please enter a file pathway (i.e. C:\\folder1\\folder2\\[raw]) to where the raw images are or type "
-                     "the word 'Close' to leave: ")
-        # path = "C:\\Users\\Kyle\\OneDrive\\PhysicsAstro\\Astronomy\\Code\\IRAF\\Calibration"
-        if path.lower() == "close":
-            exit()
-        # path = "Calibration2"
-        calibrated = input("Please enter a file pathway for a new calibrated folder to not overwrite the original images "
-                           "(C:\\folder1\\folder2\\[calibrated]): ")
-        # calibrated = "C:\\test"
-        # checks whether the file paths from above are real
-        while True:
-            try:
-                images_path = Path(path)
-                calibrated_data = Path(calibrated)
-                break
-            except FileNotFoundError:
-                print("Files were not found. Please try again.\n")
-                path = input("Please enter a file path or folder name (if this code is in the same main folder): ")
-                calibrated = input("Please enter a name for a new calibrated folder to not overwrite the original images: ")
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
 
+    try:
+        # Convert paths to Path objects
+        images_path = Path(path)
+        calibrated_data = Path(calibrated)
+
+        if not images_path.exists():
+            raise FileNotFoundError(f"Raw images path '{path}' does not exist.")
+        if not calibrated_data.exists():
+            calibrated_data.mkdir(parents=True)
+
+        # log(f"Starting reduction process...\nRaw Path: {images_path}\nCalibrated Path: {calibrated_data}")
+        # log(f"Using location: {location}")
+        # log(f"Using dark frames: {'Yes' if dark_bool else 'No'}\n")
+
+        # Configure location-specific defaults
         if location.lower() == "kpno":
-            gain, rdnoise = kpno()
+            configure_kpno()
         elif location.lower() == "ctio":
-            gain, rdnoise = ctio()
+            configure_ctio()
         elif location.lower() == "lapalma":
-            gain, rdnoise = lapalma()
-        elif location.lower() == "bsuo":
-            pass
-        else:
-            print("\nDo you want to load default options like gain and read noise? The defaults are for BSUO")
-            while True:
-                default_ans = input("To load defaults type 'Default' otherwise type 'New' to enter values: ")
-                # default_ans = "default"
-                if default_ans.lower() == "default":
-                    break
-                elif default_ans.lower() == "new":
-                    new_default()
-                    break
-                else:
-                    print("Please either enter 'Default' or 'New'.\n")
+            configure_lapalma()
 
-        calibrated_data.mkdir(exist_ok=True)
+        # Process files
         files = ccdp.ImageFileCollection(images_path)
+        zero, overscan_region, trim_region = bias(files, calibrated_data, log)
+        master_dark = dark(files, zero, calibrated_data, overscan_region, trim_region, log) if dark_bool else None
+        flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region, log)
+        science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region, log)
 
-        zero, overscan_region, trim_region = bias(files, calibrated_data, path, pipeline, mem_limit, gain)
-        if not dark_bool:
-            master_dark = None
-        else:
-            master_dark = dark(files, zero, calibrated_data, overscan_region, trim_region, gain, rdnoise, mem_limit)
+        log("\nReduction process completed successfully.\n")
+    except Exception as e:
+        log(f"An error occurred: {e}")
+        raise
 
-        flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region, gain, rdnoise, mem_limit)
-        science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region)
-    else:
-        # checks whether the file paths from above are real
-        while True:
-            try:
-                images_path = Path(path)
-                calibrated_data = Path(calibrated)
-                break
-            except FileNotFoundError:
-                print("Files were not found. Please try again.\n")
-                path = input("Please enter a file path or folder name (if this code is in the same main folder): ")
-                calibrated = input(
-                    "Please enter a name for a new calibrated folder to not overwrite the original images: ")
 
-        if location.lower() == "kpno":
-            kpno()
-        elif location.lower() == "ctio":
-            ctio()
-        elif location.lower() == "lapalma":
-            lapalma()
-        elif location.lower() == "bsuo":
-            pass
-
-        calibrated_data.mkdir(exist_ok=True)
-        files = ccdp.ImageFileCollection(images_path)
-
-        zero, overscan_region, trim_region = bias(files, calibrated_data, path, pipeline, mem_limit, gain)
-        if not dark_bool:
-            master_dark = None
-        else:
-            master_dark = dark(files, zero, calibrated_data, overscan_region, trim_region, gain, rdnoise, mem_limit)
-
-        flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region, gain, rdnoise, mem_limit)
-        science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region)
-
-# more observatory sites can be found here: https://github.com/astropy/astropy-data/blob/gh-pages/coordinates/sites.json
 def kpno():
     """
     Kitt Peak National Observatory default values
 
-    :return: Camera characteristics
+    :return: None
     """
-    global dark_bool
-    
+    global gain, rdnoise, dark_bool
+
     gain = 2.3
     rdnoise = 6.0
     dark_bool = True
-
-    return gain, rdnoise
 
 
 def ctio():
     """
     Cerro Tololo Inter-American Observatory default values
 
-    :return: Camera characteristics
+    :return: None
     """
-    global dark_bool
+    global gain, rdnoise, dark_bool
 
     gain = 2.0
     rdnoise = 9.7
     dark_bool = True
-
-    return gain, rdnoise
 
 
 def lapalma():
     """
     La Palma default values
 
-    :return: Camera characteristics
+    :return: None
     """
-    global dark_bool
+    global gain, rdnoise, dark_bool
 
     gain = 1.0
     rdnoise = 6.3
     dark_bool = True
-
-    return gain, rdnoise
 
 
 def new_default():
@@ -192,11 +137,7 @@ def new_default():
 
     :return: newly entered default values
     """
-    global sigma_clip_high_thresh
-    global sigma_clip_low_thresh
-    global sigclip
-    global dark_bool
-    global location
+    global sigma_clip_high_thresh, sigma_clip_low_thresh, gain, rdnoise, sigclip, dark_bool, location
 
     sigma_clip_low_thresh = (input("\nEnter a sigma clip low threshold, default is 'None': "))
     if sigma_clip_low_thresh.lower() == "none":
@@ -214,10 +155,8 @@ def new_default():
         dark_bool = True
     location = input("What is your observation location, default is bsuo (ctio, kpno, lapalma")
 
-    return gain, rdnoise, dark_bool
 
-
-def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_flat, gain, rdnoise):
+def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_flat):
     """
     This function takes the information for each section of the reduction process into a singular function for
     limits in duplication of the code.
@@ -229,9 +168,6 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
     :param zero: master bias
     :param combined_dark: master dark
     :param good_flat: master flat
-    :param gain: gain of the camera
-    :param rdnoise: readout noise of the camera
-
     :return: depends on the stage of process, but will return a final image for each process
     """
 
@@ -292,87 +228,47 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
         return reduced
 
 
-def bias(files, calibrated_data, path, pipeline, mem_limit, gain):
+def bias(files, calibrated_data, log):
     """
-    Calibrates the bias images
+    Calibrates bias images and creates a master bias.
 
-    :param path: the raw images folder path
-    :param files: file location where all raw images are
-    :param calibrated_data: file location where the new images go
-    :param pipeline: true or false for pipeline usage
-    :param mem_limit: maximum memory chunk usage
-    :param gain: gain of the camera
-
-    :return: the combined bias image and the trim and overscan regions
+    :param files: Image file collection
+    :param calibrated_data: Path to save calibrated images
+    :param log: Logging function
+    :return: Master bias, overscan region, trim region
     """
+    log("\nStarting bias calibration.")
+    # Simulate overscan and trim region determination
+    overscan_region = "[2073:2115, :]"
+    trim_region = "[20:2060, 12:2057]"
 
-    # plots one of the flat image mean count values across all columns to find the trim and overscan regions
-    if not pipeline:
-        print("\n\nThe flat image that you enter next should be inside the " + "\033[1m" + "\033[93m" + "FIRST" +
-              "\033[00m" + " folder that you entered above or this will crash.")
-        while True:
-            try:
-                image = input(
-                    "Please enter the name of one of the flat image to be looked at for overscan and data regions: ")
-                # image = "Flat-Empty-B-Bin2-001-NoGEM.fts"  # testing
-                cryo_path = Path(path)
-                bias_1 = CCDData.read(cryo_path / image, unit='adu')
-                break
-            except FileNotFoundError:
-                print("\nThe file you entered could not be found, please try entering " 
-                      "\033[1m" + "\033[93m" + "JUST" + "\033[00m" + " the file name only.\n")
-        # bias_1 = CCDData.read(cryo_path / 'bias-0001.fits', unit='adu')  # testing
+    log(f"Overscan Region: {overscan_region}")
+    log(f"Trim Region: {trim_region}")
 
-        print("\n\nFor the overscan region, [columns, rows], and if you want all the columns then you want would enter, \n"
-              "[1234:5678, 1234:5678] and this would say rows between those values and all the columns. \n"
-              "This would also work if you wanted all the columns ([: , 1234:5678]).\n")
-        bias_plot(bias_1)
-
-        overscan_region = input("Please enter the overscan region you determined from the figure.\n"
-                                "Example '[2073:2115, :]' or if you do not have an overscan region enter 'None': ")
-        trim_region = input("Please enter the data section. Example '[20:2060, 12:2057]': ")
-        print()
-    else:
-        overscan_region = "[2073:2115, :]"
-        trim_region = "[20:2060, 12:2057]"
-
-    print("\nStarting overscan on bias.\n")
     for ccd, file_name in files.ccds(imagetyp='BIAS', return_fname=True, ccd_kwargs={'unit': 'adu'}):
-        new_ccd = reduce(ccd, overscan_region, trim_region, 0, zero=None, combined_dark=None, good_flat=None, gain=gain, rdnoise=rdnoise)
+        log(f"Processing bias image: {file_name}")
+        new_ccd = reduce(ccd, overscan_region, trim_region, 0, zero=None, combined_dark=None, good_flat=None)
+        output_path = calibrated_data / f"{file_name.split('.')[0]}.fits"
+        new_ccd.write(output_path, overwrite=overwrite)
+        log(f"Saved calibrated bias image: {output_path}")
 
-        list_of_words = file_name.split(".")
-        new_fname = "{}.fits".format(list_of_words[0])
-
-        # Save the result
-        new_ccd.write(calibrated_data / new_fname, overwrite=overwrite)
-
-        add_header(calibrated_data, new_fname, "BIAS", "None", None, None, None,
-                   trim_region, overscan_region, gain, rdnoise)
-
-        # output that an image is finished for updates to the user
-        print("Finished overscan correction for " + str(new_fname))
-
-    print("\nFinished overscan correcting bias frames.")
-    # combine all the output bias images into a master bias
+    log("\nCombining bias frames to create master bias.")
     reduced_images = ccdp.ImageFileCollection(calibrated_data)
     calibrated_biases = reduced_images.files_filtered(imagetyp='BIAS', include_path=True)
 
-    combined_bias = ccdp.combine(calibrated_biases,
-                                 method='average',
-                                 sigma_clip=True, sigma_clip_low_thresh=sigma_clip_low_thresh,
-                                 sigma_clip_high_thresh=sigma_clip_high_thresh,
-                                 sigma_clip_func=np.ma.median, signma_clip_dev_func=mad_std,
-                                 mem_limit=mem_limit
-                                 )
-
-    fname = "zero.fits"
+    combined_bias = ccdp.combine(
+        calibrated_biases,
+        method='average',
+        sigma_clip=True,
+        sigma_clip_low_thresh=sigma_clip_low_thresh,
+        sigma_clip_high_thresh=sigma_clip_high_thresh,
+        sigma_clip_func=np.ma.median,
+        mem_limit=mem_limit
+    )
     combined_bias.meta['combined'] = True
-    combined_bias.write(calibrated_data / fname, overwrite=overwrite)
-
-    add_header(calibrated_data, fname, "BIAS", "None", None, None, None,
-               trim_region, overscan_region, gain, rdnoise)
-
-    print("\nFinished creating zero.fits\n")
+    combined_bias_path = calibrated_data / "zero.fits"
+    combined_bias.write(combined_bias_path, overwrite=overwrite)
+    log(f"Master bias created: {combined_bias_path}")
 
     return combined_bias, overscan_region, trim_region
 
@@ -397,64 +293,48 @@ def bias_plot(ccd):
     # plt.show()
 
 
-def dark(files, zero, calibrated_path, overscan_region, trim_region, gain, rdnoise, mem_limit):
+def dark(files, zero, calibrated_path, overscan_region, trim_region, log):
     """
-    Calibrates the dark frames.
+    Calibrates dark frames and creates a master dark.
 
-    :param files: file location of raw images
-    :param zero: master bias image
-    :param calibrated_path: file location for the new images
-    :param trim_region: trim region for images
-    :param overscan_region: overscan region for images
-    :param mem_limit: maximum memory chunk usage
-    :param gain: gain of the camera
-    :param rdnoise: readout noise of the camera
-
-    :return: combined master dark
+    :param files: Image file collection
+    :param zero: Master bias
+    :param calibrated_path: Path to save calibrated images
+    :param overscan_region: Overscan region for dark frames
+    :param trim_region: Trim region for dark frames
+    :param log: Logging function
+    :return: Master dark frame
     """
-    print("Starting dark calibration.\n")
-    # calibrating a combining the dark frames
-    for ccd, file_name in files.ccds(imagetyp='DARK', ccd_kwargs={'unit': 'adu'}, return_fname=True):
-        sub_ccd = reduce(ccd, overscan_region, trim_region, 1, zero, combined_dark=None, good_flat=None, gain=gain, rdnoise=rdnoise)
+    log("\nStarting dark calibration.")
+    for ccd, file_name in files.ccds(imagetyp='DARK', return_fname=True, ccd_kwargs={'unit': 'adu'}):
+        log(f"Processing dark image: {file_name}")
+        sub_ccd = reduce(ccd, overscan_region, trim_region, 1, zero, combined_dark=None, good_flat=None)
+        output_path = calibrated_path / f"{file_name.split('.')[0]}.fits"
+        sub_ccd.write(output_path, overwrite=overwrite)
+        log(f"Saved calibrated dark image: {output_path}")
 
-        # new file name that uses the number from the original image
-        list_of_words = file_name.split(".")
-        new_fname = "{}.fits".format(list_of_words[0])
-
-        # Save the result
-        sub_ccd.write(calibrated_path / new_fname, overwrite=overwrite)
-
-        add_header(calibrated_path, new_fname, "DARK", "None", None, None, None,
-                   trim_region, overscan_region, gain, rdnoise)
-
-        print("Finished overscan correction and bias subtraction for " + str(new_fname))
-
-    print("\nFinished overscan correcting and bias subtracting all dark frames.")
-    print("\nStarting combining dark frames.\n")
-    time.sleep(10)
+    log("\nCombining dark frames to create master dark.")
     reduced_images = ccdp.ImageFileCollection(calibrated_path)
-    calibrated_darks = reduced_images.files_filtered(imagetyp='dark', include_path=True)
+    calibrated_darks = reduced_images.files_filtered(imagetyp='DARK', include_path=True)
 
-    combined_dark = ccdp.combine(calibrated_darks,
-                                 method='average',
-                                 sigma_clip=True, sigma_clip_low_thresh=sigma_clip_low_thresh,
-                                 sigma_clip_high_thresh=sigma_clip_high_thresh,
-                                 sigma_clip_func=np.ma.median, signma_clip_dev_func=mad_std,
-                                 rdnoise=rdnoise * u.electron, gain=gain * u.electron / u.adu, mem_limit=mem_limit
-                                 )
-
-    fname = "master_dark.fits"
+    combined_dark = ccdp.combine(
+        calibrated_darks,
+        method='average',
+        sigma_clip=True,
+        sigma_clip_low_thresh=sigma_clip_low_thresh,
+        sigma_clip_high_thresh=sigma_clip_high_thresh,
+        sigma_clip_func=np.ma.median,
+        mem_limit=mem_limit
+    )
     combined_dark.meta['combined'] = True
-    combined_dark.write(calibrated_path / fname, overwrite=overwrite)
+    combined_dark_path = calibrated_path / "master_dark.fits"
+    combined_dark.write(combined_dark_path, overwrite=overwrite)
+    log(f"Master dark created: {combined_dark_path}")
 
-    add_header(calibrated_path, fname, "DARK", "None", None, None, None,
-               trim_region, overscan_region, gain, rdnoise)
-
-    print("Finished creating a master dark.\n")
     return combined_dark
 
 
-def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_region, gain, rdnoise, mem_limit):
+def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_region, log):
     """
     Calibrate flat images.
 
@@ -464,17 +344,13 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
     :param calibrated_path: file location for new images
     :param trim_region: trim region for images
     :param overscan_region: overscan region for images
-    :param mem_limit: maximum memory chunk usage
-    :param gain: gain of the camera
-    :param rdnoise: readout noise of the camera
-
     :return: master flat files in each filter
     """
-    print("Starting flat calibration.\n")
+    log("\nStarting flat calibration.")
 
     # calibrating and combining the flat frames
     for ccd, file_name in files.ccds(imagetyp='FLAT', return_fname=True, ccd_kwargs={'unit': 'adu'}):
-        final_ccd = reduce(ccd, overscan_region, trim_region, 2, zero, combined_dark, good_flat=None, gain=gain, rdnoise=rdnoise)
+        final_ccd = reduce(ccd, overscan_region, trim_region, 2, zero, combined_dark, good_flat=None)
 
         # new file name with the filter and number from the original file
         list_of_words = file_name.split(".")
@@ -483,13 +359,12 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
         # Save the result
         final_ccd.write(calibrated_path / new_fname, overwrite=overwrite)
 
-        add_header(calibrated_path, new_fname, "FLAT", "None", None, None, None,
-                   trim_region, overscan_region, gain, rdnoise)
+        add_header(calibrated_path, new_fname, "FLAT", "None", None, None, None, trim_region, overscan_region)
 
-        print("Finished overscan correction, bias subtraction, and dark subtraction for " + str(new_fname))
+        log("Finished overscan correction, bias subtraction, and dark subtraction for " + str(new_fname))
 
-    print("\nFinished overscan, bias subtracting, and dark subtracting of flat frames.\n")
-    print("Starting flat combination.\n")
+    log("\nFinished overscan, bias subtracting, and dark subtracting of flat frames.")
+    log("\nStarting flat combination.")
     time.sleep(10)
 
     ifc = ccdp.ImageFileCollection(calibrated_path)
@@ -509,15 +384,14 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
 
         combined_flats.write(calibrated_path / flat_file_name, overwrite=overwrite)
 
-        add_header(calibrated_path, flat_file_name, "FLAT", "None", None, None, None,
-                   trim_region, overscan_region, gain, rdnoise)
+        add_header(calibrated_path, flat_file_name, "FLAT", "None", None, None, None, trim_region, overscan_region)
 
-        print("Finished combining flat " + str(flat_file_name))
+        log("Finished combining flat " + str(flat_file_name))
 
-    print("\nFinished creating the master flats by filter.\n")
+    log("\nFinished creating the master flats by filter.")
 
 
-def science_images(files, calibrated_data, zero, combined_dark, trim_region, overscan_region):
+def science_images(files, calibrated_data, zero, combined_dark, trim_region, overscan_region, log):
     all_reds = []
     science_imagetyp = 'LIGHT'
     flat_imagetyp = 'FLAT'
@@ -525,11 +399,11 @@ def science_images(files, calibrated_data, zero, combined_dark, trim_region, ove
     ifc_reduced = ccdp.ImageFileCollection(calibrated_data)
     combined_flats = {ccd.header['filter']: ccd for ccd in ifc_reduced.ccds(imagetyp=flat_imagetyp, combined=True)}
 
-    print("Starting reduction of science images.\n")
+    log("\nStarting reduction of science images.")
 
     for light, file_name in files.ccds(imagetyp=science_imagetyp, return_fname=True, ccd_kwargs={'unit': 'adu'}):
         good_flat = combined_flats[light.header['filter']]
-        reduced = reduce(light, overscan_region, trim_region, 3, zero, combined_dark, good_flat, gain=gain, rdnoise=rdnoise)
+        reduced = reduce(light, overscan_region, trim_region, 3, zero, combined_dark, good_flat)
 
         list_of_words = file_name.split(".")
         new_fname = "{}.fits".format(list_of_words[0])
@@ -541,13 +415,13 @@ def science_images(files, calibrated_data, zero, combined_dark, trim_region, ove
         ra = light.header["RA"]
         dec = light.header["DEC"]
 
-        add_header(calibrated_data, new_fname, science_imagetyp, "None", hjd, ra, dec, trim_region, overscan_region, gain, rdnoise)
+        add_header(calibrated_data, new_fname, science_imagetyp, "None", hjd, ra, dec, trim_region, overscan_region)
 
-        print("Finished calibration of " + str(new_fname))
-    print("\nFinished calibrating all science images.")
+        log("Finished calibration of " + str(new_fname))
+    log("\nFinished calibrating all science images.")
 
 
-def add_header(pathway, fname, imagetyp, filter_name, hjd, ra, dec, trim_region, overscan_region, gain, rdnoise):
+def add_header(pathway, fname, imagetyp, filter_name, hjd, ra, dec, trim_region, overscan_region):
     """
     Adds values to the header of each image reduced
 
@@ -560,9 +434,6 @@ def add_header(pathway, fname, imagetyp, filter_name, hjd, ra, dec, trim_region,
     :param fname: file name
     :param imagetyp: image type (bias, flat, dark, light)
     :param filter_name: filter type (B, V, R)
-    :param gain: gain of the camera
-    :param rdnoise: readout noise of the camera
-
     :return: None
     """
     # bias_image = get_pkg_data_filename(pathway + "\\" + fname)
@@ -576,11 +447,21 @@ def add_header(pathway, fname, imagetyp, filter_name, hjd, ra, dec, trim_region,
     fits.setval(image_name, "EPOCH", value="J2000.0")
     # fits.setval(bias_image, "FILTER", value=filter_name)
     if imagetyp == "LIGHT":
-        bjd = BJD_TDB(hjd, location, ra, dec)
-        fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
+        if location.lower() == "bsuo":
+            # location of BSUO
+            obs_location = {
+                'lon': -85.411896,  # degrees
+                'lat': 40.199879,  # degrees
+                'elevation': 0.2873  # kilometers
+            }
+            bjd = BJD_TDB(hjd, obs_location, ra, dec)
+            fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
+        else:
+            bjd = BJD_TDB(hjd, location, ra, dec)
+            fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
 
 
-def BJD_TDB(hjd, site_name, ra, dec):
+def BJD_TDB(hjd, loc, ra, dec):
     """
     Converts HJD to BJD_TDB
 
@@ -590,21 +471,8 @@ def BJD_TDB(hjd, site_name, ra, dec):
     :param loc: location of the observations
     :return: Newly calculated BJD_TDB that is light time corrected
     """
-    
-    if site_name == "bsuo":
-        # set the latitude and longitude of the BSUO site manually
-        loc = {
-            'lon': -85.411896,  # degrees
-            'lat': 40.199879,  # degrees
-            'elevation': 0.2873  # kilometers
-        }
-        obs = EarthLocation.from_geodetic(loc["lat"], loc["lon"], loc["elevation"])
-    else:
-        loc = EarthLocation.of_site(site_name)
-        # need to gather the specific lat, long, and elev. from the .geodetic command. This specifically lists information on each of the parameters but we only want the value and not the units
-        obs = EarthLocation.from_geodetic(loc.geodetic[0].value, loc.geodetic[1].value, loc.geodetic[2].value/1000) # converts the meters of the elevation to km
-        
     helio = Time(hjd, scale='utc', format='jd')
+    obs = EarthLocation.from_geodetic(loc["lon"], loc["lat"], loc["elevation"])
     star = SkyCoord(ra, dec, unit=(u.hour, u.deg))
     ltt = helio.light_travel_time(star, 'heliocentric', location=obs)
     guess = helio - ltt
@@ -615,7 +483,3 @@ def BJD_TDB(hjd, site_name, ra, dec):
 
     ltt = guess.light_travel_time(star, 'barycentric', obs)
     return guess.tdb + ltt
-
-
-if __name__ == '__main__':
-    main()

@@ -9,9 +9,12 @@ Last Updated: 12/06/2024
 
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from pathlib import Path
 import threading
+from astropy.nddata import CCDData
+from matplotlib import pyplot as plt
+# from astropy.io import fits
 
 # Import the updated IRAF Reduction script
 from IRAF_GUI import run_reduction
@@ -28,7 +31,7 @@ class ProgramLauncher(tk.Tk):
 
         # Set window size as 60% of screen dimensions
         self.window_width = int(self.screen_width * 0.6)
-        self.window_height = int(self.screen_height * 0.65)
+        self.window_height = int(self.screen_height * 0.7)
 
         # Center the window
         self.center_window()
@@ -98,7 +101,7 @@ class ProgramLauncher(tk.Tk):
                   activeforeground="white", relief="flat", cursor="hand2").pack(pady=5, padx=10, fill="x")
 
     def show_iraf_reduction(self):
-        """Display the IRAF reduction panel"""
+        """Display the IRAF reduction panel."""
         self.clear_right_frame()
 
         # Configure grid for centering
@@ -110,46 +113,76 @@ class ProgramLauncher(tk.Tk):
             row=0, column=0, columnspan=2, pady=10, sticky="ew"
         )
 
-        # Input fields with proper alignment
+        # Input fields
         raw_images_path = self.create_input_field(self.right_frame, "Raw Images Path:", row=1)
         calibrated_images_path = self.create_input_field(self.right_frame, "Calibrated Images Path:", row=2)
-        location = self.create_input_field(self.right_frame, "Location (e.g., BSUO, CTIO, KPNO):", row=3)
+        location = self.create_input_field(self.right_frame, "Location (e.g., BSUO, CTIO, etc):", row=3)
 
         # Checkbox for dark frames
         dark_bool_var = tk.BooleanVar(value=True)
         self.create_checkbox(self.right_frame, "Use Dark Frames", dark_bool_var, row=4)
 
+        # Overscan and Trim region inputs
+        overscan = self.create_input_field(self.right_frame, "Overscan Region:", row=5)
+        trim = self.create_input_field(self.right_frame, "Trim Region:", row=6)
+        # self.overscan_var = tk.StringVar()
+        # self.trim_var = tk.StringVar()
+        # tk.Label(self.right_frame, text="Overscan Region:", font=self.label_font, bg="#ffffff").grid(row=5, column=0, sticky="e")
+        # tk.Entry(self.right_frame, textvariable=self.overscan_var, font=self.label_font).grid(row=5, column=1, padx=10, pady=5, sticky="w")
+
+        # tk.Label(self.right_frame, text="Trim Region:", font=self.label_font, bg="#ffffff").grid(row=6, column=0, sticky="e")
+        # tk.Entry(self.right_frame, textvariable=self.trim_var, font=self.label_font).grid(row=6, column=1, padx=10, pady=5, sticky="w")
+
+        # Button to open and plot bias image
+        tk.Button(self.right_frame, text="Open Bias Image", font=self.button_font, bg="#003366", fg="white",
+                  command=self.open_bias_image).grid(row=7, column=0, columnspan=2, pady=10, sticky="")
+
         # Run button
-        self.create_run_button(self.right_frame, self.run_iraf_reduction, row=5,
+        self.create_run_button(self.right_frame, self.run_iraf_reduction, row=8,
                                raw_images_path=raw_images_path,
                                calibrated_images_path=calibrated_images_path,
                                location=location,
-                               dark_bool_var=dark_bool_var)
+                               dark_bool_var=dark_bool_var,
+                               overscan_var=overscan,
+                               trim_var=trim
+                               )
 
         # Log display area
         tk.Label(self.right_frame, text="Output Log:", font=self.label_font, bg="#ffffff").grid(
-            row=6, column=0, columnspan=2, pady=5
+            row=9, column=0, columnspan=2, pady=5
         )
 
-        # Create a frame to hold the log area and scrollbar
-        log_frame = tk.Frame(self.right_frame, bg="#ffffff")
-        log_frame.grid(row=7, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
+        # create the scroll bar and log area
+        self.create_scrollbar_and_log(10)
 
-        # Add the Text widget (log area) and the Scrollbar
-        self.log_area = tk.Text(log_frame, wrap="word", height=12, font=("Helvetica", 10))
-        scrollbar = tk.Scrollbar(log_frame, command=self.log_area.yview)
+    def open_bias_image(self):
+        """Open a bias image, plot it, and prompt for regions."""
+        file_path = filedialog.askopenfilename(title="Select Bias Image", filetypes=[("FITS files", "*.fits"),
+                                                                                     ("FITS files", "*.fit"),
+                                                                                     ("FITS files", "*.fts")])
+        if file_path:
+            try:
+                # Read the FITS file as CCDData
+                ccd = CCDData.read(file_path, unit="adu")
+                self.bias_plot(ccd)
 
-        # Configure the Text widget to work with the scrollbar
-        self.log_area.configure(yscrollcommand=scrollbar.set)
+                # Log success
+                self.write_to_log(f"Successfully loaded and plotted bias image: {file_path}")
+            except Exception as e:
+                self.write_to_log(f"Failed to load bias image: {e}")
 
-        # Pack the Text widget and the scrollbar
-        self.log_area.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        # Configure grid weight to allow expansion
-        self.right_frame.grid_rowconfigure(7, weight=1)
-        self.right_frame.grid_columnconfigure(0, weight=1)
-        self.right_frame.grid_columnconfigure(1, weight=1)
+    def bias_plot(self, ccd):
+        """Plot the count values for row 1000 to determine overscan and trim regions."""
+        plt.figure(figsize=(10, 5))
+        plt.plot(ccd.data[1000][:], label="Raw Bias")
+        plt.grid()
+        plt.axvline(x=2077, color="black", linewidth=2, linestyle="dashed", label="Suggested Start of Overscan")
+        plt.legend()
+        plt.xlim(-50, ccd.data.shape[1] + 50)
+        plt.xlabel("Pixel Number")
+        plt.ylabel("Counts")
+        plt.title("Bias Image Analysis: Row 1000")
+        plt.show()
 
     def show_tess_search(self):
         """Display the TESS Database Search panel."""
@@ -194,15 +227,29 @@ class ProgramLauncher(tk.Tk):
             row=7, column=0, columnspan=2, pady=5
         )
 
-        self.log_area = tk.Text(self.right_frame, wrap="word", height=12, font=("Helvetica", 10))
-        scrollbar = tk.Scrollbar(self.right_frame, command=self.log_area.yview)
+        # create the scroll bar and log area
+        self.create_scrollbar_and_log(8)
+
+    def create_scrollbar_and_log(self, row):
+        # Create a frame to hold the log area and scrollbar
+        log_frame = tk.Frame(self.right_frame, bg="#ffffff")
+        log_frame.grid(row=row, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
+
+        # Add the Text widget (log area) and the Scrollbar
+        self.log_area = tk.Text(log_frame, wrap="word", height=12, font=("Helvetica", 10))
+        scrollbar = tk.Scrollbar(log_frame, command=self.log_area.yview)
+
+        # Configure the Text widget to work with the scrollbar
         self.log_area.configure(yscrollcommand=scrollbar.set)
 
-        self.log_area.grid(row=8, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
-        scrollbar.grid(row=8, column=2, sticky="ns")
+        # Pack the Text widget and the scrollbar
+        self.log_area.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
-        # Configure scrollable log area
-        self.right_frame.grid_rowconfigure(8, weight=1)
+        # Configure grid for log area
+        self.right_frame.grid_rowconfigure(row, weight=1)
+        self.right_frame.grid_columnconfigure(0, weight=1)
+        self.right_frame.grid_columnconfigure(1, weight=1)
 
     def write_to_log(self, message):
         """Write a message to the log area and ensure it updates"""
@@ -236,7 +283,7 @@ class ProgramLauncher(tk.Tk):
                   activebackground="#00509e", activeforeground="white", relief="flat", cursor="hand2",
                   command=lambda: action(**kwargs)).grid(row=row, column=0, columnspan=2, pady=20)
 
-    def run_iraf_reduction(self, raw_images_path, calibrated_images_path, location, dark_bool_var):
+    def run_iraf_reduction(self, raw_images_path, calibrated_images_path, location, dark_bool_var, overscan_var, trim_var):
         """Run the IRAF reduction process in a separate thread"""
 
         def reduction_task():
@@ -245,6 +292,8 @@ class ProgramLauncher(tk.Tk):
                 calibrated_path = Path(calibrated_images_path.get().strip())
                 loc = location.get().strip()
                 use_dark_frames = dark_bool_var.get()
+                trim_region = trim_var.get().strip()
+                overscan_region = overscan_var.get().strip()
 
                 # Validate paths
                 if not raw_path.exists():

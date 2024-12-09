@@ -4,7 +4,7 @@ other programs.
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 12/06/2024
+Last Updated: 12/09/2024
 """
 
 
@@ -49,6 +49,10 @@ class ProgramLauncher(tk.Tk):
         self.create_header()
         self.create_layout()
         self.create_menu()
+
+        # Initialize cancel_event and current_task
+        self.cancel_event = threading.Event()
+        self.current_task = None
 
     def center_window(self):
         """Center the window on the screen"""
@@ -99,6 +103,21 @@ class ProgramLauncher(tk.Tk):
         tk.Button(self.left_frame, text=text, command=command,
                   font=self.button_font, bg="#003366", fg="white", activebackground="#00509e",
                   activeforeground="white", relief="flat", cursor="hand2").pack(pady=5, padx=10, fill="x")
+
+    def cancel_task(self):
+        """Cancel the currently running task."""
+        if self.current_task and self.current_task.is_alive():
+            if messagebox.askyesno("Cancel Task", "Are you sure you want to cancel the current task?"):
+                self.write_to_log("Task cancellation requested...")
+                self.cancel_event.set()
+        else:
+            messagebox.showinfo("No Task Running", "There is no task currently running.")
+
+    def run_task(self, target, *args):
+        """Run a task in a separate thread with cancellation support."""
+        self.cancel_event.clear()  # Reset cancel_event for the new task
+        self.current_task = threading.Thread(target=target, args=args, daemon=True)
+        self.current_task.start()
 
     def show_iraf_reduction(self):
         """Display the IRAF reduction panel."""
@@ -197,18 +216,22 @@ class ProgramLauncher(tk.Tk):
         # Checkbox for download specific sector
         download_all_var = tk.BooleanVar(value=False)  # Default to unchecked
 
-        # not using the create_checkbox because of the dynamic GUI changing for the retrieve button and label
+        # Create placeholder for dynamic widgets
+        self.sector_dropdown = None
+        self.retrieve_button = None
+        self.sector_label = None
+
         tk.Checkbutton(
             self.right_frame, text="Download Specific Sector", variable=download_all_var,
-            font=self.label_font, bg="#ffffff", command=lambda: self.toggle_sector_options(download_all_var)
+            font=self.label_font, bg="#ffffff",
+            command=lambda: self.toggle_sector_options(download_all_var, system_name)
         ).grid(row=3, column=0, columnspan=2, pady=5)
 
         # Run button
         self.create_run_button(self.right_frame, self.run_tess_search, row=6,
                                system_name=system_name,
                                download_path=download_path,
-                               download_all_var=download_all_var,
-                               sector_dropdown=None)
+                               download_all_var=download_all_var)
 
         # Log display area
         tk.Label(self.right_frame, text="Output Log:", font=self.label_font, bg="#ffffff").grid(
@@ -218,42 +241,70 @@ class ProgramLauncher(tk.Tk):
         # Create scrollbar for the log area
         self.create_scrollbar_and_log(8)
 
-    def toggle_sector_options(self, download_all_var):
+    def retrieve_sectors(self, system_name, sector_dropdown):
+        """Retrieve available sectors for a given TIC ID."""
+        try:
+            system_name_value = system_name.get().strip()
+            if not system_name_value:
+                self.write_to_log("Error: System name (TIC ID) is required.")
+                return
+
+            # Simulate a search and retrieve sectors
+            self.write_to_log(f"Retrieving sectors for: {system_name_value}")
+            from astroquery.mast import Tesscut
+            sector_table = Tesscut.get_sectors(objectname=system_name_value)
+
+            if not sector_table:
+                self.write_to_log(f"No TESS data found for system {system_name_value}.")
+                return
+
+            # Log and populate dropdown
+            formatted_table = "\n".join(sector_table.pformat(show_name=True, max_width=-1, align="^"))
+            self.write_to_log("Available Sectors:\n" + formatted_table)
+
+            self.available_sectors = list(sector_table["sector"])
+            sector_dropdown["values"] = self.available_sectors
+            sector_dropdown.set("Select a Sector")
+            self.write_to_log("Sectors successfully retrieved.")
+        except Exception as e:
+            self.write_to_log(f"Error retrieving sectors: {e}")
+
+    def toggle_sector_options(self, download_all_var, system_name):
         """Show or hide the sector dropdown, 'Select Specific Sector' label, and Retrieve Sectors button."""
         if download_all_var.get():  # Checkbox is selected (True)
             # Add "Select Specific Sector" label
-            if not hasattr(self, "sector_label"):
+            if not self.sector_label:
                 self.sector_label = tk.Label(self.right_frame, text="Select Specific Sector:", font=self.label_font,
                                              bg="#ffffff")
                 self.sector_label.grid(row=4, column=0, sticky="e")
 
             # Add sector dropdown
-            if not hasattr(self, "sector_dropdown"):
+            if not self.sector_dropdown:
                 self.sector_dropdown = ttk.Combobox(self.right_frame, state="readonly", values=[], font=self.label_font)
                 self.sector_dropdown.grid(row=4, column=1, padx=10, pady=5, sticky="w")
 
             # Add "Retrieve Sectors" button
-            if not hasattr(self, "retrieve_button"):
+            if not self.retrieve_button:
                 self.retrieve_button = tk.Button(
                     self.right_frame, text="Retrieve Sectors", font=self.button_font, bg="#003366", fg="white",
-                    command=lambda: self.retrieve_sectors(system_name=None, sector_dropdown=self.sector_dropdown)
+                    command=lambda: self.retrieve_sectors(system_name=system_name, sector_dropdown=self.sector_dropdown)
                 )
                 self.retrieve_button.grid(row=5, column=0, columnspan=2, pady=10)
         else:  # Checkbox is unselected (False)
             # Remove "Select Specific Sector" label
-            if hasattr(self, "sector_label"):
+            if self.sector_label:
                 self.sector_label.destroy()
-                del self.sector_label
+                self.sector_label = None
 
             # Remove sector dropdown
-            if hasattr(self, "sector_dropdown"):
+            if self.sector_dropdown:
                 self.sector_dropdown.destroy()
-                del self.sector_dropdown
+                self.sector_dropdown = None
 
             # Remove "Retrieve Sectors" button
-            if hasattr(self, "retrieve_button"):
+            if self.retrieve_button:
                 self.retrieve_button.destroy()
-                del self.retrieve_button
+                self.retrieve_button = None
 
     def create_scrollbar_and_log(self, row):
         # Create a frame to hold the log area and scrollbar
@@ -308,11 +359,18 @@ class ProgramLauncher(tk.Tk):
                   activebackground="#00509e", activeforeground="white", relief="flat", cursor="hand2",
                   command=lambda: action(**kwargs)).grid(row=row, column=0, columnspan=2, pady=20)
 
+    def create_cancel_button(self, parent, action, row, **kwargs):
+        tk.Button(parent, text="Cancel", font=self.button_font, bg="#003366", fg="white",
+                  activebackground="#00509e", activeforeground="white", relief="flat", cursor="hand2",
+                  command=lambda: action(**kwargs)).grid(row=row, column=1, columnspan=2, pady=20)
+
     def run_iraf_reduction(self, raw_images_path, calibrated_images_path, location, dark_bool_var, overscan_var, trim_var):
         """Run the IRAF reduction process in a separate thread"""
 
         def reduction_task():
             try:
+                self.create_cancel_button(self.right_frame, self.cancel_task, row=8)
+
                 raw_path = Path(raw_images_path.get().strip())
                 calibrated_path = Path(calibrated_images_path.get().strip())
                 loc = location.get().strip()
@@ -337,37 +395,51 @@ class ProgramLauncher(tk.Tk):
                 self.write_to_log("Starting IRAF Reduction...\n")
 
                 # Call the IRAF Reduction script
-                run_reduction(path=raw_path, calibrated=calibrated_path, location=loc,
-                              dark_bool=use_dark_frames, write_callback=self.write_to_log)
+                run_reduction(
+                    path=raw_path,
+                    calibrated=calibrated_path,
+                    location=loc,
+                    dark_bool=use_dark_frames,
+                    write_callback=self.write_to_log,
+                    cancel_event=self.cancel_event  # Pass cancel_event
+                )
 
-                # self.write_to_log("IRAF Reduction completed successfully!")
-                messagebox.showinfo("Success", "IRAF Reduction completed successfully!")
+                if not self.cancel_event.is_set():
+                    # self.write_to_log("IRAF Reduction completed successfully!")
+                    messagebox.showinfo("Success", "IRAF Reduction completed successfully!")
+                else:
+                    messagebox.showinfo("Cancelled", "IRAF Reduction was cancelled.")
+
             except Exception as e:
                 self.write_to_log(f"An error occurred: {e}")
-                messagebox.showerror("Error", f"An error occurred: {e}")
+                messagebox.showerror("Error", f"An error occurred during IRAF Reduction: {e}")
 
         # Run the reduction in a separate thread
-        threading.Thread(target=reduction_task, daemon=True).start()
+        self.run_task(reduction_task)
 
-    def run_tess_search(self, system_name, download_path, download_all_var, sector_dropdown):
+    def run_tess_search(self, system_name, download_path, download_all_var):
         """Run the TESS Database Search and TESSCut processing in a separate thread."""
 
         def search_task():
             try:
+                self.create_cancel_button(self.right_frame, self.cancel_task, row=6)
+
                 system_name_value = system_name.get().strip()
-                download_path_value = download_path.get().strip()  # Correctly retrieve the string value
+                download_path_value = download_path.get().strip()
                 download_all = download_all_var.get()
+
                 specific_sector_value = None
-                if not download_all:
-                    specific_sector_value = sector_dropdown.get()
-                    if not specific_sector_value.isdigit():
+                if download_all:  # Specific sector mode
+                    if self.sector_dropdown and self.sector_dropdown.get().isdigit():
+                        specific_sector_value = int(self.sector_dropdown.get())
+                    else:
                         self.write_to_log("Error: Please select a valid sector.")
                         return
 
+                # Validate inputs
                 if not system_name_value:
                     self.write_to_log("Error: System name (TIC ID) is required.")
                     return
-
                 if not download_path_value:
                     self.write_to_log("Error: Download path is required.")
                     return
@@ -376,24 +448,29 @@ class ProgramLauncher(tk.Tk):
                 self.write_to_log(f"System Name: {system_name_value}")
                 self.write_to_log(f"Download Path: {download_path_value}")
                 self.write_to_log(f"Download All Sectors: {'Yes' if download_all else 'No'}")
-                if specific_sector_value:
+                if specific_sector_value is not None:
                     self.write_to_log(f"Specific Sector: {specific_sector_value}")
 
                 # Run TESS search
                 run_tess_search(
                     system_name=system_name_value,
                     download_all=download_all,
-                    specific_sector=int(specific_sector_value) if specific_sector_value else None,
+                    specific_sector=specific_sector_value,
                     download_path=download_path_value,
-                    write_callback=self.write_to_log
+                    write_callback=self.write_to_log,
+                    cancel_event=self.cancel_event  # Pass cancel_event
                 )
 
-                self.write_to_log("TESS Database Search completed successfully.")
-            except Exception as e:
-                self.write_to_log(f"An error occurred during TESS Database Search: {e}")
+                if not self.cancel_event.is_set():
+                    messagebox.showinfo("Success", "TESS Database Search completed successfully.")
+                else:
+                    messagebox.showinfo("Cancelled", "TESS Database Search was canceled.")
 
-        # Run the search in a separate thread
-        threading.Thread(target=search_task, daemon=True).start()
+            except Exception as e:
+                self.write_to_log(f"An error occurred: {e}")
+                messagebox.showinfo("Error", f"An error occurred during TESS Database Search: {e}")
+
+        self.run_task(search_task)
 
     def dummy_action(self):
         """Dummy action for unimplemented features"""

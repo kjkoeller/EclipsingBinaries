@@ -3,7 +3,7 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 12/06/2024
+Last Edited: 12/09/2024
 
 Paper is: https://ui.adsabs.harvard.edu/abs/2019ascl.soft05007B/abstract
 """
@@ -18,7 +18,7 @@ from astropy.coordinates import EarthLocation, SkyCoord
 from astropy import units as u
 
 
-def process_tess_cutout(search_file, pathway, sector, outprefix, write_callback=None):
+def process_tess_cutout(search_file, pathway, sector, outprefix, write_callback, cancel_event):
     """
     Process TESS pixel data from a BINTABLE file and save individual images.
 
@@ -43,6 +43,10 @@ def process_tess_cutout(search_file, pathway, sector, outprefix, write_callback=
             print(message)
 
     try:
+        if cancel_event.is_set():
+            log(f"Task canceled while processing Sector {sector}.")
+            return
+
         # Extract file name and verify file paths
         infile = "tess" + str(search_file).split("tess")[1]
         log(f"Processing file: {infile}")

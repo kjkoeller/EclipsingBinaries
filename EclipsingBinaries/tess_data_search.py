@@ -2,7 +2,7 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 12/06/2024
+Last Updated: 12/09/2024
 """
 
 # import required packages
@@ -18,11 +18,22 @@ from astropy import units as u
 import pkg_resources
 
 
-def run_tess_search(system_name, download_all, specific_sector=None, download_path=None, write_callback=None):
+def run_tess_search(system_name, download_all, specific_sector, download_path, write_callback, cancel_event):
     """
-    This function allows the user to enter a TIC ID to be entered, and it also makes sure that number is valid or exists.
-    This program will also list off the sector data to be downloaded for cross-referencing if needed.
-    :return: Downloaded pixel data in the form of .fits files to be extracted later
+    Search for TESS data and download the specified sectors with cancel functionality.
+
+    Parameters
+    ----------
+    system_name : str
+        The TIC ID or system name.
+    download_all : bool
+        Whether to download all available sectors.
+    specific_sector : int, optional
+        The specific sector to download if `download_all` is False.
+    download_path : str, optional
+        The directory to save downloaded files.
+    write_callback : function, optional
+        Callback to log progress or errors to the GUI.
     """
 
     def log(message):
@@ -32,6 +43,11 @@ def run_tess_search(system_name, download_all, specific_sector=None, download_pa
         else:
             print(message)
     try:
+        # Check for cancellation
+        if cancel_event.is_set():
+            log("Task canceled before starting.")
+            return
+
         # Validate system name
         log(f"Searching for sectors for system: {system_name}")
         sector_table = Tesscut.get_sectors(objectname=system_name)
@@ -85,23 +101,28 @@ def run_tess_search(system_name, download_all, specific_sector=None, download_pa
         formatted_table = "\n".join(sector_table.pformat(show_name=True, max_width=-1, align="^"))
         log("Sector Table:\n" + formatted_table)
 
-        # prints the word 'ALL' in bold '\033[1m' and in yellow '\033[93m' must return to normal with '\033[0m'
-        if download_all:
-            log("\nWhen TESS data starts the initial download, it downloads, essentially, a big ZIP file with "
-                "all the individual images inside.\n")
-
-            for i in sector_table["sector"]:
-                download_sector(system_name, i, download_path, write_callback)
-                log("\nFinished downloading Sector " + str(i))
+        # Check specific_sector logic
+        if not download_all:
+            log("Downloading all available sectors.")
+            for sector in sector_table["sector"]:
+                if cancel_event.is_set():
+                    log(f"Task canceled while processing Sector {sector}.")
+                    return
+                download_sector(system_name, sector, download_path, write_callback, cancel_event)
         else:
-            download_sector(system_name, specific_sector, download_path, write_callback)
+            if specific_sector:
+                log(f"Downloading specific sector: {specific_sector}.")
+                download_sector(system_name, specific_sector, download_path, write_callback, cancel_event)
+            else:
+                log("Error: Specific sector is not specified.")
+                raise ValueError("Specific sector is not specified.")
 
         log("Finished downloading all sector data related to " + system_name + "\n")
     except Exception as e:
         log(f"An error occurred during TESS Database Search: {e}")
 
 
-def download_sector(system_name, sector, download_path, write_callback=None):
+def download_sector(system_name, sector, download_path, write_callback, cancel_event):
     """
     Download TESS sector data for a given system.
 
@@ -141,7 +162,8 @@ def download_sector(system_name, sector, download_path, write_callback=None):
             pathway=sector_path,
             sector=sector,
             outprefix=f"{system_name}_S{sector}_",
-            write_callback=write_callback
+            write_callback=write_callback,
+            cancel_event=cancel_event
         )
         log(f"Completed download for Sector {sector}.")
     except Exception as e:

@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 12/06/2024
+Last Edited: 12/09/2024
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -60,6 +60,10 @@ def run_reduction(path, calibrated, location, dark_bool=True, overscan_region="[
             print(message)
 
     try:
+        if cancel_event.is_set():
+            log("Task canceled before starting.")
+            return
+
         # Convert paths to Path objects
         images_path = Path(path)
         calibrated_data = Path(calibrated)
@@ -247,6 +251,9 @@ def bias(files, calibrated_data, overscan_region, trim_region, log):
     log(f"Trim Region: {trim_region}")
 
     for ccd, file_name in files.ccds(imagetyp='BIAS', return_fname=True, ccd_kwargs={'unit': 'adu'}):
+        if cancel_event.is_set():
+            log("Task canceled.")
+            return
         log(f"Processing bias image: {file_name}")
         new_ccd = reduce(ccd, overscan_region, trim_region, 0, zero=None, combined_dark=None, good_flat=None)
         output_path = calibrated_data / f"{file_name.split('.')[0]}.fits"
@@ -288,6 +295,10 @@ def dark(files, zero, calibrated_path, overscan_region, trim_region, log):
     """
     log("\nStarting dark calibration.")
     for ccd, file_name in files.ccds(imagetyp='DARK', return_fname=True, ccd_kwargs={'unit': 'adu'}):
+        if cancel_event.is_set():
+            log("Task canceled.")
+            return
+
         log(f"Processing dark image: {file_name}")
         sub_ccd = reduce(ccd, overscan_region, trim_region, 1, zero, combined_dark=None, good_flat=None)
         output_path = calibrated_path / f"{file_name.split('.')[0]}.fits"
@@ -331,6 +342,10 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
 
     # calibrating and combining the flat frames
     for ccd, file_name in files.ccds(imagetyp='FLAT', return_fname=True, ccd_kwargs={'unit': 'adu'}):
+        if cancel_event.is_set():
+            log("Task canceled.")
+            return
+
         final_ccd = reduce(ccd, overscan_region, trim_region, 2, zero, combined_dark, good_flat=None)
 
         # new file name with the filter and number from the original file
@@ -383,6 +398,10 @@ def science_images(files, calibrated_data, zero, combined_dark, trim_region, ove
     log("\nStarting reduction of science images.")
 
     for light, file_name in files.ccds(imagetyp=science_imagetyp, return_fname=True, ccd_kwargs={'unit': 'adu'}):
+        if cancel_event.is_set():
+            log("Task canceled.")
+            return
+
         good_flat = combined_flats[light.header['filter']]
         reduced = reduce(light, overscan_region, trim_region, 3, zero, combined_dark, good_flat)
 

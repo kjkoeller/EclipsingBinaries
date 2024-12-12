@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 08/22/2023
+Last Updated: 12/12/2024
 """
 
 from astroquery.vizier import Vizier
@@ -23,17 +23,15 @@ import warnings
 from PyAstronomy import pyasl
 
 from .gaia import tess_mag as ga
-# from gaia import tess_mag as ga  # testing
 from .vseq_updated import isNaN, conversion, splitter, decimal_limit
-# from vseq_updated import isNaN, conversion, splitter, decimal_limit  # testing
-
 
 # turn off this warning that just tells the user,
 # "The warning raised when the contents of the FITS header have been modified to be standards compliant."
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
 
-def comparison_selector(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
+def comparison_selector(ra="", dec="", pipeline=False, folder_path="", obj_name="", science_image="",
+                        write_callback=None, cancel_event=None):
     """
     This code compares AIJ found stars (given an RA and DEC) to APASS stars to get their respective Johnson B, V, and
     Cousins R values and their respective errors.
@@ -46,36 +44,49 @@ def comparison_selector(ra="", dec="", pipeline=False, folder_path="", obj_name=
     :param pipeline: The pipeline that is being used
     :param folder_path: The path of the folder where the images are going to
     :param obj_name: The name of the target object
+    :param science_image: Science image for the overlay
+    :param write_callback: Function to write log messages to the GUI
+    :param cancel_event:
 
     :return: A list of stars that are the most likely to be on the AIJ list of stars
     """
 
-    if not pipeline:
-        apass_file, input_ra, input_dec, T_list = cousins_r()
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
+
+    try:
+        if cancel_event.is_set():
+            log("Task canceled.")
+            return
+
+        log("Starting the process for finding APASS stars.")
+        apass_file, input_ra, input_dec, T_list = cousins_r(ra, dec, pipeline, folder_path, obj_name, write_callback,
+                                                            cancel_event)
         df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
 
-        print("Finished Saving\n\n")
-        print("The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
-              "with their respective errors.\n")
+        log("Finished Saving")
+        # print(
+        #     "The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
+        #     "with their respective errors.\n")
 
-        _ = create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
+        radec_list = create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name, write_callback,
+                                  cancel_event)
 
-        overlay(df, input_ra, input_dec)
-    else:
-        apass_file, input_ra, input_dec, T_list = cousins_r(ra=ra, dec=dec, pipeline=pipeline, folder_path=folder_path, obj_name=obj_name)
-        df = pd.read_csv(apass_file, header=None, skiprows=[0], sep="\t")
+        overlay(df, input_ra, input_dec, science_image)
 
-        print("Finished Saving\n\n")
-        print(
-            "The output file you have entered has RA and DEC for stars and their B, V, Cousins R, and TESS T magnitudes "
-            "with their respective errors.\n")
-
-        radec_list = create_radec(df, input_ra, input_dec, T_list, pipeline, folder_path, obj_name)
+        log("\nReduction process completed successfully.\n")
 
         return radec_list
+    except Exception as e:
+        log(f"An error occurred: {e}")
+        raise
 
 
-def cousins_r(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
+def cousins_r(ra, dec, pipeline, folder_path, obj_name, write_callback, cancel_event):
     """
     Calculates the Cousins R_c value for a given B, V, g', and r' from APASS
 
@@ -84,26 +95,36 @@ def cousins_r(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
     :param pipeline: The pipeline that is being used
     :param folder_path: The path of the folder where the images are going to
     :param obj_name: The name of the target object
+    :param write_callback: Function to write log messages to the GUI
+    :param cancel_event:
 
     :return: Outputs a file to be used for R_c values
     """
-    # predefined values DO NOT change
-    alpha = 0.278
-    e_alpha = 0.016
-    beta = 1.321
-    e_beta = 0.03
-    gamma = 0.219
 
-    if not pipeline:
-        input_file, input_ra, input_dec = catalog_finder()
-    else:
-        input_file, input_ra, input_dec = catalog_finder(ra, dec, pipeline, folder_path, obj_name)
-    df = pd.read_csv(input_file, header=None, skiprows=[0], sep=",")
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
 
-    # writes the columns from the input file
     try:
-        # this try except function checks whether there are just enough columns in the file being loaded and tells
-        # the user what they need to do in order to get the correct columns
+        if cancel_event.is_set():
+            log("Task canceled before starting.")
+            return
+
+        # predefined values DO NOT change
+        alpha = 0.278
+        e_alpha = 0.016
+        beta = 1.321
+        e_beta = 0.03
+        gamma = 0.219
+
+        input_file, input_ra, input_dec = catalog_finder(ra, dec, pipeline, folder_path, obj_name, write_callback,
+                                                         cancel_event)
+        df = pd.read_csv(input_file, header=None, skiprows=[0], sep=",")
+
+        # writes the columns from the input file
         ra = df[0]
         dec = df[1]
         B = df[2]
@@ -114,79 +135,58 @@ def cousins_r(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
         e_g = df[7]
         r = df[8]
         e_r = df[9]
-    except KeyError:
-        # prints off instructions and then closes the program
-        print("The file you have loaded does not have the enough columns.")
-        print("Must include RA, DEC, B, V, g', r', and their respective errors.")
-        print("Please run this program from the beginning first to get these values from the APASS database.\n")
-        exit()
 
-    Rc = []
-    e_Rc = []
-    count = 0
+        Rc = []
+        e_Rc = []
+        count = 0
 
-    # loop that goes through each value in B to get the total amount of values to be calculated
-    for i in B:
-        root, val = calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
-        if isNaN(val) is True:
-            # if the value is nan then append 99.999 to the R_c value and its error to make it obvious that there is
-            # no given value
-            Rc.append(99.999)
-            e_Rc.append(99.999)
-        else:
-            # if there is a value then format that value with only 2 decimal places otherwise there will be like 8
-            Rc.append(format(val, ".2f"))
-            e_Rc.append(format(root, ".2f"))
-        count += 1
+        # loop that goes through each value in B to get the total amount of values to be calculated
+        log("Calculating Cousins R filter values.")
+        for i in B:
+            root, val = calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
+            if isNaN(val) is True:
+                # if the value is nan then append 99.999 to the R_c value and its error to make it obvious that there is
+                # no given value
+                Rc.append(99.999)
+                e_Rc.append(99.999)
+            else:
+                # if there is a value then format that value with only 2 decimal places otherwise there will be like 8
+                Rc.append(format(val, ".2f"))
+                e_Rc.append(format(root, ".2f"))
+            count += 1
 
-    ra_decimal = np.array(splitter(ra))
-    dec_decimal = np.array(splitter(dec))
-    print("Starting Gaia Search for TESS Magnitudes\n")
-    T_list, T_err_list = ga(ra_decimal, dec_decimal)
+        ra_decimal = np.array(splitter(ra))
+        dec_decimal = np.array(splitter(dec))
+        log("Starting Gaia Search for TESS Magnitudes\n")
+        T_list, T_err_list = ga(ra_decimal, dec_decimal, write_callback, cancel_event)
 
-    # puts all columns into a dataframe for output
-    final = pd.DataFrame({
-        # need to keep RA and DEC in order to compare with catalog comparison or with the radec file
-        "RA": ra,
-        "DEC": dec,
-        "BMag": B,
-        "e_BMag": e_B,
-        "VMag": V,
-        "e_VMag": e_V,
-        "Rc": Rc,
-        "e_Rc": e_Rc,
-        "TMag": T_list,
-        "e_TMag": T_err_list
-    })
-    if not pipeline:
-        print(
-            "\nThis output file contains all the calculated Cousins R magnitudes along with error and "
-            "both Johnson bands and respective errors.\n")
-        # saves the dataframe to an entered output file
-        output_file = input("Enter an output file name and location for the finalized catalog file "
-                            "(ex: C:\\folder1\\folder2\\APASS_254037_Rc.txt): ")
-    else:
+        # puts all columns into a dataframe for output
+        final = pd.DataFrame({
+            # need to keep RA and DEC in order to compare with catalog comparison or with the radec file
+            "RA": ra,
+            "DEC": dec,
+            "BMag": B,
+            "e_BMag": e_B,
+            "VMag": V,
+            "e_VMag": e_V,
+            "Rc": Rc,
+            "e_Rc": e_Rc,
+            "TMag": T_list,
+            "e_TMag": T_err_list
+        })
+
         output_file = folder_path + "\\APASS_" + obj_name + "_Rc.txt"
-    # noinspection PyTypeChecker
-    final.to_csv(output_file, index=True, sep="\t")
-    print("\nCompleted Save.\n")
+        # noinspection PyTypeChecker
+        final.to_csv(output_file, index=True, sep="\t")
+        log("Completed Cousins R calculations.")
 
-    return output_file, input_ra, input_dec, T_list
-
-
-def get_user_inputs():
-    """
-    Gathers user entered RA and DEC
-
-    :return: None
-    """
-    ra_input = input("Enter the RA of your system (HH:MM:SS.SSSS): ")
-    dec_input = input("Enter the DEC of your system (DD:MM:SS.SSSS or -DD:MM:SS.SSSS): ")
-
-    return ra_input, dec_input
+        return output_file, input_ra, input_dec, T_list
+    except Exception as e:
+        log(f"An error occurred: {e}")
+        raise
 
 
-def query_vizier(ra_input, dec_input):
+def query_vizier(ra_input, dec_input, write_callback, cancel_event):
     """
     Queries the Vizier database for the APASS catalog
 
@@ -194,19 +194,39 @@ def query_vizier(ra_input, dec_input):
     :param dec_input: Declination input
     :return: table result from Vizier
     """
-    # Query Vizier here and return result
 
-    result = Vizier(
-        columns=['_RAJ2000', '_DEJ2000', 'Vmag', "e_Vmag", 'Bmag', "e_Bmag", "g'mag", "e_g'mag", "r'mag", "e_r'mag"],
-        row_limit=-1,
-        column_filters=({"Vmag": "<14", "Bmag": "<14"})).query_region(
-        coord.SkyCoord(ra=ra_input, dec=dec_input, unit=(u.h, u.deg), frame="icrs"),
-        width="30m", catalog="APASS")
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
 
-    # catalog is II/336/apass9
-    tb = result['II/336/apass9']
+    try:
+        if cancel_event.is_set():
+            log("Task canceled.")
+            return
 
-    return tb
+        log("Starting the query for the Vizier catalog.")
+
+        # Query Vizier here and return result
+        result = Vizier(
+            columns=['_RAJ2000', '_DEJ2000', 'Vmag', "e_Vmag", 'Bmag', "e_Bmag", "g'mag", "e_g'mag", "r'mag",
+                     "e_r'mag"],
+            row_limit=-1,
+            column_filters=({"Vmag": "<14", "Bmag": "<14"})).query_region(
+            coord.SkyCoord(ra=ra_input, dec=dec_input, unit=(u.h, u.deg), frame="icrs"),
+            width="30m", catalog="APASS")
+
+        # catalog is II/336/apass9
+        catalog = "II/336/apass9"
+        tb = result[catalog]
+        log(f"Finished querying the {catalog} Vizier Catalog.")
+
+        return tb
+    except Exception as e:
+        log(f"An error occurred: {e}")
+        raise
 
 
 def process_data(vizier_result):
@@ -293,10 +313,9 @@ def save_to_file(df, filepath):
     """
 
     df.to_csv(filepath, index=None)
-    print("\nCompleted save.\n")
 
 
-def catalog_finder(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
+def catalog_finder(ra, dec, pipeline, folder_path, obj_name, write_callback, cancel_event):
     """
     Finds the APASS catalog for the user to determine comparison stars
 
@@ -305,28 +324,40 @@ def catalog_finder(ra="", dec="", pipeline=False, folder_path="", obj_name=""):
     :param pipeline: Boolean for if pipeline is being used
     :param folder_path: Folder pathway to where files get saved
     :param obj_name: Object name for pipeline
+    :param write_callback: Function to write log messages to the GUI
+    :param cancel_event:
+
     :return: Text file pathway, RA, and DEC
     """
-    if not pipeline:
-        ra_input, dec_input = get_user_inputs()
-    else:
-        ra_input, dec_input = ra, dec
 
-    ra_input2 = splitter([ra_input])
-    dec_input2 = splitter([dec_input])
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
 
-    result = query_vizier(ra_input2[0], dec_input2[0])
-    df = process_data(result)
+    try:
+        if cancel_event.is_set():
+            log("Task canceled.")
+            return
 
-    if not pipeline:
-        text_file = input("Enter a text file pathway and name for the output comparisons "
-                          "(ex: C:\\folder1\\APASS_254037_catalog.txt): ")
-    else:
+        ra_input = splitter([ra])
+        dec_input = splitter([dec])
+
+        result = query_vizier(ra_input[0], dec_input[0], write_callback, cancel_event)
+        log("Processing data from the Vizier catalog.")
+        df = process_data(result)
+
         text_file = folder_path + "\\APASS_" + obj_name + "_catalog.txt"
 
-    save_to_file(df, text_file)
+        save_to_file(df, text_file)
 
-    return text_file, ra_input2[0], dec_input2[0]
+        log("Finished cataloging the Vizier results.")
+        return text_file, ra_input[0], dec_input[0]
+    except Exception as e:
+        log(f"An error occurred: {e}")
+        raise
 
 
 def create_header(ra, dec):
@@ -380,7 +411,7 @@ def create_lines(ra_list, dec_list, mag_list, ra, dec, filt):
     return lines
 
 
-def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name):
+def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name, write_callback, cancel_event):
     """
     Creates a RADEC file for all 3 filters (Johnson B, V, Cousins R, and T)
 
@@ -391,50 +422,64 @@ def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name):
     :param pipeline: True if pipeline, False if not
     :param folder_path: folder path for saving RADEC files
     :param obj_name: object name for saving RADEC files
+    :param write_callback: Function to write log messages to the GUI
+    :param cancel_event:
 
     :return: None but saves the RADEC files to user specified locations
     """
-    filters = ["B", "V", "R", "T"]
-    mag_cols = [3, 5, 7, T_list]
 
-    ra_list = df[1]
-    dec_list = df[2]
-
-    header = create_header(ra, dec)
-
-    print("The 'T' filter is the calibrated TESS magnitudes calculated from Gaia magnitudes. Please go to the GitHub "
-          "page for more information.\n")
-
-    # to write lines to the file in order create new RADEC files for each filter
-    file_list = []
-    for fcount, filt in enumerate(filters):
-        if filt != "T":
-            mag_list = df[mag_cols[fcount]]
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
         else:
-            mag_list = mag_cols[fcount]
+            print(message)
 
-        lines = create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
+    try:
+        if cancel_event.is_set():
+            log("Task canceled.")
+            return
+        filters = ["B", "V", "R", "T"]
+        mag_cols = [3, 5, 7, T_list]
 
-        output = header + lines
-        if not pipeline:
-            outputfile = input(
-                "Please enter an output file pathway " + "\033[1m" + "\033[93m" + "WITHOUT" + "\033[00m" +
-                " the extension but with the file name for the " +
-                filt + " filter RADEC file, for AIJ (i.e. C:\\folder1\\folder2\[filename]): ")
-        else:
+        ra_list = df[1]
+        dec_list = df[2]
+
+        header = create_header(ra, dec)
+
+        log("The 'T' filter is the calibrated TESS magnitudes calculated from Gaia magnitudes. Please go to the GitHub "
+            "page for more information.\n")
+
+        # to write lines to the file in order create new RADEC files for each filter
+        file_list = []
+        for fcount, filt in enumerate(filters):
+            if cancel_event.is_set():
+                log("Task canceled.")
+                return
+            if filt != "T":
+                mag_list = df[mag_cols[fcount]]
+            else:
+                mag_list = mag_cols[fcount]
+
+            lines = create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
+
+            output = header + lines
             outputfile = folder_path + "\\" + obj_name + "_" + filt
 
-        with open(outputfile + ".radec", "w") as file:
-            file.write(output)
+            with open(outputfile + ".radec", "w") as file:
+                file.write(output)
 
-        file_list.append(outputfile + ".radec")
+            file_list.append(outputfile + ".radec")
 
-    print("\nFinished writing RADEC files for Johnson B, Johnson V, and Cousins R, and T.\n")
+        log("Finished writing RADEC files for Johnson B, Johnson V, and Cousins R, and T.\n")
 
-    return file_list
+        return file_list
+    except Exception as e:
+        log(f"An error occurred: {e}")
+        raise
 
 
-def overlay(df, tar_ra, tar_dec):
+def overlay(df, tar_ra, tar_dec, fits_file):
     """
     Creates an overlay of a science image with APASS objects numbered as seen in the catalog file that
     was saved previously
@@ -445,8 +490,8 @@ def overlay(df, tar_ra, tar_dec):
     :return: None but displays a science image with over-layed APASS objects
     """
     # NSVS_254037-S001-R004-C001-Empty-R-B2.fts
-    fits_file = input("Enter file pathway to one of your science image files for creating an overlay or "
-                      "comparison stars: ")
+    # fits_file = input("Enter file pathway to one of your science image files for creating an overlay or "
+    #                   "comparison stars: ")
 
     # get the image data for plotting purposes
     header_data_unit_list = fits.open(fits_file)
@@ -485,7 +530,7 @@ def overlay(df, tar_ra, tar_dec):
 
     ax.scatter(ra_cat_new, dec_cat_new, transform=ax.get_transform('fk5'), s=200,
                edgecolor='red', facecolor='none', label="Potential Comparison Stars")
-    ax.scatter((tar_ra*15)*u.deg, tar_dec*u.deg, transform=ax.get_transform('fk5'), s=200,
+    ax.scatter((tar_ra * 15) * u.deg, tar_dec * u.deg, transform=ax.get_transform('fk5'), s=200,
                edgecolor='green', facecolor='none', label="Target Star")
 
     count = 0
@@ -558,7 +603,6 @@ def angle_dist(x1, y1, x2, y2):
         return True
     else:
         return False
-
 
 # comparison_selector()
 # overlay("test_cat.txt", "00:28:27.9684836736", "78:57:42.657327180")

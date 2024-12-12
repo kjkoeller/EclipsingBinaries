@@ -561,6 +561,10 @@ class ProgramLauncher(tk.Tk):
             self.destroy()
 
 
-if __name__ == "__main__":
+def main():
     app = ProgramLauncher()
     app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

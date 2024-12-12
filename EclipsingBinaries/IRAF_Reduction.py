@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 12/09/2024
+Last Edited: 12/12/2024
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -40,13 +40,14 @@ dark_bool = "True"
 location = "bsuo"
 
 
-def run_reduction(path, calibrated, location, dark_bool=True, overscan_region="[2073:2115, :]", trim_region="[20:2060, 12:2057]", write_callback=None):
+def run_reduction(path, calibrated, location, cancel_event, dark_bool=True, overscan_region="[2073:2115, :]", trim_region="[20:2060, 12:2057]", write_callback=None):
     """
     Main function to run the reduction process. It replaces user input with programmatic arguments.
 
-    :param path: The path to the raw images directory
+        :param path: The path to the raw images directory
     :param calibrated: The path to the output directory for calibrated images
     :param location: The observing location (e.g., 'bsuo', 'kpno', etc.)
+    :param cancel_event:
     :param dark_bool: Boolean to indicate whether to use dark frames
     :param overscan_region: String for the overscan region of the CCD
     :param trim_region: String for the trim region of the CCD
@@ -84,10 +85,10 @@ def run_reduction(path, calibrated, location, dark_bool=True, overscan_region="[
         # Process files
         files = ccdp.ImageFileCollection(images_path)
         # zero, overscan_region, trim_region = bias(files, calibrated_data, log)
-        zero = bias(files, calibrated_data, overscan_region, trim_region, log)
-        master_dark = dark(files, zero, calibrated_data, overscan_region, trim_region, log) if dark_bool else None
-        flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region, log)
-        science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region, log)
+        zero = bias(files, calibrated_data, overscan_region, trim_region, log, cancel_event)
+        master_dark = dark(files, zero, calibrated_data, overscan_region, trim_region, log, cancel_event) if dark_bool else None
+        flat(files, zero, master_dark, calibrated_data, overscan_region, trim_region, log, cancel_event)
+        science_images(files, calibrated_data, zero, master_dark, trim_region, overscan_region, log, cancel_event)
 
         log("\nReduction process completed successfully.\n")
     except Exception as e:
@@ -231,7 +232,7 @@ def reduce(ccd, overscan_region, trim_region, num, zero, combined_dark, good_fla
         return reduced
 
 
-def bias(files, calibrated_data, overscan_region, trim_region, log):
+def bias(files, calibrated_data, overscan_region, trim_region, log, cancel_event):
     """
     Calibrates bias images and creates a master bias.
 
@@ -281,7 +282,7 @@ def bias(files, calibrated_data, overscan_region, trim_region, log):
     return combined_bias # , overscan_region, trim_region
 
 
-def dark(files, zero, calibrated_path, overscan_region, trim_region, log):
+def dark(files, zero, calibrated_path, overscan_region, trim_region, log, cancel_event):
     """
     Calibrates dark frames and creates a master dark.
 
@@ -326,7 +327,7 @@ def dark(files, zero, calibrated_path, overscan_region, trim_region, log):
     return combined_dark
 
 
-def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_region, log):
+def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_region, log, cancel_event):
     """
     Calibrate flat images.
 
@@ -387,7 +388,7 @@ def flat(files, zero, combined_dark, calibrated_path, overscan_region, trim_regi
     log("\nFinished creating the master flats by filter.")
 
 
-def science_images(files, calibrated_data, zero, combined_dark, trim_region, overscan_region, log):
+def science_images(files, calibrated_data, zero, combined_dark, trim_region, overscan_region, log, cancel_event):
     all_reds = []
     science_imagetyp = 'LIGHT'
     flat_imagetyp = 'FLAT'

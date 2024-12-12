@@ -4,7 +4,7 @@ other programs.
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 12/09/2024
+Last Updated: 12/11a/2024
 """
 
 
@@ -15,10 +15,13 @@ import threading
 from astropy.nddata import CCDData
 from matplotlib import pyplot as plt
 # from astropy.io import fits
+import pandas as pd
+import traceback
 
 # Import the updated IRAF Reduction script
 from .IRAF_GUI import run_reduction
 from .tess_data_search import run_tess_search
+from .apass import comparison_selector
 
 
 class ProgramLauncher(tk.Tk):
@@ -85,7 +88,7 @@ class ProgramLauncher(tk.Tk):
             ("IRAF Reduction", self.show_iraf_reduction),
             ("Find Minimum (WIP)", self.dummy_action),
             ("TESS Database Search/Download", self.show_tess_search),
-            ("AIJ Comparison Star Selector", self.dummy_action),
+            ("AIJ Comparison Star Selector", self.show_aij_comparison_selector),
             ("Multi-Aperture Calculation", self.dummy_action),
             ("BSUO or SARA/TESS Night Filters", self.dummy_action),
             ("O-C Plotting", self.dummy_action),
@@ -306,6 +309,40 @@ class ProgramLauncher(tk.Tk):
                 self.retrieve_button.destroy()
                 self.retrieve_button = None
 
+    def show_aij_comparison_selector(self):
+        """Display the AIJ Comparison Star Selector panel."""
+        self.clear_right_frame()
+
+        # Configure grid for centering
+        self.right_frame.grid_columnconfigure(0, weight=1)
+        self.right_frame.grid_columnconfigure(1, weight=1)
+
+        # Add title
+        tk.Label(self.right_frame, text="AIJ Comparison Star Selector", font=self.header_font, bg="#ffffff").grid(
+            row=0, column=0, columnspan=2, pady=10, sticky="ew"
+        )
+
+        # Input fields
+        ra = self.create_input_field(self.right_frame, "Right Ascension (RA):", row=1)
+        dec = self.create_input_field(self.right_frame, "Declination (DEC):", row=2)
+        folder_path = self.create_input_field(self.right_frame, "Data Save Folder Path:", row=3)
+        obj_name = self.create_input_field(self.right_frame, "Object Name:", row=4)
+        science_image = self.create_input_field(self.right_frame, "Science Image Folder Path:", row=5)
+
+        # Buttons for comparison selector
+        tk.Button(self.right_frame, text="Run Comparison Selector", font=self.button_font, bg="#003366", fg="white",
+                  command=lambda: self.run_comparison_selector(ra, dec, folder_path, obj_name, science_image)).grid(
+            row=6, column=0, columnspan=2, pady=10, sticky=""
+        )
+
+        # Log display area
+        tk.Label(self.right_frame, text="Output Log:", font=self.label_font, bg="#ffffff").grid(
+            row=7, column=0, columnspan=2, pady=5
+        )
+
+        # Create scrollbar for the log area
+        self.create_scrollbar_and_log(8)
+
     def create_scrollbar_and_log(self, row):
         # Create a frame to hold the log area and scrollbar
         log_frame = tk.Frame(self.right_frame, bg="#ffffff")
@@ -399,9 +436,11 @@ class ProgramLauncher(tk.Tk):
                     path=raw_path,
                     calibrated=calibrated_path,
                     location=loc,
+                    cancel_event=self.cancel_event,  # Pass cancel_event
                     dark_bool=use_dark_frames,
-                    write_callback=self.write_to_log,
-                    cancel_event=self.cancel_event  # Pass cancel_event
+                    overscan_region=overscan_region,
+                    trim_region=trim_region,
+                    write_callback=self.write_to_log
                 )
 
                 if not self.cancel_event.is_set():
@@ -471,6 +510,45 @@ class ProgramLauncher(tk.Tk):
                 messagebox.showinfo("Error", f"An error occurred during TESS Database Search: {e}")
 
         self.run_task(search_task)
+
+    def run_comparison_selector(self, ra, dec, folder_path, obj_name, science_image):
+        """Run the comparison selector in a separate thread."""
+
+        def selector_task():
+            try:
+                self.create_cancel_button(self.right_frame, self.cancel_task, row=6)
+
+                # Retrieve input values
+                ra_value = ra.get().strip()
+                dec_value = dec.get().strip()
+                folder_value = folder_path.get().strip()
+                obj_value = obj_name.get().strip()
+                science_image_value = science_image.get().strip()
+
+                if not all([ra_value, dec_value, folder_value, obj_value, science_image_value]):
+                    self.write_to_log("Error: All fields are required.")
+                    return
+
+                self.write_to_log(f"Running comparison selector for object: {obj_value}")
+                comparison_selector(ra=ra_value,
+                                    dec=dec_value,
+                                    pipeline=False,
+                                    folder_path=folder_value,
+                                    obj_name=obj_value,
+                                    science_image=science_image_value,
+                                    write_callback=self.write_to_log,
+                                    cancel_event=self.cancel_event  # Pass cancel_event
+                                    )
+
+                if not self.cancel_event.is_set():
+                    self.write_to_log("Comparison Selector completed successfully.")
+                else:
+                    self.write_to_log("Comparison Selector was canceled.")
+            except Exception as e:
+                self.write_to_log(f"An error occurred: {type(e).__name__}: {e}")
+                self.write_to_log(traceback.format_exc())
+
+        self.run_task(selector_task)
 
     def dummy_action(self):
         """Dummy action for unimplemented features"""

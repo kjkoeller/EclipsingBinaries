@@ -2,14 +2,13 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 12/09/2024
+Last Updated: 12/12/2024
 """
 
 # import required packages
 import astroquery.exceptions
 from astroquery.mast import Tesscut
-# from .tesscut import process_tess_cutout
-from tesscut import process_tess_cutout  # testing purposes
+from .tesscut import process_tess_cutout
 from os.path import exists
 import pandas as pd
 import os

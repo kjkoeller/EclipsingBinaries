@@ -3,7 +3,7 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 12/09/2024
+Last Edited: 12/12/2024
 
 Paper is: https://ui.adsabs.harvard.edu/abs/2019ascl.soft05007B/abstract
 """
@@ -11,8 +11,7 @@ Paper is: https://ui.adsabs.harvard.edu/abs/2019ascl.soft05007B/abstract
 import numpy as np
 import astropy.io.fits as pyfits
 from time import gmtime, strftime
-from vseq_updated import conversion  # testing purposes
-# .vseq_updated import conversion
+from .vseq_updated import conversion
 from astropy.time import Time
 from astropy.coordinates import EarthLocation, SkyCoord
 from astropy import units as u

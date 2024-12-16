@@ -1,12 +1,11 @@
 """
-The main program helps centralize all the other programs into one selection routine that can be run and call all
-other programs.
+A GUI to centralize all the scripts and capabilities of this package for ease of use for the user and
+making it more convenient to use and access than a command line or individual scripts.
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 12/11a/2024
+Last Updated: 12/16/2024
 """
-
 
 import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
@@ -14,15 +13,12 @@ from pathlib import Path
 import threading
 from astropy.nddata import CCDData
 from matplotlib import pyplot as plt
-# from astropy.io import fits
-import pandas as pd
 import traceback
 
-# Import the updated IRAF Reduction script
-
-from .IRAF_Reduction import run_reduction
-from .tess_data_search import run_tess_search
-from .apass import comparison_selector
+from IRAF_Reduction import run_reduction
+from tess_data_search import run_tess_search
+from apass import comparison_selector
+from multi_aperture_photometry import main as multi_ap
 
 
 class ProgramLauncher(tk.Tk):
@@ -90,7 +86,7 @@ class ProgramLauncher(tk.Tk):
             ("Find Minimum (WIP)", self.dummy_action),
             ("TESS Database Search/Download", self.show_tess_search),
             ("AIJ Comparison Star Selector", self.show_aij_comparison_selector),
-            ("Multi-Aperture Calculation", self.dummy_action),
+            ("Multi-Aperture Calculation", self.show_multi_aperture_photometry),
             ("BSUO or SARA/TESS Night Filters", self.dummy_action),
             ("O-C Plotting", self.dummy_action),
             ("Gaia Search", self.dummy_action),
@@ -344,6 +340,42 @@ class ProgramLauncher(tk.Tk):
         # Create scrollbar for the log area
         self.create_scrollbar_and_log(8)
 
+    def show_multi_aperture_photometry(self):
+        """Display the Multi-Aperture Photometry panel."""
+        self.clear_right_frame()
+
+        # Configure grid
+        self.right_frame.grid_columnconfigure(0, weight=1)
+        self.right_frame.grid_columnconfigure(1, weight=1)
+
+        # Add title
+        tk.Label(self.right_frame, text="Multi-Aperture Photometry", font=self.header_font, bg="#ffffff").grid(
+            row=0, column=0, columnspan=2, pady=10, sticky="ew"
+        )
+
+        # Input fields
+        obj_name = self.create_input_field(self.right_frame, "Object Name:", row=1)
+        reduced_images_path = self.create_input_field(self.right_frame, "Reduced Images Path:", row=2)
+        radec_b_file = self.create_input_field(self.right_frame, "RADEC File (B Filter):", row=3)
+        radec_v_file = self.create_input_field(self.right_frame, "RADEC File (V Filter):", row=4)
+        radec_r_file = self.create_input_field(self.right_frame, "RADEC File (R Filter):", row=5)
+
+        # Run button
+        self.create_run_button(self.right_frame, self.run_multi_aperture_photometry, row=6,
+                               obj_name=obj_name,
+                               reduced_images_path=reduced_images_path,
+                               radec_b_file=radec_b_file,
+                               radec_v_file=radec_v_file,
+                               radec_r_file=radec_r_file)
+
+        # Log display area
+        tk.Label(self.right_frame, text="Output Log:", font=self.label_font, bg="#ffffff").grid(
+            row=7, column=0, columnspan=2, pady=5
+        )
+
+        # Create scrollbar for the log area
+        self.create_scrollbar_and_log(8)
+
     def create_scrollbar_and_log(self, row):
         # Create a frame to hold the log area and scrollbar
         log_frame = tk.Frame(self.right_frame, bg="#ffffff")
@@ -550,6 +582,54 @@ class ProgramLauncher(tk.Tk):
                 self.write_to_log(traceback.format_exc())
 
         self.run_task(selector_task)
+
+    def run_multi_aperture_photometry(self, obj_name, reduced_images_path, radec_b_file, radec_v_file, radec_r_file):
+        """Run the Multi-Aperture Photometry script in a separate thread."""
+
+        def photometry_task():
+            try:
+                self.create_cancel_button(self.right_frame, self.cancel_task, row=6)
+
+                obj_name_value = obj_name.get().strip()
+                reduced_path_value = reduced_images_path.get().strip()
+                radec_b_path = radec_b_file.get().strip()
+                radec_v_path = radec_v_file.get().strip()
+                radec_r_path = radec_r_file.get().strip()
+
+                # Validate inputs
+                if not reduced_path_value:
+                    self.write_to_log("Error: Reduced images path is required.")
+                    return
+                if not (radec_b_path and radec_v_path and radec_r_path):
+                    self.write_to_log("Error: RADEC files for all filters are required.")
+                    return
+
+                # Log setup
+                self.write_to_log(f"Object Name: {obj_name_value}")
+                self.write_to_log(f"Reduced Images Path: {reduced_path_value}")
+                self.write_to_log(f"RADEC File (B Filter): {radec_b_path}")
+                self.write_to_log(f"RADEC File (V Filter): {radec_v_path}")
+                self.write_to_log(f"RADEC File (R Filter): {radec_r_path}")
+
+                # Run the multi-aperture photometry script
+                multi_ap(
+                    path=reduced_path_value,
+                    pipeline=False,
+                    radec_list=[radec_b_path, radec_v_path, radec_r_path],
+                    obj_name=obj_name_value,
+                    write_callback=self.write_to_log,
+                    cancel_event=self.cancel_event  # Pass cancel_event
+                )
+
+                if not self.cancel_event.is_set():
+                    self.write_to_log("Multi-Aperture Photometry completed successfully.")
+                else:
+                    self.write_to_log("Multi-Aperture Photometry was canceled.")
+            except Exception as e:
+                self.write_to_log(f"An error occurred during Multi-Aperture Photometry: {e}")
+
+        # Run the photometry task in a separate thread
+        self.run_task(photometry_task)
 
     def dummy_action(self):
         """Dummy action for unimplemented features"""

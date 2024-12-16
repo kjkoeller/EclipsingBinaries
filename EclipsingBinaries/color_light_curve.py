@@ -4,7 +4,7 @@ Created on Thu Sep 17 12:45:40 2020
 Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 04/27/2024
+Last Edited: 12/16/2024
 Editor: Kyle Koeller
 """
 
@@ -85,8 +85,8 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
 
     :return: returns the B-V value and other assorted values
     """
-    B_HJD, B_mag, B_magerr = io.importFile_pd(Bfile)[:3:]
-    V_HJD, V_mag, V_magerr = io.importFile_pd(Vfile)[:3:]
+    B_HJD, B_mag, _ = io.importFile_pd(Bfile)[:3:]
+    V_HJD, V_mag, _ = io.importFile_pd(Vfile)[:3:]
 
     Bpoly = binning.polybinner(Bfile, Epoch, period, sections=2, section_order=8)
     Bphase = Bpoly[1][0][0][1]
@@ -193,7 +193,7 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
     :return: assorted values
     """
     B_V = subtract_LC(Bfile, Vfile, Epoch, period, max_tol=max_tol, lower_lim=lower_lim, FTinterp=FTinterp, index="BV")
-    Bphase, Bmag, B_interp_mag = B_V[1][:3:]
+    Bphase, Bmag, _ = B_V[1][:3:]
     Vphase, Vmag = B_V[2][:2:]
     aB_minus_V = B_V[0][3]
     quadcolor, colorerr = B_V[3:5:]
@@ -227,9 +227,9 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
     else:
         V_R = subtract_LC(Vfile, Rfile, Epoch, period, max_tol, lower_lim=lower_lim, index="VR")
         Rphase, Rmag = V_R[2][:2:]
-        V_interp_mag = V_R[1][2]
+        # V_interp_mag = V_R[1][2]
         aV_minus_R = V_R[0][3]
-        axs, fig = plot.multiplot((7, 9), height_ratios=[8, 3, 3])
+        axs, _ = plot.multiplot((7, 9), height_ratios=[8, 3, 3])
         mag = axs[0]
         bv = axs[2]
         vr = axs[1]
@@ -280,7 +280,7 @@ class ToolTip(object):
         self.text = text
         if self.tipwindow or not self.text:
             return
-        x, y, cx, cy = self.widget.bbox("insert")
+        x, y, _, cy = self.widget.bbox("insert")
         x = x + self.widget.winfo_rootx() + 57
         y = y + cy + self.widget.winfo_rooty() + 27
         self.tipwindow = tw = Toplevel(self.widget)
@@ -446,7 +446,7 @@ def color_gui(developer=False):
         ' the three light curves will be shown along with interpolated B-V, V-R colors.'))
     # ====================
     getit = lambda entr: entr[1].get()
-    temp = Label(root, text='')
+    # temp = Label(root, text='')
     BVL = Label(root, text='')
     BVL.grid(row=len(entries) + 6, column=0, columnspan=2)
     BVL_temp = Label(root, text='')

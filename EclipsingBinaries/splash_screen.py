@@ -48,12 +48,12 @@ def import_packages(progress_queue):
         time.sleep(0.5)
 
         # Custom scripts
-        from IRAF_Reduction import run_reduction
-        from tess_data_search import run_tess_search
-        from apass import comparison_selector
-        from multi_aperture_photometry import main as multi_ap
+        from .IRAF_Reduction import run_reduction
+        from .tess_data_search import run_tess_search
+        from .apass import comparison_selector
+        from .multi_aperture_photometry import main as multi_ap
         progress_queue.put((5, total, packages[4]))
-        time.sleep(0.5)
+        time.sleep(1)
 
     except Exception as e:
         print(f"Error importing packages: {e}")

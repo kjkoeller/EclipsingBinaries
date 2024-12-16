@@ -3,7 +3,7 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 06/11/2024
+Last Edited: 12/16/2024
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -58,7 +58,7 @@ def main(filepath="", pipeline=False, radec_list=None, obj_name="", period=0, hj
             period = float(input("What is the period: "))
             outputile = input(
                 "What is the output file name and pathway with .pdf extension (i.e. C:\\folder1\\test.pdf): ")
-            multi_OConnell_total([infile1, infile2, infile3], hjd, period, order=10, sims=1000,
+            multi_oconnell_total([infile1, infile2, infile3], hjd, period, order=10, sims=1000,
                                  sections=4, section_order=7, plot_only=False, save=True, outName=outputile,
                                  pipeline=pipeline)
         elif prompt == "2":
@@ -76,7 +76,7 @@ def main(filepath="", pipeline=False, radec_list=None, obj_name="", period=0, hj
             period = float(input("What is the period: "))
             outputile = input(
                 "What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
-            multi_OConnell_total([infile1, infile2], hjd, period, order=10, sims=1000,
+            multi_oconnell_total([infile1, infile2], hjd, period, order=10, sims=1000,
                                  sections=4, section_order=7, plot_only=False, save=True, outName=outputile,
                                  pipeline=pipeline)
         else:
@@ -93,12 +93,12 @@ def main(filepath="", pipeline=False, radec_list=None, obj_name="", period=0, hj
             period = float(input("What is the period: "))
             outputile = input(
                 "What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
-            multi_OConnell_total([infile1], hjd, period, order=10, sims=1000,
+            multi_oconnell_total([infile1], hjd, period, order=10, sims=1000,
                                  sections=4, section_order=7, plot_only=False, save=True, outName=outputile,
                                  pipeline=pipeline)
     else:
         # If running in a pipeline mode
-        multi_OConnell_total([radec_list], hjd, period, order=10, sims=1000,
+        multi_oconnell_total([radec_list], hjd, period, order=10, sims=1000,
                              sections=4, section_order=7, plot_only=False, save=True,
                              outName=(filepath + "\\" + obj_name + ".pdf"), pipeline=pipeline)
 
@@ -128,7 +128,7 @@ def Half_Comp(filter_files, Epoch, period,
     bands = len(filter_files)
 
     # Create subplots for flux and dI
-    axs, fog = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
+    axs, _ = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
     flux = axs[0]  # Flux subplot
     dI = axs[1]  # dI subplot
 
@@ -218,9 +218,8 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     Approximate runtime: ~ sims/1000 minutes.
     """
 
-    """
-    Generating master parameters from the observational data.
-    """
+    # Generating master parameters from the observational data.
+
     # ============================== DO NOT CHANGE ==============================
     # Binning the data
     PB = binning.polybinner(inputFile, Epoch, period, sections=sections, norm_factor=norm_factor,
@@ -380,7 +379,7 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
         OER, OER_total_err], [LCA, LCA_total_err], [a2_0125_a2, a2_0125_a2_err]
 
 
-def multi_OConnell_total(filter_files, Epoch, period, order=10,
+def multi_oconnell_total(filter_files, Epoch, period, order=10,
                          sims=1000, sections=4, section_order=8,
                          norm_factor='alt', starName='', filterNames=[r'$\rm B$', r'$\rm V$', r'$\rm R_C$'],
                          FT_order=10, FTres=500, plot_only=False,

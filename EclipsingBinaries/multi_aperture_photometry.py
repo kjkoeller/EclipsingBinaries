@@ -12,7 +12,6 @@ import pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib
-# import time
 import warnings
 from tqdm import tqdm
 
@@ -20,14 +19,10 @@ from tqdm import tqdm
 import ccdproc as ccdp
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-# from astropy.nddata import CCDData
-# from astropy.stats import sigma_clipped_stats
 from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
 from astropy.wcs import WCS
 import astropy.units as u
 from astropy import wcs
-
-# from astropy.visualization import ZScaleInterval
 
 # turn off this warning that just tells the user,
 # "The warning raised when the contents of the FITS header have been modified to be standards compliant."
@@ -80,7 +75,7 @@ def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=N
             multiple_AP(
                 image_list=image_list,
                 path=images_path,
-                filter=filt,
+                filt=filt,
                 pipeline=pipeline,
                 obj_name=obj_name,
                 radec_file=radec_file,
@@ -91,7 +86,7 @@ def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=N
         log(f"An error occurred in Multi-Aperture Photometry: {e}")
 
 
-def multiple_AP(image_list, path, filter, pipeline=False, obj_name="", radec_file="", write_callback=None, cancel_event=None):
+def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file="", write_callback=None, cancel_event=None):
     """
     Perform photometry on a list of images for a given filter.
 
@@ -101,7 +96,7 @@ def multiple_AP(image_list, path, filter, pipeline=False, obj_name="", radec_fil
         List of image filenames.
     path : Path
         Path to the folder containing the images.
-    filter : str
+    filt : str
         Filter type (B, V, or R).
     pipeline : bool
         If True, suppresses user prompts.
@@ -142,7 +137,7 @@ def multiple_AP(image_list, path, filter, pipeline=False, obj_name="", radec_fil
         hjd = []
         bjd = []
 
-        for icount, image_file in tqdm(enumerate(image_list), desc=f"Processing {filter} images"):
+        for icount, image_file in tqdm(enumerate(image_list), desc=f"Processing {filt} images"):
             if cancel_event and cancel_event.is_set():
                 log("Task canceled during photometry.")
                 return
@@ -316,7 +311,7 @@ def multiple_AP(image_list, path, filter, pipeline=False, obj_name="", radec_fil
         ax.legend(loc="upper right", fontsize=fontsize).set_draggable(True)
         ax.tick_params(axis='both', which='major', labelsize=fontsize)
 
-        filter_letter = filter.split("/")
+        filter_letter = filt.split("/")
         plt.savefig(path / f"{obj_name}_{filter_letter[1]}_figure.jpg")
 
         # Save the data
@@ -329,10 +324,10 @@ def multiple_AP(image_list, path, filter, pipeline=False, obj_name="", radec_fil
 
         output_file = path / f"{obj_name}_{filter_letter[1]}_data.csv"
         light_curve_data.to_csv(output_file, index=False)
-        log(f"Saved light curve data for {filter} to {output_file}")
+        log(f"Saved light curve data for {filt} to {output_file}")
 
     except Exception as e:
-        log(f"Error during photometry for {filter}: {e}")
+        log(f"Error during photometry for {filt}: {e}")
 
 
 def im_plot(image_data, target_aperture, comparison_apertures, target_annulus, comparison_annuli):

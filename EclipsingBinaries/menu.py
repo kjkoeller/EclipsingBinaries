@@ -11,14 +11,6 @@ import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
 from pathlib import Path
 import threading
-from astropy.nddata import CCDData
-from matplotlib import pyplot as plt
-import traceback
-
-from IRAF_Reduction import run_reduction
-from tess_data_search import run_tess_search
-from apass import comparison_selector
-from multi_aperture_photometry import main as multi_ap
 
 
 class ProgramLauncher(tk.Tk):

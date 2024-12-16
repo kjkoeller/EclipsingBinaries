@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 12/12/2024
+Last Edited: 12/16/2024
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -15,14 +15,12 @@ import warnings
 from astropy import wcs
 from astropy.stats import mad_std
 from astropy import units as u
-from astropy.nddata import CCDData
 from astropy.io import fits
 from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation
 
 import ccdproc as ccdp
 import numpy as np
-import matplotlib.pyplot as plt
 
 # turn off this warning that just tells the user,
 # "The warning raised when the contents of the FITS header have been modified to be standards compliant."

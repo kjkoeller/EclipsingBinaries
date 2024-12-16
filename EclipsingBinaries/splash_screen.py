@@ -117,7 +117,7 @@ def launch_main_gui():
     """
     Launch the main GUI after the splash screen.
     """
-    from menu import ProgramLauncher  # Import the main GUI
+    from .menu import ProgramLauncher  # Import the main GUI
     app = ProgramLauncher()
     app.mainloop()
 

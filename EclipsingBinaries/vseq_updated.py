@@ -3,7 +3,7 @@
 Created on Sat Feb 22 16:09:28 2020
 @author: Alec Neal
 
-Last Updated: 07/20/2024
+Last Updated: 12/16/2024
 Last Editor: Kyle Koeller
 
 Collection of functions, coefficients and equations commonly used
@@ -14,7 +14,7 @@ import numpy as np
 from pathlib import Path
 import sys
 import matplotlib.pyplot as plt
-from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, AutoLocator, Locator)
+from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, AutoLocator)
 import pandas as pd
 
 
@@ -573,8 +573,8 @@ class calc:  # assortment of functions
                 Returns:
                     str: Gregorian date in the format 'YYYY MM DD'.
                 """
-                months = ['none', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
-                          'October', 'November', 'December']
+                # months = ['none', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
+                #           'October', 'November', 'December']
                 f = JD + 1401 + int((int((4 * JD + 274277) / 146097) * 3) / 4) - 38
                 e = 4 * f + 3
                 g = int((e % 1461) / 4)
@@ -984,8 +984,8 @@ class binning:
         nc_master_phases = nc_MB[5][0]
         nc_master_fluxes = nc_MB[5][1]
 
-        ob_phaselist = c_MB[0][1]
-        ob_fluxlist = c_MB[1][1]
+        # ob_phaselist = c_MB[0][1]
+        # ob_fluxlist = c_MB[1][1]
 
         # Initialize lists to store polynomial phase and flux
         section_polyphase = []

@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 02/08/2024
+Last Edited: 12/16/2024
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -82,7 +82,6 @@ def main(period=None, loop=0, num=None, nights=None):
             period = float(input("Please enter the period of your system: "))
             all_data(nights, period, loop)
         elif num == 4:
-            break
             exit()
         else:
             print("Please enter either 1, 2, 3, or 4.\n")
@@ -238,9 +237,8 @@ def all_data(nights, period, loop):
     dp.to_csv(outfile + ".txt", index=None, sep="\t")
     print("\nFinished saving file to " + outfile + ".txt\n")
 
-    """
-    LaTeX table stuff, don't change unless you know what you're doing!
-    """
+    # LaTeX table stuff, don't change unless you know what you're doing!
+
     table_header = "\\renewcommand{\\baselinestretch}{1.00} \small\\normalsize"
     table_header += '\\begin{center}\n' + '\\begin{longtable}{ccc}\n'
     table_header += '$BJD_{\\rm TDB}$ & ' + 'E & ' + 'O-C \\\ \n'
@@ -518,7 +516,7 @@ def residuals(x, y, x_label, y_label, degree, model, xs):
     rows = 2
     cols = 1
     # creates the figure subplot for appending next
-    fig, (ax1, ax2) = plt.subplots(rows, cols)
+    _, (ax1, ax2) = plt.subplots(rows, cols)
     # adds gridlines to both subplots
     ax1.grid()
     ax2.grid()

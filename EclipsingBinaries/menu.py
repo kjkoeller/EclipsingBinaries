@@ -12,6 +12,7 @@ from tkinter import ttk
 import threading
 import queue
 import time
+import textwrap
 
 
 def dynamic_import(progress_queue):
@@ -21,12 +22,12 @@ def dynamic_import(progress_queue):
         ("astropy", "from astropy.nddata import CCDData"),
         ("astroquery", "from astroquery.mast import Tesscut"),
         ("matplotlib", "from matplotlib import pyplot as plt"),
-        ("custom_scripts", """
-            from IRAF_Reduction import run_reduction
-            from tess_data_search import run_tess_search
-            from apass import comparison_selector
-            from multi_aperture_photometry import main as multi_ap
-        """),
+        ("custom_scripts", textwrap.dedent("""
+            from .IRAF_Reduction import run_reduction
+            from .tess_data_search import run_tess_search
+            from .apass import comparison_selector
+            from .multi_aperture_photometry import main as multi_ap
+        """)),
     ]
     total = len(packages)
 

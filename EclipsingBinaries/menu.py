@@ -4,13 +4,119 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 12/16/2024
+Last Updated: 12/17/2024
 """
 
 import tkinter as tk
-from tkinter import messagebox, filedialog, ttk
-from pathlib import Path
+from tkinter import ttk
 import threading
+import queue
+import time
+
+
+def dynamic_import(progress_queue):
+    packages = [
+        ("tkinter", "from tkinter import messagebox, filedialog, ttk"),
+        ("pathlib", "from pathlib import Path"),
+        ("astropy", "from astropy.nddata import CCDData"),
+        ("astroquery", "from astroquery.mast import Tesscut"),
+        ("matplotlib", "from matplotlib import pyplot as plt"),
+        ("custom_scripts", """
+            from IRAF_Reduction import run_reduction
+            from tess_data_search import run_tess_search
+            from apass import comparison_selector
+            from multi_aperture_photometry import main as multi_ap
+        """),
+    ]
+    total = len(packages)
+
+    try:
+        for i, (name, command) in enumerate(packages, start=1):
+            exec(command, globals())
+            # print(f"DEBUG: {name} imported successfully")  # Debug statement
+            progress_queue.put((i, total, f"Loading {name}..."))
+            time.sleep(0.5)
+
+        progress_queue.put((total, total, "Finalizing"))
+
+    except Exception as e:
+        progress_queue.put((None, None, f"Error loading {name}: {e}"))
+        print(f"ERROR: {e}")  # Debug output for errors
+
+    progress_queue.put(None)
+
+
+class SplashScreen(tk.Toplevel):
+    """
+    Splash Screen with progress bar and dynamic loading messages.
+    """
+    def __init__(self, root, progress_queue, on_close_callback):
+        super().__init__(root)
+        self.progress_queue = progress_queue
+        self.on_close_callback = on_close_callback
+        self.configure(bg="#003366")
+
+        # Center the splash screen
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        splash_width = int(screen_width * 0.4)
+        splash_height = int(screen_height * 0.3)
+        x_position = (screen_width - splash_width) // 2
+        y_position = (screen_height - splash_height) // 2
+        self.geometry(f"{splash_width}x{splash_height}+{x_position}+{y_position}")
+        self.overrideredirect(True)  # Hide title bar
+
+        # Title Label
+        self.title_label = tk.Label(
+            self,
+            text="EclipsingBinaries",
+            font=("Helvetica", int(splash_height * 0.1), "bold"),
+            fg="white",
+            bg="#003366"
+        )
+        self.title_label.pack(pady=int(splash_height * 0.05))
+
+        # Dynamic Loading Label
+        self.message_label = tk.Label(
+            self,
+            text="Initializing...",
+            font=("Helvetica", int(splash_height * 0.05)),
+            fg="white",
+            bg="#003366"
+        )
+        self.message_label.pack(pady=int(splash_height * 0.05))
+
+        # Progress Bar with style
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("TProgressbar", thickness=20, troughcolor="#002244", background="#00bfff")
+        self.progress = ttk.Progressbar(
+            self, orient="horizontal", length=int(splash_width * 0.8), mode="determinate", style="TProgressbar"
+        )
+        self.progress.pack(pady=int(splash_height * 0.1))
+
+        # Start monitoring the queue
+        self.after(100, self.monitor_progress)
+
+    def monitor_progress(self):
+        """
+        Monitor the progress queue and update the splash screen.
+        """
+        try:
+            progress_data = self.progress_queue.get_nowait()
+            if progress_data is None:  # Should never receive a raw None due to safeguards
+                self.on_close_callback()
+                self.destroy()  # Close the splash screen when done
+                return
+
+            current, total, message = progress_data
+            if current is not None and total is not None:  # Ensure valid data for progress
+                self.progress["value"] = (current / total) * 100
+                self.message_label.config(text=message)
+
+            self.after(100, self.monitor_progress)  # Check again after 100 ms
+        except queue.Empty:
+            self.after(100, self.monitor_progress)  # If no data, keep checking
 
 
 class ProgramLauncher(tk.Tk):
@@ -24,6 +130,7 @@ class ProgramLauncher(tk.Tk):
         # Set window size as 60% of screen dimensions
         self.window_width = int(self.screen_width * 0.6)
         self.window_height = int(self.screen_height * 0.7)
+        self.minsize(1000, 700)  # Minimum size for usability
 
         # Center the window
         self.center_window()
@@ -31,6 +138,12 @@ class ProgramLauncher(tk.Tk):
         # Window setup
         self.title("EclipsingBinaries")
         self.configure(bg="#f5f5f5")
+
+        # Configure rows and columns for resizing
+        self.rowconfigure(0, weight=1)  # Header
+        self.rowconfigure(1, weight=8)  # Main content
+        self.rowconfigure(2, weight=1)  # Footer
+        self.columnconfigure(0, weight=1)  # Full GUI width
 
         # Dynamic font scaling
         self.header_font = ("Helvetica", max(16, self.window_width // 50), "bold")
@@ -45,6 +158,11 @@ class ProgramLauncher(tk.Tk):
         # Initialize cancel_event and current_task
         self.cancel_event = threading.Event()
         self.current_task = None
+        # Footer
+        footer_label = tk.Label(
+            self.left_frame, text="Developed by Kyle Koeller | Eclipsing Binaries Research", font=("Helvetica", 10), bg="#f5f5f5"
+        )
+        footer_label.pack(side="bottom", pady=5)
 
     def center_window(self):
         """Center the window on the screen"""
@@ -243,7 +361,6 @@ class ProgramLauncher(tk.Tk):
 
             # Simulate a search and retrieve sectors
             self.write_to_log(f"Retrieving sectors for: {system_name_value}")
-            from astroquery.mast import Tesscut
             sector_table = Tesscut.get_sectors(objectname=system_name_value)
 
             if not sector_table:
@@ -633,9 +750,37 @@ class ProgramLauncher(tk.Tk):
             self.destroy()
 
 
-def main():
+def launch_main_gui():
+    """
+    Launch the main GUI after the splash screen.
+    """
     app = ProgramLauncher()
     app.mainloop()
+
+
+def main():
+    # Create a hidden root window for the splash screen
+    root = tk.Tk()
+    root.withdraw()
+
+    # Create a queue for progress updates
+    progress_queue = queue.Queue()
+
+    def start_main_gui():
+        root.quit()  # Exit the splash screen's event loop
+
+    # Initialize the splash screen
+    SplashScreen(root, progress_queue, on_close_callback=start_main_gui)
+
+    # Start a thread to dynamically import modules
+    threading.Thread(target=dynamic_import, args=(progress_queue,), daemon=True).start()
+
+    # Run the splash screen's event loop
+    root.mainloop()
+
+    # Once the splash screen closes, launch the main GUI
+    root.destroy()  # Clean up the splash screen's hidden root window
+    launch_main_gui()
 
 
 if __name__ == "__main__":

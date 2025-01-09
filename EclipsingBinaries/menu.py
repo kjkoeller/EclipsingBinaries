@@ -181,27 +181,53 @@ class ProgramLauncher(tk.Tk):
         # Bind quit to autosave settings
         self.protocol("WM_DELETE_WINDOW", self.quit_program)
 
-    # ---------- Undo/Redo Support ----------
-    def create_input_field(self, parent, label_text, placeholder_text, row, variable=None):
-        """Create a labeled input field with placeholder functionality and custom undo/redo."""
+    def create_input_field(
+            self, parent, label_text, placeholder_text, row, variable=None, validation_func=None, error_message=""
+    ):
+        """
+        Create a labeled input field with placeholder functionality, validation, and inline error message.
+        """
+        # Create a label for the input field
         tk.Label(parent, text=label_text, font=self.label_font, bg="#ffffff").grid(
             row=row, column=0, padx=10, pady=5, sticky="e"
         )
 
-        entry = tk.Entry(parent, width=40, font=self.label_font)
+        # Create the entry widget
+        entry = tk.Entry(parent, width=30, font=self.label_font)  # Reduced width
         entry.grid(row=row, column=1, padx=10, pady=5, sticky="w")
+
+        # Error message label (initially empty)
+        error_label = tk.Label(
+            parent, text="", font=("Helvetica", 9), fg="red", bg="#ffffff"  # Smaller font size
+        )
+        error_label.place(in_=entry, relx=1.05, rely=0.5, anchor="w")  # Positioned to the right of the entry
 
         # Placeholder functionality
         def on_focus_in(event):
-            if entry.get() == placeholder_text:
+            if entry.get() == placeholder_text and entry["fg"] == "gray":
                 entry.delete(0, "end")
                 entry.config(fg="black")
 
         def on_focus_out(event):
-            if not entry.get():
+            if not entry.get().strip():  # If entry is empty
                 entry.insert(0, placeholder_text)
                 entry.config(fg="gray")
+            validate_input()  # Validate on focus out
 
+        # Validation function
+        def validate_input():
+            value = entry.get().strip()
+            if value == placeholder_text or not value:  # Input is empty
+                error_label.config(text=error_message or "This field is required.")
+                entry.config(bg="#ffe6e6")  # Highlight entry with a light red background
+            elif validation_func and not validation_func(value):  # Validation fails
+                error_label.config(text=error_message)
+                entry.config(bg="#ffe6e6")
+            else:  # Valid input
+                error_label.config(text="")
+                entry.config(bg="white")
+
+        # Bind events
         entry.insert(0, placeholder_text)
         entry.config(fg="gray")
         entry.bind("<FocusIn>", on_focus_in)
@@ -402,11 +428,19 @@ class ProgramLauncher(tk.Tk):
 
         # Input fields with placeholders
         raw_images_path = self.create_input_field(self.right_frame, "Raw Images Path:",
-                                                  "C:\\folder1\\raw_images", row=1)
+                                                  "C:\\folder1\\raw_images", row=1,
+                                                  validation_func=lambda x: len(x.strip()) > 0, # Empty string
+                                                  error_message="File path cannot be empty.")
+
         calibrated_images_path = self.create_input_field(self.right_frame, "Calibrated Images Path:",
-                                                         "C:\\folder1\\calibrated_images", row=2)
+                                                         "C:\\folder1\\calibrated_images", row=2,
+                                                         validation_func=lambda x: len(x.strip()) > 0, # Empty string
+                                                         error_message="File path cannot be empty.")
+
         location = self.create_input_field(self.right_frame, "Location:",
-                                           "e.g., BSUO, CTIO, etc.", row=3)
+                                           "e.g., BSUO, CTIO, etc.", row=3,
+                                           validation_func=lambda x: isinstance(x, str) and x.isalpha(), # String
+                                           error_message="Value must be a string.")
 
         # Checkbox for dark frames
         dark_bool_var = tk.BooleanVar(value=True)
@@ -414,9 +448,14 @@ class ProgramLauncher(tk.Tk):
 
         # Overscan and Trim region inputs
         overscan = self.create_input_field(self.right_frame, "Overscan Region:",
-                                           "[2073:2115, :]", row=5)
+                                           "[2073:2115, :]", row=5,
+                                           validation_func=lambda x: len(x.strip()) > 0, # Empty
+                                           error_message="Please enter at least [:,:].")
+
         trim = self.create_input_field(self.right_frame, "Trim Region:",
-                                       "[20:2060, 12:2057]", row=6)
+                                       "[20:2060, 12:2057]", row=6,
+                                       validation_func=lambda x: len(x.strip()) > 0, # Empty
+                                       error_message="Please enter at least [:,:].")
 
         # Button to open and plot bias image
         tk.Button(self.right_frame, text="Open Bias Image", font=self.button_font, bg="#003366", fg="white",
@@ -484,9 +523,13 @@ class ProgramLauncher(tk.Tk):
 
         # Input fields
         system_name = self.create_input_field(self.right_frame, "System Name:",
-                                              "NSVS 896797", row=1)
+                                              "NSVS 896797", row=1,
+                                              validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                              error_message="Please enter a system name.")
         download_path = self.create_input_field(self.right_frame, "Download Path:",
-                                                "C:\\folder1\\download", row=2)
+                                                "C:\\folder1\\download", row=2,
+                                                validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                                error_message="Please enter a file pathway.")
 
         # Checkbox for download specific sector
         download_all_var = tk.BooleanVar(value=False)  # Default to unchecked
@@ -595,15 +638,29 @@ class ProgramLauncher(tk.Tk):
 
         # Input fields
         ra = self.create_input_field(self.right_frame, "Right Ascension (RA):",
-                                     "HH:MM:SS.SSSS", row=1)
+                                     "HH:MM:SS.SSSS", row=1,
+                                     validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                     error_message="Please enter a RA.")
+
         dec = self.create_input_field(self.right_frame, "Declination (DEC):",
-                                      "DD:MM:SS.SSSS or -DD:MM:SS.SSSS", row=2)
+                                      "DD:MM:SS.SSSS or -DD:MM:SS.SSSS", row=2,
+                                      validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                      error_message="Please enter a DEC.")
+
         folder_path = self.create_input_field(self.right_frame, "Data Save Folder Path:",
-                                              "C:\\folder1\\download", row=3)
+                                              "C:\\folder1\\download", row=3,
+                                              validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                              error_message="Please enter a file pathway.")
+
         obj_name = self.create_input_field(self.right_frame, "Object Name:",
-                                           "NSVS 896797", row=4)
+                                           "NSVS 896797", row=4,
+                                           validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                           error_message="Please enter the object name.")
+
         science_image = self.create_input_field(self.right_frame, "Science Image Folder Path:",
-                                                "C:\\folder1\\calibrated_images", row=5)
+                                                "C:\\folder1\\calibrated_images", row=5,
+                                                validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                                error_message="Please enter a file pathway.")
 
         # Buttons for comparison selector
         tk.Button(self.right_frame, text="Run Comparison Selector", font=self.button_font, bg="#003366", fg="white",
@@ -634,15 +691,29 @@ class ProgramLauncher(tk.Tk):
 
         # Input fields
         obj_name = self.create_input_field(self.right_frame, "Object Name:",
-                                           "NSVS 896797", row=1)
+                                           "NSVS 896797", row=1,
+                                           validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                           error_message="Please enter an object name.")
+
         reduced_images_path = self.create_input_field(self.right_frame, "Reduced Images Path:",
-                                                      "C:\\folder1\\reduced_images", row=2)
+                                                      "C:\\folder1\\reduced_images", row=2,
+                                                      validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                                      error_message="Please enter a file pathway.")
+
         radec_b_file = self.create_input_field(self.right_frame, "RADEC File (B Filter):",
-                                               "C:\\folder1\\B.radec", row=3)
+                                               "C:\\folder1\\B.radec", row=3,
+                                               validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                               error_message="Please enter a file pathway with file name")
+
         radec_v_file = self.create_input_field(self.right_frame, "RADEC File (V Filter):",
-                                               "C:\\folder1\\V.radec", row=4)
+                                               "C:\\folder1\\V.radec", row=4,
+                                               validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                               error_message="Please enter a file pathway with file name.")
+
         radec_r_file = self.create_input_field(self.right_frame, "RADEC File (R Filter):",
-                                               "C:\\folder1\\R.radec", row=5)
+                                               "C:\\folder1\\R.radec", row=5,
+                                               validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                               error_message="Please enter a file pathway with file name.")
 
         # Run button
         self.create_run_button(self.right_frame, self.run_multi_aperture_photometry, row=6,
@@ -675,11 +746,19 @@ class ProgramLauncher(tk.Tk):
 
         # Input fields
         ra = self.create_input_field(self.right_frame, "Right Ascension (RA):",
-                                     "HH:MM:SS.SSSS", row=1)
+                                     "HH:MM:SS.SSSS", row=1,
+                                     validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                     error_message="Please enter a RA.")
+
         dec = self.create_input_field(self.right_frame, "Declination (DEC):",
-                                      "DD:MM:SS.SSSS or -DD:MM:SS.SSSS", row=2)
+                                      "DD:MM:SS.SSSS or -DD:MM:SS.SSSS", row=2,
+                                      validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                      error_message="Please enter a DEC.")
+
         output_file = self.create_input_field(self.right_frame, "Output File Path:",
-                                              "C:\\folder1\\Gaia_[star name].txt", row=3)
+                                              "C:\\folder1\\Gaia_[star name].txt", row=3,
+                                              validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                              error_message="Please enter a file pathway.")
 
         # Run button
         self.create_run_button(self.right_frame, self.run_gaia_query, row=4,
@@ -764,18 +843,28 @@ class ProgramLauncher(tk.Tk):
             label_text="HJD:",
             placeholder_text="2458403.58763",
             row=6,
+            validation_func=lambda x: x.replace(".", "", 1).isdigit(),  # Is a float
+            error_message="Please enter a valid HJD."
         )
 
         # Period input
         period_var = self.create_input_field(self.right_frame, "Period:",
-                                             "0.3175", row=7)
+                                             "0.3175", row=7,
+                                             validation_func=lambda x: x.replace(".", "", 1).isdigit(),  # Is a float
+                                             error_message="Please enter a valid Period.")
 
         obj_name_var = self.create_input_field(self.right_frame, "System Name:",
-                                               "NSVS_896797", row=8)
+                                               "NSVS_896797", row=8,
+                                               validation_func=lambda x: len(x.strip()) > 0,  # Empty,  # Is a float
+                                               error_message="Please enter a System Name."
+                                               )
 
         # Output file path
         output_var = self.create_input_field(self.right_frame, "Output File Path:",
-                                             "C:/folder1/folder2", row=9)
+                                             "C:/folder1/folder2", row=9,
+                                             validation_func=lambda x: len(x.strip()) > 0,  # Empty,  # Is a float
+                                             error_message="Please enter a file pathway."
+                                             )
 
         # Button to run O'Connell Effect calculation
         tk.Button(
@@ -1119,28 +1208,28 @@ class ProgramLauncher(tk.Tk):
         if messagebox.askyesno("Exit", "Are you sure you want to exit?"):
             self.destroy()
 
-class PlaceholderEntry(tk.Entry):
-    def __init__(self, master=None, placeholder="Enter text...", placeholder_color="grey", *args, **kwargs):
-        super().__init__(master, *args, **kwargs)
-
-        self.placeholder = placeholder
-        self.placeholder_color = placeholder_color
-        self.default_fg_color = self["fg"]
-
-        self.bind("<FocusIn>", self._clear_placeholder)
-        self.bind("<FocusOut>", self._add_placeholder)
-
-        self._add_placeholder()
-
-    def _clear_placeholder(self, event=None):
-        if self["fg"] == self.placeholder_color:
-            self.delete(0, tk.END)
-            self["fg"] = self.default_fg_color
-
-    def _add_placeholder(self, event=None):
-        if not self.get():
-            self.insert(0, self.placeholder)
-            self["fg"] = self.placeholder_color
+# class PlaceholderEntry(tk.Entry):
+#     def __init__(self, master=None, placeholder="Enter text...", placeholder_color="grey", *args, **kwargs):
+#         super().__init__(master, *args, **kwargs)
+#
+#         self.placeholder = placeholder
+#         self.placeholder_color = placeholder_color
+#         self.default_fg_color = self["fg"]
+#
+#         self.bind("<FocusIn>", self._clear_placeholder)
+#         self.bind("<FocusOut>", self._add_placeholder)
+#
+#         self._add_placeholder()
+#
+#     def _clear_placeholder(self, event=None):
+#         if self["fg"] == self.placeholder_color:
+#             self.delete(0, tk.END)
+#             self["fg"] = self.default_fg_color
+#
+#     def _add_placeholder(self, event=None):
+#         if not self.get():
+#             self.insert(0, self.placeholder)
+#             self["fg"] = self.placeholder_color
 
 
 def launch_main_gui():

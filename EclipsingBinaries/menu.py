@@ -4,7 +4,7 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 12/17/2024
+Last Updated: 01/09/2025
 """
 
 import tkinter as tk
@@ -22,11 +22,17 @@ def dynamic_import(progress_queue):
         ("astropy", "from astropy.nddata import CCDData"),
         ("astroquery", "from astroquery.mast import Tesscut"),
         ("matplotlib", "from matplotlib import pyplot as plt"),
+        ("json", "import json"),
+        ("os", "import os"),
+        ("traceback", "import traceback"),
         ("custom_scripts", textwrap.dedent("""
             from .IRAF_Reduction import run_reduction
             from .tess_data_search import run_tess_search
             from .apass import comparison_selector
             from .multi_aperture_photometry import main as multi_ap
+            from .gaia import target_star as gaia
+            from .OConnell import main as oconnell
+            from .version import __version__
         """)),
     ]
     total = len(packages)
@@ -128,9 +134,9 @@ class ProgramLauncher(tk.Tk):
         self.screen_width = self.winfo_screenwidth()
         self.screen_height = self.winfo_screenheight()
 
-        # Set window size as 60% of screen dimensions
-        self.window_width = int(self.screen_width * 0.6)
-        self.window_height = int(self.screen_height * 0.7)
+        # Set window size as 75%x75% of screen dimensions
+        self.window_width = int(self.screen_width * 0.75)
+        self.window_height = int(self.screen_height * 0.75)
         self.minsize(1000, 700)  # Minimum size for usability
 
         # Center the window
@@ -139,6 +145,9 @@ class ProgramLauncher(tk.Tk):
         # Window setup
         self.title("EclipsingBinaries")
         self.configure(bg="#f5f5f5")
+
+        # Bind click event to remove focus
+        self.bind("<Button-1>", self.remove_focus)
 
         # Configure rows and columns for resizing
         self.rowconfigure(0, weight=1)  # Header
@@ -159,11 +168,59 @@ class ProgramLauncher(tk.Tk):
         # Initialize cancel_event and current_task
         self.cancel_event = threading.Event()
         self.current_task = None
+
         # Footer
         footer_label = tk.Label(
-            self.left_frame, text="Developed by Kyle Koeller | Eclipsing Binaries Research", font=("Helvetica", 10), bg="#f5f5f5"
+            self.left_frame,
+            text="Developed by Kyle Koeller | Eclipsing Binaries Research",
+            font=("Helvetica", 10),
+            bg="#f5f5f5",
         )
         footer_label.pack(side="bottom", pady=5)
+
+        # Bind quit to autosave settings
+        self.protocol("WM_DELETE_WINDOW", self.quit_program)
+
+    # ---------- Undo/Redo Support ----------
+    def create_input_field(self, parent, label_text, placeholder_text, row, variable=None):
+        """Create a labeled input field with placeholder functionality and custom undo/redo."""
+        tk.Label(parent, text=label_text, font=self.label_font, bg="#ffffff").grid(
+            row=row, column=0, padx=10, pady=5, sticky="e"
+        )
+
+        entry = tk.Entry(parent, width=40, font=self.label_font)
+        entry.grid(row=row, column=1, padx=10, pady=5, sticky="w")
+
+        # Placeholder functionality
+        def on_focus_in(event):
+            if entry.get() == placeholder_text:
+                entry.delete(0, "end")
+                entry.config(fg="black")
+
+        def on_focus_out(event):
+            if not entry.get():
+                entry.insert(0, placeholder_text)
+                entry.config(fg="gray")
+
+        entry.insert(0, placeholder_text)
+        entry.config(fg="gray")
+        entry.bind("<FocusIn>", on_focus_in)
+        entry.bind("<FocusOut>", on_focus_out)
+
+        # Bind variable (if provided)
+        if variable:
+            entry.config(textvariable=variable)
+
+        return entry
+
+    def remove_focus(self, event):
+        """Remove focus from the currently focused widget unless it's an input widget."""
+        widget = self.focus_get()
+        clicked_widget = self.winfo_containing(event.x_root, event.y_root)
+
+        # Reset focus only if the clicked widget is not an input widget
+        if not isinstance(clicked_widget, (tk.Entry, tk.Text, ttk.Combobox)):
+            self.focus_set()
 
     def center_window(self):
         """Center the window on the screen"""
@@ -191,7 +248,25 @@ class ProgramLauncher(tk.Tk):
         self.right_frame.place(relx=0.3, rely=0.2, relwidth=0.7, relheight=0.8)
 
     def create_menu(self):
-        """Create the options menu"""
+        """Create the options menu with the Help functionality."""
+        # Create the top menu bar
+        menubar = tk.Menu(self)
+
+        # File Menu (Placeholder for extensibility)
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="Exit", command=self.quit_program)
+        menubar.add_cascade(label="File", menu=file_menu)
+
+        # Help Menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="Help Contents", command=self.open_help_window)
+        help_menu.add_separator()
+        help_menu.add_command(label="About", command=self.show_about)
+        menubar.add_cascade(label="Help", menu=help_menu)
+
+        self.config(menu=menubar)
+
+        # Left-side options menu (original buttons)
         options = [
             ("IRAF Reduction", self.show_iraf_reduction),
             ("Find Minimum (WIP)", self.dummy_action),
@@ -200,10 +275,10 @@ class ProgramLauncher(tk.Tk):
             ("Multi-Aperture Calculation", self.show_multi_aperture_photometry),
             ("BSUO or SARA/TESS Night Filters", self.dummy_action),
             ("O-C Plotting", self.dummy_action),
-            ("Gaia Search", self.dummy_action),
-            ("O'Connell Effect", self.dummy_action),
+            ("Gaia Search", self.show_gaia_query),
+            ("O'Connell Effect", self.show_oconnell_effect),
             ("Color Light Curve", self.dummy_action),
-            ("Close Program", self.quit_program)
+            ("Close Program", self.quit_program),
         ]
 
         for option, command in options:
@@ -215,6 +290,39 @@ class ProgramLauncher(tk.Tk):
                   font=self.button_font, bg="#003366", fg="white", activebackground="#00509e",
                   activeforeground="white", relief="flat", cursor="hand2").pack(pady=5, padx=10, fill="x")
 
+    def open_help_window(self):
+        """Open a separate Help window."""
+        help_window = tk.Toplevel(self)
+        help_window.title("Help Contents")
+        help_window.geometry("600x400")
+        help_window.configure(bg="#f5f5f5")
+
+        help_content = (
+            "Welcome to the Help Window!\n\n"
+            "Here you can find instructions and tips on how to use the application.\n"
+            "\nFeatures:\n"
+            "- IRAF Reduction: Process raw astronomical images.\n"
+            "- TESS Search: Retrieve TESS sector data.\n"
+            "- AIJ Comparison: Select comparison stars.\n"
+            "- O'Connell Effect: Calculate light curve effects.\n"
+            "\nFor more information, visit the GitHub repository:\n"
+            "https://github.com/kjkoeller/EclipsingBinaries/"
+        )
+
+        help_label = tk.Label(help_window, text=help_content, font=("Helvetica", 10), justify="left", wraplength=550)
+        help_label.pack(pady=20, padx=20, anchor="w")
+
+    def show_about(self):
+        """Display an About dialog."""
+        messagebox.showinfo(
+            "About EclipsingBinaries",
+            "EclipsingBinaries\n\n"
+            f"Version: {__version__}\n"
+            "Author: Kyle Koeller\n\n"
+            "For support, visit the GitHub repository:\n"
+            "https://github.com/kjkoeller/EclipsingBinaries/"
+        )
+
     def cancel_task(self):
         """Cancel the currently running task."""
         if self.current_task and self.current_task.is_alive():
@@ -223,6 +331,55 @@ class ProgramLauncher(tk.Tk):
                 self.cancel_event.set()
         else:
             messagebox.showinfo("No Task Running", "There is no task currently running.")
+
+    def write_to_log(self, message):
+        """Write a message to the log area and ensure it updates"""
+        self.log_area.insert("end", message + "\n")
+        self.log_area.see("end")  # Scroll to the latest message
+        self.update()  # Process pending GUI events to refresh the log
+
+    def clear_right_frame(self):
+        """Clear the right frame by destroying all its widgets"""
+        for widget in self.right_frame.winfo_children():
+            widget.destroy()
+
+    def create_checkbox(self, parent, text, variable, row):
+        """Create a checkbox with alignment"""
+        tk.Checkbutton(parent, text=text, variable=variable, font=self.label_font, bg="#ffffff").grid(
+            row=row, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
+        )
+
+    def create_scrollbar_and_log(self, row):
+        # Create a frame to hold the log area and scrollbar
+        log_frame = tk.Frame(self.right_frame, bg="#ffffff")
+        log_frame.grid(row=row, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
+
+        # Add the Text widget (log area) and the Scrollbar
+        self.log_area = tk.Text(log_frame, wrap="word", height=12, font=("Helvetica", 10))
+        scrollbar = tk.Scrollbar(log_frame, command=self.log_area.yview)
+
+        # Configure the Text widget to work with the scrollbar
+        self.log_area.configure(yscrollcommand=scrollbar.set)
+
+        # Pack the Text widget and the scrollbar
+        self.log_area.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Configure grid for log area
+        self.right_frame.grid_rowconfigure(row, weight=1)
+        self.right_frame.grid_columnconfigure(0, weight=1)
+        self.right_frame.grid_columnconfigure(1, weight=1)
+
+    def create_run_button(self, parent, action, row, **kwargs):
+        """Create the 'Run' button dynamically with proper alignment"""
+        tk.Button(parent, text="Run", font=self.button_font, bg="#003366", fg="white",
+                  activebackground="#00509e", activeforeground="white", relief="flat", cursor="hand2",
+                  command=lambda: action(**kwargs)).grid(row=row, column=0, columnspan=2, pady=20)
+
+    def create_cancel_button(self, parent, action, row, **kwargs):
+        tk.Button(parent, text="Cancel", font=self.button_font, bg="#003366", fg="white",
+                  activebackground="#00509e", activeforeground="white", relief="flat", cursor="hand2",
+                  command=lambda: action(**kwargs)).grid(row=row, column=1, columnspan=2, pady=20)
 
     def run_task(self, target, *args):
         """Run a task in a separate thread with cancellation support."""
@@ -243,18 +400,23 @@ class ProgramLauncher(tk.Tk):
             row=0, column=0, columnspan=2, pady=10, sticky="ew"
         )
 
-        # Input fields
-        raw_images_path = self.create_input_field(self.right_frame, "Raw Images Path:", row=1)
-        calibrated_images_path = self.create_input_field(self.right_frame, "Calibrated Images Path:", row=2)
-        location = self.create_input_field(self.right_frame, "Location (e.g., BSUO, CTIO, etc):", row=3)
+        # Input fields with placeholders
+        raw_images_path = self.create_input_field(self.right_frame, "Raw Images Path:",
+                                                  "C:\\folder1\\raw_images", row=1)
+        calibrated_images_path = self.create_input_field(self.right_frame, "Calibrated Images Path:",
+                                                         "C:\\folder1\\calibrated_images", row=2)
+        location = self.create_input_field(self.right_frame, "Location:",
+                                           "e.g., BSUO, CTIO, etc.", row=3)
 
         # Checkbox for dark frames
         dark_bool_var = tk.BooleanVar(value=True)
         self.create_checkbox(self.right_frame, "Use Dark Frames", dark_bool_var, row=4)
 
         # Overscan and Trim region inputs
-        overscan = self.create_input_field(self.right_frame, "Overscan Region:", row=5)
-        trim = self.create_input_field(self.right_frame, "Trim Region:", row=6)
+        overscan = self.create_input_field(self.right_frame, "Overscan Region:",
+                                           "[2073:2115, :]", row=5)
+        trim = self.create_input_field(self.right_frame, "Trim Region:",
+                                       "[20:2060, 12:2057]", row=6)
 
         # Button to open and plot bias image
         tk.Button(self.right_frame, text="Open Bias Image", font=self.button_font, bg="#003366", fg="white",
@@ -275,7 +437,7 @@ class ProgramLauncher(tk.Tk):
             row=9, column=0, columnspan=2, pady=5
         )
 
-        # create the scroll bar and log area
+        # Create the scroll bar and log area
         self.create_scrollbar_and_log(10)
 
     def open_bias_image(self):
@@ -321,8 +483,10 @@ class ProgramLauncher(tk.Tk):
         )
 
         # Input fields
-        system_name = self.create_input_field(self.right_frame, "System Name (TIC ID):", row=1)
-        download_path = self.create_input_field(self.right_frame, "Download Path:", row=2)
+        system_name = self.create_input_field(self.right_frame, "System Name:",
+                                              "NSVS 896797", row=1)
+        download_path = self.create_input_field(self.right_frame, "Download Path:",
+                                                "C:\\folder1\\download", row=2)
 
         # Checkbox for download specific sector
         download_all_var = tk.BooleanVar(value=False)  # Default to unchecked
@@ -386,12 +550,12 @@ class ProgramLauncher(tk.Tk):
             if not self.sector_label:
                 self.sector_label = tk.Label(self.right_frame, text="Select Specific Sector:", font=self.label_font,
                                              bg="#ffffff")
-                self.sector_label.grid(row=4, column=0, sticky="e")
+                self.sector_label.grid(row=5, column=0, sticky="e")
 
             # Add sector dropdown
             if not self.sector_dropdown:
                 self.sector_dropdown = ttk.Combobox(self.right_frame, state="readonly", values=[], font=self.label_font)
-                self.sector_dropdown.grid(row=4, column=1, padx=10, pady=5, sticky="w")
+                self.sector_dropdown.grid(row=5, column=1, padx=10, pady=5, sticky="w")
 
             # Add "Retrieve Sectors" button
             if not self.retrieve_button:
@@ -399,7 +563,7 @@ class ProgramLauncher(tk.Tk):
                     self.right_frame, text="Retrieve Sectors", font=self.button_font, bg="#003366", fg="white",
                     command=lambda: self.retrieve_sectors(system_name=system_name, sector_dropdown=self.sector_dropdown)
                 )
-                self.retrieve_button.grid(row=5, column=0, columnspan=2, pady=10)
+                self.retrieve_button.grid(row=4, column=0, columnspan=2, pady=10)
         else:  # Checkbox is unselected (False)
             # Remove "Select Specific Sector" label
             if self.sector_label:
@@ -430,11 +594,16 @@ class ProgramLauncher(tk.Tk):
         )
 
         # Input fields
-        ra = self.create_input_field(self.right_frame, "Right Ascension (RA):", row=1)
-        dec = self.create_input_field(self.right_frame, "Declination (DEC):", row=2)
-        folder_path = self.create_input_field(self.right_frame, "Data Save Folder Path:", row=3)
-        obj_name = self.create_input_field(self.right_frame, "Object Name:", row=4)
-        science_image = self.create_input_field(self.right_frame, "Science Image Folder Path:", row=5)
+        ra = self.create_input_field(self.right_frame, "Right Ascension (RA):",
+                                     "HH:MM:SS.SSSS", row=1)
+        dec = self.create_input_field(self.right_frame, "Declination (DEC):",
+                                      "DD:MM:SS.SSSS or -DD:MM:SS.SSSS", row=2)
+        folder_path = self.create_input_field(self.right_frame, "Data Save Folder Path:",
+                                              "C:\\folder1\\download", row=3)
+        obj_name = self.create_input_field(self.right_frame, "Object Name:",
+                                           "NSVS 896797", row=4)
+        science_image = self.create_input_field(self.right_frame, "Science Image Folder Path:",
+                                                "C:\\folder1\\calibrated_images", row=5)
 
         # Buttons for comparison selector
         tk.Button(self.right_frame, text="Run Comparison Selector", font=self.button_font, bg="#003366", fg="white",
@@ -464,11 +633,16 @@ class ProgramLauncher(tk.Tk):
         )
 
         # Input fields
-        obj_name = self.create_input_field(self.right_frame, "Object Name:", row=1)
-        reduced_images_path = self.create_input_field(self.right_frame, "Reduced Images Path:", row=2)
-        radec_b_file = self.create_input_field(self.right_frame, "RADEC File (B Filter):", row=3)
-        radec_v_file = self.create_input_field(self.right_frame, "RADEC File (V Filter):", row=4)
-        radec_r_file = self.create_input_field(self.right_frame, "RADEC File (R Filter):", row=5)
+        obj_name = self.create_input_field(self.right_frame, "Object Name:",
+                                           "NSVS 896797", row=1)
+        reduced_images_path = self.create_input_field(self.right_frame, "Reduced Images Path:",
+                                                      "C:\\folder1\\reduced_images", row=2)
+        radec_b_file = self.create_input_field(self.right_frame, "RADEC File (B Filter):",
+                                               "C:\\folder1\\B.radec", row=3)
+        radec_v_file = self.create_input_field(self.right_frame, "RADEC File (V Filter):",
+                                               "C:\\folder1\\V.radec", row=4)
+        radec_r_file = self.create_input_field(self.right_frame, "RADEC File (R Filter):",
+                                               "C:\\folder1\\R.radec", row=5)
 
         # Run button
         self.create_run_button(self.right_frame, self.run_multi_aperture_photometry, row=6,
@@ -486,63 +660,142 @@ class ProgramLauncher(tk.Tk):
         # Create scrollbar for the log area
         self.create_scrollbar_and_log(8)
 
-    def create_scrollbar_and_log(self, row):
-        # Create a frame to hold the log area and scrollbar
-        log_frame = tk.Frame(self.right_frame, bg="#ffffff")
-        log_frame.grid(row=row, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
+    def show_gaia_query(self):
+        """Display the Gaia query panel."""
+        self.clear_right_frame()
 
-        # Add the Text widget (log area) and the Scrollbar
-        self.log_area = tk.Text(log_frame, wrap="word", height=12, font=("Helvetica", 10))
-        scrollbar = tk.Scrollbar(log_frame, command=self.log_area.yview)
-
-        # Configure the Text widget to work with the scrollbar
-        self.log_area.configure(yscrollcommand=scrollbar.set)
-
-        # Pack the Text widget and the scrollbar
-        self.log_area.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        # Configure grid for log area
-        self.right_frame.grid_rowconfigure(row, weight=1)
+        # Configure grid for centering
         self.right_frame.grid_columnconfigure(0, weight=1)
         self.right_frame.grid_columnconfigure(1, weight=1)
 
-    def write_to_log(self, message):
-        """Write a message to the log area and ensure it updates"""
-        self.log_area.insert("end", message + "\n")
-        self.log_area.see("end")  # Scroll to the latest message
-        self.update()  # Process pending GUI events to refresh the log
-
-    def clear_right_frame(self):
-        """Clear the right frame by destroying all its widgets"""
-        for widget in self.right_frame.winfo_children():
-            widget.destroy()
-
-    def create_input_field(self, parent, label_text, row):
-        """Create a labeled input field with alignment"""
-        tk.Label(parent, text=label_text, font=self.label_font, bg="#ffffff").grid(
-            row=row, column=0, padx=10, pady=5, sticky="e"
-        )
-        entry = tk.Entry(parent, width=40, font=self.label_font)
-        entry.grid(row=row, column=1, padx=10, pady=5, sticky="w")
-        return entry
-
-    def create_checkbox(self, parent, text, variable, row):
-        """Create a checkbox with alignment"""
-        tk.Checkbutton(parent, text=text, variable=variable, font=self.label_font, bg="#ffffff").grid(
-            row=row, column=0, columnspan=2, padx=10, pady=5, sticky="ew"
+        # Add title
+        tk.Label(self.right_frame, text="Gaia Query", font=self.header_font, bg="#ffffff").grid(
+            row=0, column=0, columnspan=2, pady=10, sticky="ew"
         )
 
-    def create_run_button(self, parent, action, row, **kwargs):
-        """Create the 'Run' button dynamically with proper alignment"""
-        tk.Button(parent, text="Run", font=self.button_font, bg="#003366", fg="white",
-                  activebackground="#00509e", activeforeground="white", relief="flat", cursor="hand2",
-                  command=lambda: action(**kwargs)).grid(row=row, column=0, columnspan=2, pady=20)
+        # Input fields
+        ra = self.create_input_field(self.right_frame, "Right Ascension (RA):",
+                                     "HH:MM:SS.SSSS", row=1)
+        dec = self.create_input_field(self.right_frame, "Declination (DEC):",
+                                      "DD:MM:SS.SSSS or -DD:MM:SS.SSSS", row=2)
+        output_file = self.create_input_field(self.right_frame, "Output File Path:",
+                                              "C:\\folder1\\Gaia_[star name].txt", row=3)
 
-    def create_cancel_button(self, parent, action, row, **kwargs):
-        tk.Button(parent, text="Cancel", font=self.button_font, bg="#003366", fg="white",
-                  activebackground="#00509e", activeforeground="white", relief="flat", cursor="hand2",
-                  command=lambda: action(**kwargs)).grid(row=row, column=1, columnspan=2, pady=20)
+        # Run button
+        self.create_run_button(self.right_frame, self.run_gaia_query, row=4,
+                               ra=ra,
+                               dec=dec,
+                               output_file=output_file)
+
+        # Log display area
+        tk.Label(self.right_frame, text="Output Log:", font=self.label_font, bg="#ffffff").grid(
+            row=5, column=0, columnspan=2, pady=5
+        )
+
+        # Create scrollbar for the log area
+        self.create_scrollbar_and_log(6)
+
+    def show_oconnell_effect(self):
+        """Display the O'Connell Effect panel."""
+        self.clear_right_frame()
+
+        # Configure grid
+        self.right_frame.grid_columnconfigure(0, weight=1)
+        self.right_frame.grid_columnconfigure(1, weight=1)
+
+        # Add title
+        tk.Label(self.right_frame, text="O'Connell Effect Calculation", font=self.header_font, bg="#ffffff").grid(
+            row=0, column=0, columnspan=2, pady=10, sticky="ew"
+        )
+
+        # Variable for filter count
+        filter_count_var = tk.IntVar(value=3)  # Default selection is 3 filters
+
+        # File path variables
+        file_path_vars = [tk.StringVar() for _ in range(3)]
+
+        # Function to dynamically display entry fields
+        def update_file_path_fields():
+            for i in range(3):
+                if i < filter_count_var.get():
+                    file_entries[i].grid()
+                else:
+                    file_entries[i].grid_remove()
+
+        # Radio buttons for selecting filter count
+        tk.Label(self.right_frame, text="Select Number of Filters:", font=self.label_font, bg="#ffffff").grid(
+            row=1, column=0, columnspan=2, pady=5, sticky=""
+        )
+
+        filter_frame = tk.Frame(self.right_frame, bg="#ffffff")
+        filter_frame.grid(row=2, column=0, columnspan=2, sticky="")
+
+        for i in range(1, 4):
+            tk.Radiobutton(
+                filter_frame,
+                text=f"{i} Filter{'s' if i > 1 else ''}",
+                variable=filter_count_var,
+                value=i,
+                command=update_file_path_fields,
+                font=self.label_font,
+                bg="#ffffff",
+                anchor="w"
+            ).pack(side="left", padx=10)
+
+        # Create entry fields for file paths
+        file_entries = []
+        filter_list = ["B", "V", "R"]
+        for i in range(3):
+            entry = self.create_input_field(
+                parent=self.right_frame,
+                label_text=f"File Path {i + 1}:",
+                placeholder_text=f"C:\\folder1\\{filter_list[i]}.txt",
+                row=3 + i,
+                variable=file_path_vars[i]
+            )
+            file_entries.append(entry)
+
+        # Initially hide extra file entries
+        update_file_path_fields()
+
+        # HJD input
+        hjd_var = self.create_input_field(
+            parent=self.right_frame,
+            label_text="HJD:",
+            placeholder_text="2458403.58763",
+            row=6,
+        )
+
+        # Period input
+        period_var = self.create_input_field(self.right_frame, "Period:",
+                                             "0.3175", row=7)
+
+        obj_name_var = self.create_input_field(self.right_frame, "System Name:",
+                                               "NSVS_896797", row=8)
+
+        # Output file path
+        output_var = self.create_input_field(self.right_frame, "Output File Path:",
+                                             "C:/folder1/folder2", row=9)
+
+        # Button to run O'Connell Effect calculation
+        tk.Button(
+            self.right_frame,
+            text="Run O'Connell Effect",
+            font=self.button_font,
+            bg="#003366",
+            fg="white",
+            command=lambda: self.run_oconnell_effect(
+                filter_count_var,
+                file_entries,
+                hjd_var,
+                period_var,
+                obj_name_var,
+                output_var
+            )
+        ).grid(row=10, column=0, columnspan=2, pady=20)
+
+        # Create scrollbar for the log area
+        self.create_scrollbar_and_log(11)
 
     def run_iraf_reduction(self, raw_images_path, calibrated_images_path, location, dark_bool_var, overscan_var, trim_var):
         """Run the IRAF reduction process in a separate thread"""
@@ -593,8 +846,9 @@ class ProgramLauncher(tk.Tk):
                     messagebox.showinfo("Cancelled", "IRAF Reduction was cancelled.")
 
             except Exception as e:
-                self.write_to_log(f"An error occurred: {e}")
-                messagebox.showerror("Error", f"An error occurred during IRAF Reduction: {e}")
+                self.write_to_log(f"An error occurred during IRAF Reduction: {type(e).__name__}: {e}")
+                self.write_to_log(traceback.format_exc())
+                # messagebox.showerror("Error", f"An error occurred during IRAF Reduction: {e}")
 
         # Run the reduction in a separate thread
         self.run_task(reduction_task)
@@ -649,8 +903,8 @@ class ProgramLauncher(tk.Tk):
                     messagebox.showinfo("Cancelled", "TESS Database Search was canceled.")
 
             except Exception as e:
-                self.write_to_log(f"An error occurred: {e}")
-                messagebox.showinfo("Error", f"An error occurred during TESS Database Search: {e}")
+                self.write_to_log(f"An error occurred during TESS database search: {type(e).__name__}: {e}")
+                self.write_to_log(traceback.format_exc())
 
         self.run_task(search_task)
 
@@ -688,7 +942,7 @@ class ProgramLauncher(tk.Tk):
                 else:
                     self.write_to_log("Comparison Selector was canceled.")
             except Exception as e:
-                self.write_to_log(f"An error occurred: {type(e).__name__}: {e}")
+                self.write_to_log(f"An error occurred during comparison star selection: {type(e).__name__}: {e}")
                 self.write_to_log(traceback.format_exc())
 
         self.run_task(selector_task)
@@ -736,19 +990,157 @@ class ProgramLauncher(tk.Tk):
                 else:
                     self.write_to_log("Multi-Aperture Photometry was canceled.")
             except Exception as e:
-                self.write_to_log(f"An error occurred during Multi-Aperture Photometry: {e}")
+                self.write_to_log(f"An error occurred during Multi-Aperture Photometry: {type(e).__name__}: {e}")
+                self.write_to_log(traceback.format_exc())
 
         # Run the photometry task in a separate thread
         self.run_task(photometry_task)
+
+    def run_gaia_query(self, ra, dec, output_file):
+        """Run the Gaia query in a separate thread."""
+
+        def gaia_query():
+            try:
+                self.create_cancel_button(self.right_frame, self.cancel_task, row=4)
+
+                ra_value = ra.get().strip()
+                dec_value = dec.get().strip()
+                output_path = output_file.get().strip()
+
+                if not all([ra_value, dec_value, output_path]):
+                    self.write_to_log("Error: All fields are required.")
+                    return
+
+                self.write_to_log(f"Running Gaia Query for RA: {ra_value}, DEC: {dec_value}")
+
+                gaia(
+                    ra_input=ra_value,
+                    dec_input=dec_value,
+                    output_path=output_path,
+                    write_callback=self.write_to_log,
+                    cancel_event=self.cancel_event  # Pass cancel_event
+
+                )
+
+            except Exception as e:
+                self.write_to_log(f"An error occurred during Multi-Aperture Photometry: {type(e).__name__}: {e}")
+                self.write_to_log(traceback.format_exc())
+
+        self.run_task(gaia_query)
+
+    def run_oconnell_effect(self, filter_count, file_path_vars, hjd, period, obj_name, output_file):
+        """
+        Run the O'Connell Effect calculation based on the selected number of filters
+        and provided input values.
+        """
+
+        def oconnell_task():
+            try:
+                filter_count_var = filter_count.get()
+                # Collect file paths based on the selected filter count
+                file_paths = [var.get().strip() for var in file_path_vars[:filter_count_var]]
+                missing_paths = [path for path in file_paths if not path]
+
+                hjd_value = hjd.get().strip()
+                period_value = period.get().strip()
+                obj_name_value = obj_name.get().strip()
+                output_file_value = output_file.get().strip()
+
+                # Validate inputs
+                if missing_paths:
+                    self.write_to_log("Error: Missing file paths for selected filters.")
+                    messagebox.showerror("Input Error", "Please provide file paths for all selected filters.")
+                    return
+                for file_path in file_paths:
+                    if not Path(file_path).exists():
+                        self.write_to_log(f"Error: File does not exist - {file_path}")
+                        messagebox.showerror("File Error", f"The file {file_path} does not exist.")
+                        return
+                if not hjd_value:
+                    self.write_to_log("Error: HJD is required.")
+                    messagebox.showerror("Input Error", "Please enter the Heliocentric Julian Date (HJD).")
+                    return
+                try:
+                    hjd_value = float(hjd_value)
+                except ValueError:
+                    self.write_to_log(f"Error: Invalid HJD value - {hjd_value}")
+                    messagebox.showerror("Input Error", f"Invalid HJD value: {hjd_value}")
+                    return
+                if not period_value:
+                    self.write_to_log("Error: Period is required.")
+                    messagebox.showerror("Input Error", "Please enter the period of the system.")
+                    return
+                if not obj_name_value:
+                    self.write_to_log("Error: System Name is required.")
+                    messagebox.showerror("Input Error", "Please enter the name of the system.")
+                if not output_file_value:
+                    self.write_to_log("Error: Output file path is required.")
+                    messagebox.showerror("Input Error", "Please provide an output file path.")
+                    return
+
+                # Log inputs
+                self.write_to_log("Starting O'Connell Effect calculation with the following inputs:")
+                self.write_to_log(f"Number of Filters: {filter_count}")
+                self.write_to_log(f"File Paths: {', '.join(file_paths)}")
+                self.write_to_log(f"HJD: {hjd_value}")
+                self.write_to_log(f"Period: {period_value}")
+                self.write_to_log(f"Output File: {output_file_value}")
+
+                # Run the O'Connell Effect calculation
+                # from oconnell_effect import main as oconnell_main
+                oconnell(
+                    filepath=output_file_value,
+                    filter_files=list(file_paths),
+                    obj_name="OConnell_Output",
+                    period=float(period_value),
+                    hjd=float(hjd_value),
+                    write_callback=self.write_to_log,
+                    cancel_event=self.cancel_event  # Pass cancel_event
+                )
+
+                # Notify success
+                self.write_to_log("O'Connell Effect calculation completed successfully.")
+                messagebox.showinfo("Success", "O'Connell Effect calculation completed successfully!")
+
+            except Exception as e:
+                # Log and notify errors
+                self.write_to_log(f"An error occurred during O'Connell Effect calculation: {type(e).__name__}: {e}")
+                self.write_to_log(traceback.format_exc())
+
+        # Run the task in a separate thread
+        self.run_task(oconnell_task)
 
     def dummy_action(self):
         """Dummy action for unimplemented features"""
         messagebox.showinfo("Action", "This feature is not implemented yet.")
 
     def quit_program(self):
-        """Quit the program with confirmation"""
+        """Quit the program with confirmation and save settings."""
         if messagebox.askyesno("Exit", "Are you sure you want to exit?"):
             self.destroy()
+
+class PlaceholderEntry(tk.Entry):
+    def __init__(self, master=None, placeholder="Enter text...", placeholder_color="grey", *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+
+        self.placeholder = placeholder
+        self.placeholder_color = placeholder_color
+        self.default_fg_color = self["fg"]
+
+        self.bind("<FocusIn>", self._clear_placeholder)
+        self.bind("<FocusOut>", self._add_placeholder)
+
+        self._add_placeholder()
+
+    def _clear_placeholder(self, event=None):
+        if self["fg"] == self.placeholder_color:
+            self.delete(0, tk.END)
+            self["fg"] = self.default_fg_color
+
+    def _add_placeholder(self, event=None):
+        if not self.get():
+            self.insert(0, self.placeholder)
+            self["fg"] = self.placeholder_color
 
 
 def launch_main_gui():

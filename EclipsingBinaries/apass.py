@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 12/12/2024
+Last Updated: 05/22/2025
 """
 
 from astroquery.vizier import Vizier
@@ -24,6 +24,12 @@ from PyAstronomy import pyasl
 
 from .gaia import tess_mag as ga
 from .vseq_updated import isNaN, conversion, splitter, decimal_limit
+
+# Helps with MacOS SSL certificates
+import ssl
+import certifi
+
+ssl._create_default_https_context = ssl.create_default_context(cafile=certifi.where())
 
 # turn off this warning that just tells the user,
 # "The warning raised when the contents of the FITS header have been modified to be standards compliant."

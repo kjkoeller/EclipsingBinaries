@@ -15,6 +15,7 @@ from .vseq_updated import conversion
 from astropy.time import Time
 from astropy.coordinates import EarthLocation, SkyCoord
 from astropy import units as u
+import os
 
 
 def process_tess_cutout(search_file, pathway, sector, outprefix, write_callback, cancel_event):
@@ -47,12 +48,17 @@ def process_tess_cutout(search_file, pathway, sector, outprefix, write_callback,
             return
 
         # Extract file name and verify file paths
-        infile = "tess" + str(search_file).split("tess")[1]
+        infile = "tess" + str(search_file).strip().split("tess")[1]
+        fits_path = os.path.join(pathway, infile)
+
         log(f"Processing file: {infile}")
         log(f"Output directory: {pathway}")
 
+        if not os.path.exists(fits_path):
+            raise FileNotFoundError(f"{fits_path} does not exist.")
+
         # Open FITS file
-        inlist = pyfits.open(f"{pathway}/{infile}")
+        inlist = pyfits.open(fits_path)
         inhdr2 = inlist[2].header
         newhdr = inhdr2
 

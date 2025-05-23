@@ -2,7 +2,7 @@
 Author: Kyle Koeller
 Date Created: 03/08/2023
 
-Last Edited: 12/12/2024
+Last Edited: 05/22/2025
 This program queries Gaia DR3, to gather specific parameters
 
 https://gea.esac.esa.int/archive/
@@ -16,6 +16,12 @@ import pandas as pd
 import math as mt
 
 from .vseq_updated import splitter
+
+# Help with MacOS certificate validation
+import ssl
+import certifi
+
+ssl._create_default_https_context = ssl.create_default_context(cafile=certifi.where())
 
 
 def target_star():

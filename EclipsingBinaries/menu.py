@@ -4,7 +4,7 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 01/09/2025
+Last Updated: 05/21/2025
 """
 
 import tkinter as tk
@@ -313,8 +313,12 @@ class ProgramLauncher(tk.Tk):
     def create_menu_button(self, text, command):
         """Create a menu button"""
         tk.Button(self.left_frame, text=text, command=command,
-                  font=self.button_font, bg="#003366", fg="white", activebackground="#00509e",
-                  activeforeground="white", relief="flat", cursor="hand2").pack(pady=5, padx=10, fill="x")
+                  font=self.button_font,
+                  bg="#003366", fg="white",
+                  activebackground="#00509e", activeforeground="white",
+                  relief="flat", cursor="hand2",
+                  highlightbackground="#003366",  # Needed for macOS
+                  highlightthickness=1).pack(pady=5, padx=10, fill="x")
 
     def open_help_window(self):
         """Open a separate Help window."""
@@ -398,14 +402,20 @@ class ProgramLauncher(tk.Tk):
 
     def create_run_button(self, parent, action, row, **kwargs):
         """Create the 'Run' button dynamically with proper alignment"""
-        tk.Button(parent, text="Run", font=self.button_font, bg="#003366", fg="white",
-                  activebackground="#00509e", activeforeground="white", relief="flat", cursor="hand2",
-                  command=lambda: action(**kwargs)).grid(row=row, column=0, columnspan=2, pady=20)
+        tk.Button(parent, text="Run", font=self.button_font,
+              bg="#003366", fg="white",
+              activebackground="#00509e", activeforeground="white",
+              relief="flat", cursor="hand2",
+              highlightbackground="#003366", highlightthickness=1,
+              command=lambda: action(**kwargs)).grid(row=row, column=0, columnspan=2, pady=20)
 
     def create_cancel_button(self, parent, action, row, **kwargs):
-        tk.Button(parent, text="Cancel", font=self.button_font, bg="#003366", fg="white",
-                  activebackground="#00509e", activeforeground="white", relief="flat", cursor="hand2",
-                  command=lambda: action(**kwargs)).grid(row=row, column=1, columnspan=2, pady=20)
+        tk.Button(parent, text="Cancel", font=self.button_font,
+              bg="#003366", fg="white",
+              activebackground="#00509e", activeforeground="white",
+              relief="flat", cursor="hand2",
+              highlightbackground="#003366", highlightthickness=1,
+              command=lambda: action(**kwargs)).grid(row=row, column=1, columnspan=2, pady=20)
 
     def run_task(self, target, *args):
         """Run a task in a separate thread with cancellation support."""

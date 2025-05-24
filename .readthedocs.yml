@@ -13,3 +13,7 @@ python:
       path: .
       extra_requirements:
         - docs
+
+# This is the REQUIRED key mentioned in the error
+sphinx:
+  configuration: docs/conf.py

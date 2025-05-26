@@ -36,18 +36,33 @@ jobs:
             python: '3.9'
             tox_env: 'py39-test-alldeps-numpy119-cov'
 
-          - name: 'ubuntu-py39-bottleneck'
-            os: ubuntu-latest
-            python: '3.9'
-            tox_env: 'py39-test-alldeps-numpy119-cov-bottleneck'
-
           - name: 'ubuntu-py310'
             os: ubuntu-latest
             python: '3.10'
             tox_env: 'py310-test-alldeps-numpy121'
 
+          - name: 'ubuntu-py39-bottleneck'
+            os: ubuntu-latest
+            python: '3.9'
+            tox_env: 'py39-test-alldeps-numpy119-cov-bottleneck'
+
           - name: 'macos-py39'
             os: macos-latest
+            python: '3.9'
+            tox_env: 'py39-test-alldeps'
+
+          - name: 'macos-py311'
+            os: macos-latest
+            python: '3.11'
+            tox_env: 'py311-test-alldeps'
+
+          - name: 'windows-py38'
+            os: windows-latest
+            python: '3.8'
+            tox_env: 'py38-test-alldeps'
+
+          - name: 'windows-py39'
+            os: windows-latest
             python: '3.9'
             tox_env: 'py39-test-alldeps'
 
@@ -55,16 +70,11 @@ jobs:
             os: windows-latest
             python: '3.10'
             tox_env: 'py310-test-alldeps'
-            
-          - name: 'windows-py39'
-            os: windows-latest
-            python: '3.9'
-            tox_env: 'py39-test-alldeps'
 
-          - name: 'windows-py38'
+          - name: 'windows-py311'
             os: windows-latest
-            python: '3.8'
-            tox_env: 'py38-test-alldeps'
+            python: '3.11'
+            tox_env: 'py311-test-alldeps'
           
           - name: 'ubuntu-codestyle'
             os: ubuntu-latest
@@ -75,6 +85,11 @@ jobs:
             os: ubuntu-latest
             python: '3.10'
             tox_env: 'py310-test-alldeps-devdeps'
+
+          - name: 'ubuntu-py311-test-alldeps-devdeps'
+            os: ubuntu-latest
+            python: '3.11'
+            tox_env: 'py311-test-alldeps-devdeps'
 
     steps:
     - name: Check out repository

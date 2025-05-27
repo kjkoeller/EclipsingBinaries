@@ -992,7 +992,7 @@ class ProgramLauncher(TkinterDnD.Tk):
             file_entry_widgets.clear()  # Reset the list
 
             # Recreate only the required number of entries
-            filter_list = ["B", "V", "R"]
+            # filter_list = ["B", "V", "R"]
             for i in range(selected_count):
                 # Label for the file path
                 label = tk.Label(self.right_frame, text=f"File Path {i + 1}:", font=self.label_font, bg="#ffffff")
@@ -1121,11 +1121,9 @@ class ProgramLauncher(TkinterDnD.Tk):
                 if not raw_path.exists():
                     self.write_to_log("Error: Raw images path does not exist.")
                     raise FileNotFoundError("Invalid raw images path.")
-                    return
                 if not calibrated_path.exists():
                     self.write_to_log("Error: Calibrated images path does not exist.")
                     raise FileNotFoundError("Invalid calibrated images path.")
-                    return
 
                 # Log setup
                 self.write_to_log("Paths validated successfully.")

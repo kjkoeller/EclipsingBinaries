@@ -4,9 +4,9 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 05/21/2025
+Last Updated: 05/26/2025
 """
-
+from tkinterdnd2 import TkinterDnD, DND_FILES
 import tkinter as tk
 from tkinter import ttk
 import threading
@@ -16,6 +16,10 @@ import textwrap
 
 
 def dynamic_import(progress_queue):
+    """
+    Dynamically imports the required imports within the splash screen and not when the GUI is loaded. It makes the
+    splash screen load in faster and shows the user what packages are being imported.
+    """
     packages = [
         ("tkinter", "from tkinter import messagebox, filedialog, ttk"),
         ("pathlib", "from pathlib import Path"),
@@ -34,21 +38,24 @@ def dynamic_import(progress_queue):
             from .OConnell import main as oconnell
             from .version import __version__
         """)),
+        ("Finishing up...", "")
     ]
     total = len(packages)
 
     try:
         for i, (name, command) in enumerate(packages, start=1):
+            # Uses the strings above and executes them to import the packages and display on the splash screen
             exec(command, globals())
-            # print(f"DEBUG: {name} imported successfully")  # Debug statement
             progress_queue.put((i, total, f"Loading {name}..."))
             time.sleep(0.5)
 
         progress_queue.put((total, total, "Finalizing"))
 
     except Exception as e:
+        # Error handling incase something does not import correctly.
         progress_queue.put((None, None, f"Error loading {name}: {e}"))
-        print(f"ERROR: {e}")  # Debug output for errors
+        # Prints the error to the command prompt as well
+        print(f"ERROR: {e}")
 
     progress_queue.put(None)
 
@@ -66,10 +73,13 @@ class SplashScreen(tk.Toplevel):
         # Center the splash screen
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
+
         splash_width = int(screen_width * 0.4)
         splash_height = int(screen_height * 0.3)
+
         x_position = (screen_width - splash_width) // 2
         y_position = (screen_height - splash_height) // 2
+
         self.geometry(f"{splash_width}x{splash_height}+{x_position}+{y_position}")
         self.overrideredirect(True)  # Hide title bar
 
@@ -126,9 +136,19 @@ class SplashScreen(tk.Toplevel):
             self.after(100, self.monitor_progress)  # If no data, keep checking
 
 
-class ProgramLauncher(tk.Tk):
+# class ProgramLauncher(tk.Tk):
+class ProgramLauncher(TkinterDnD.Tk):
+    """
+    Main GUI that the user interacts with for each of the different options for analysis
+    """
     def __init__(self):
         super().__init__()
+
+        # Initialize ttk.Style
+        self.style = ttk.Style()
+        self.style.theme_use("clam")  # Use a customizable ttk theme
+
+        self.config_file = "config.json"
 
         # Get screen dimensions
         self.screen_width = self.winfo_screenwidth()
@@ -182,25 +202,48 @@ class ProgramLauncher(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.quit_program)
 
     def create_input_field(
-            self, parent, label_text, placeholder_text, row, variable=None, validation_func=None, error_message=""
-    ):
+            self, parent, label_text, placeholder_text, row, variable=None,
+            validation_func=None, error_message="", browse_type=None):
         """
         Create a labeled input field with placeholder functionality, validation, and inline error message.
+        Includes an optional browse button integrated into the entry field.
         """
         # Create a label for the input field
         tk.Label(parent, text=label_text, font=self.label_font, bg="#ffffff").grid(
             row=row, column=0, padx=10, pady=5, sticky="e"
         )
 
+        # Create a frame to contain the entry and the browse button
+        entry_frame = tk.Frame(parent, bg="#ffffff", highlightthickness=1, highlightbackground="#cccccc")
+        entry_frame.grid(row=row, column=1, padx=10, pady=5, sticky="w")
+
         # Create the entry widget
-        entry = tk.Entry(parent, width=30, font=self.label_font)  # Reduced width
-        entry.grid(row=row, column=1, padx=10, pady=5, sticky="w")
+        entry = tk.Entry(entry_frame, width=25, font=self.label_font, borderwidth=0)
+        entry.grid(row=0, column=0, sticky="w", padx=(5, 0))  # Use grid for internal layout
+
+        # Add a browse button inside the entry frame (if required)
+        if browse_type:
+            def browse_action():
+                selected_path = None
+                if browse_type == "file":
+                    selected_path = filedialog.askopenfilename(title="Select File")
+                elif browse_type == "folder":
+                    selected_path = filedialog.askdirectory(title="Select Folder")
+                if selected_path:
+                    entry.delete(0, "end")
+                    entry.insert(0, selected_path)
+                    entry.config(fg="black")
+                    validate_input()  # Validate on file/folder selection
+
+            browse_button = tk.Button(entry_frame, text="Browse", font=("Helvetica", 9), bg="#f0f0f0",
+                                      width=8, command=browse_action)
+            browse_button.grid(row=0, column=1, padx=(5, 5), pady=2, sticky="e")  # Positioned to the right
 
         # Error message label (initially empty)
         error_label = tk.Label(
-            parent, text="", font=("Helvetica", 9), fg="red", bg="#ffffff"  # Smaller font size
+            parent, text="", font=("Helvetica", 9), fg="red", bg="#ffffff"
         )
-        error_label.place(in_=entry, relx=1.05, rely=0.5, anchor="w")  # Positioned to the right of the entry
+        error_label.grid(row=row, column=2, padx=(5, 10), sticky="w")  # Positioned to the right of the entry
 
         # Placeholder functionality
         def on_focus_in(event):
@@ -217,7 +260,8 @@ class ProgramLauncher(tk.Tk):
         # Validation function
         def validate_input():
             value = entry.get().strip()
-            if value == placeholder_text or not value:  # Input is empty
+            is_placeholder = entry["fg"] == "gray"  # Check if it's still styled as a placeholder
+            if is_placeholder or not value:  # Input is empty
                 error_label.config(text=error_message or "This field is required.")
                 entry.config(bg="#ffe6e6")  # Highlight entry with a light red background
             elif validation_func and not validation_func(value):  # Validation fails
@@ -237,7 +281,31 @@ class ProgramLauncher(tk.Tk):
         if variable:
             entry.config(textvariable=variable)
 
+        # Drag-and-drop support
+        def handle_drop(event):
+            dropped_path = event.data.strip()
+
+            # Remove curly braces if present (from tkinterdnd2 behavior)
+            if dropped_path.startswith("{") and dropped_path.endswith("}"):
+                dropped_path = dropped_path[1:-1]
+
+            entry.delete(0, "end")
+            entry.insert(0, dropped_path)
+            validate_input()
+
+        self.enable_drag_and_drop(entry_frame, handle_drop)
+
         return entry
+
+    def enable_drag_and_drop(self, widget, callback):
+        """
+        Enable drag-and-drop functionality for a widget.
+
+        :param widget: The widget to enable drag-and-drop on.
+        :param callback: The function to call when a file/folder is dropped.
+        """
+        widget.drop_target_register(DND_FILES)
+        widget.dnd_bind("<<Drop>>", callback)
 
     def remove_focus(self, event):
         """Remove focus from the currently focused widget unless it's an input widget."""
@@ -274,11 +342,11 @@ class ProgramLauncher(tk.Tk):
         self.right_frame.place(relx=0.3, rely=0.2, relwidth=0.7, relheight=0.8)
 
     def create_menu(self):
-        """Create the options menu with the Help functionality."""
+        """Create the options menu with theme toggle functionality."""
         # Create the top menu bar
         menubar = tk.Menu(self)
 
-        # File Menu (Placeholder for extensibility)
+        # File Menu
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="Exit", command=self.quit_program)
         menubar.add_cascade(label="File", menu=file_menu)
@@ -310,6 +378,99 @@ class ProgramLauncher(tk.Tk):
         for option, command in options:
             self.create_menu_button(option, command)
 
+    def show_settings_menu(self):
+        """Show the settings menu for theme toggling."""
+        self.clear_right_frame()
+
+        # High Contrast Mode toggle
+        high_contrast_var = tk.BooleanVar(value=self.theme_settings["high_contrast"])
+        tk.Checkbutton(
+            self.right_frame,
+            text="High Contrast Mode",
+            variable=high_contrast_var,
+            command=lambda: self.toggle_theme("high_contrast", high_contrast_var.get()),
+            font=("Helvetica", 12),
+            bg="#ffffff",
+        ).pack(pady=10, anchor="w")
+
+        # Dark Theme toggle
+        dark_theme_var = tk.BooleanVar(value=self.theme_settings["dark_theme"])
+        tk.Checkbutton(
+            self.right_frame,
+            text="Dark Theme",
+            variable=dark_theme_var,
+            command=lambda: self.toggle_theme("dark_theme", dark_theme_var.get()),
+            font=("Helvetica", 12),
+            bg="#ffffff",
+        ).pack(pady=10, anchor="w")
+
+    def toggle_theme(self, theme_type, value):
+        """Toggle a theme and update settings."""
+        self.theme_settings[theme_type] = value
+
+        # Disable one theme if the other is enabled
+        if theme_type == "high_contrast" and value:
+            self.theme_settings["dark_theme"] = False
+        elif theme_type == "dark_theme" and value:
+            self.theme_settings["high_contrast"] = False
+
+        # Apply theme changes
+        self.apply_theme()
+
+        # Save settings
+        self.save_settings()
+
+    def apply_theme(self):
+        """Apply the selected theme to the GUI."""
+        high_contrast = self.theme_settings["high_contrast"]
+        dark_theme = self.theme_settings["dark_theme"]
+
+        if high_contrast:
+            self.configure(bg="black")
+            self.left_frame.configure(bg="yellow")
+            self.right_frame.configure(bg="yellow")
+            font_color = "black"
+            button_bg = "yellow"
+        elif dark_theme:
+            self.configure(bg="#333333")
+            self.left_frame.configure(bg="#444444")
+            self.right_frame.configure(bg="#555555")
+            font_color = "white"
+            button_bg = "#666666"
+        else:
+            # Default theme
+            self.configure(bg="#f5f5f5")
+            self.left_frame.configure(bg="#f5f5f5")
+            self.right_frame.configure(bg="#ffffff")
+            font_color = "black"
+            button_bg = "#003366"
+
+        # Update all widgets
+        for widget in self.left_frame.winfo_children():
+            if isinstance(widget, tk.Button):
+                widget.configure(bg=button_bg, fg=font_color)
+
+        for widget in self.right_frame.winfo_children():
+            if isinstance(widget, tk.Label):
+                widget.configure(bg=self.right_frame["bg"], fg=font_color)
+            elif isinstance(widget, tk.Checkbutton):
+                widget.configure(bg=self.right_frame["bg"], fg=font_color, selectcolor=self.right_frame["bg"])
+
+    def save_settings(self):
+        """Save current theme settings to a config file."""
+        import json
+        with open(self.config_file, "w") as file:
+            json.dump(self.theme_settings, file)
+
+    def load_settings(self):
+        """Load theme settings from a config file."""
+        import json
+        try:
+            with open(self.config_file, "r") as file:
+                self.theme_settings = json.load(file)
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.theme_settings = {"high_contrast": False, "dark_theme": False}
+
     def create_menu_button(self, text, command):
         """Create a menu button"""
         tk.Button(self.left_frame, text=text, command=command,
@@ -329,11 +490,13 @@ class ProgramLauncher(tk.Tk):
 
         help_content = (
             "Welcome to the Help Window!\n\n"
-            "Here you can find instructions and tips on how to use the application.\n"
+            "Here you can find brief descriptions on each of the currently available options.\n"
             "\nFeatures:\n"
             "- IRAF Reduction: Process raw astronomical images.\n"
             "- TESS Search: Retrieve TESS sector data.\n"
             "- AIJ Comparison: Select comparison stars.\n"
+            "- Multi Aperture Photometry: Analysis science images with multi aperture photometry.\n"
+            "- Gaia Search: Query Gaia for numerous variables related to an eclipsing binary star.\n"
             "- O'Connell Effect: Calculate light curve effects.\n"
             "\nFor more information, visit the GitHub repository:\n"
             "https://github.com/kjkoeller/EclipsingBinaries/"
@@ -403,19 +566,19 @@ class ProgramLauncher(tk.Tk):
     def create_run_button(self, parent, action, row, **kwargs):
         """Create the 'Run' button dynamically with proper alignment"""
         tk.Button(parent, text="Run", font=self.button_font,
-              bg="#003366", fg="white",
-              activebackground="#00509e", activeforeground="white",
-              relief="flat", cursor="hand2",
-              highlightbackground="#003366", highlightthickness=1,
-              command=lambda: action(**kwargs)).grid(row=row, column=0, columnspan=2, pady=20)
+                  bg="#003366", fg="white",
+                  activebackground="#00509e", activeforeground="white",
+                  relief="flat", cursor="hand2",
+                  highlightbackground="#003366", highlightthickness=1,
+                  command=lambda: action(**kwargs)).grid(row=row, column=0, columnspan=2, pady=20)
 
     def create_cancel_button(self, parent, action, row, **kwargs):
         tk.Button(parent, text="Cancel", font=self.button_font,
-              bg="#003366", fg="white",
-              activebackground="#00509e", activeforeground="white",
-              relief="flat", cursor="hand2",
-              highlightbackground="#003366", highlightthickness=1,
-              command=lambda: action(**kwargs)).grid(row=row, column=1, columnspan=2, pady=20)
+                  bg="#003366", fg="white",
+                  activebackground="#00509e", activeforeground="white",
+                  relief="flat", cursor="hand2",
+                  highlightbackground="#003366", highlightthickness=1,
+                  command=lambda: action(**kwargs)).grid(row=row, column=1, columnspan=2, pady=20)
 
     def run_task(self, target, *args):
         """Run a task in a separate thread with cancellation support."""
@@ -440,12 +603,14 @@ class ProgramLauncher(tk.Tk):
         raw_images_path = self.create_input_field(self.right_frame, "Raw Images Path:",
                                                   "C:\\folder1\\raw_images", row=1,
                                                   validation_func=lambda x: len(x.strip()) > 0, # Empty string
-                                                  error_message="File path cannot be empty.")
+                                                  error_message="File path cannot be empty.",
+                                                  browse_type="folder")
 
         calibrated_images_path = self.create_input_field(self.right_frame, "Calibrated Images Path:",
                                                          "C:\\folder1\\calibrated_images", row=2,
                                                          validation_func=lambda x: len(x.strip()) > 0, # Empty string
-                                                         error_message="File path cannot be empty.")
+                                                         error_message="File path cannot be empty.",
+                                                         browse_type="folder")
 
         location = self.create_input_field(self.right_frame, "Location:",
                                            "e.g., BSUO, CTIO, etc.", row=3,
@@ -536,10 +701,12 @@ class ProgramLauncher(tk.Tk):
                                               "NSVS 896797", row=1,
                                               validation_func=lambda x: len(x.strip()) > 0,  # Empty
                                               error_message="Please enter a system name.")
+
         download_path = self.create_input_field(self.right_frame, "Download Path:",
                                                 "C:\\folder1\\download", row=2,
                                                 validation_func=lambda x: len(x.strip()) > 0,  # Empty
-                                                error_message="Please enter a file pathway.")
+                                                error_message="Please enter a file pathway.",
+                                                browse_type="folder")
 
         # Checkbox for download specific sector
         download_all_var = tk.BooleanVar(value=False)  # Default to unchecked
@@ -660,7 +827,8 @@ class ProgramLauncher(tk.Tk):
         folder_path = self.create_input_field(self.right_frame, "Data Save Folder Path:",
                                               "C:\\folder1\\download", row=3,
                                               validation_func=lambda x: len(x.strip()) > 0,  # Empty
-                                              error_message="Please enter a file pathway.")
+                                              error_message="Please enter a file pathway.",
+                                              browse_type="folder")
 
         obj_name = self.create_input_field(self.right_frame, "Object Name:",
                                            "NSVS 896797", row=4,
@@ -670,7 +838,8 @@ class ProgramLauncher(tk.Tk):
         science_image = self.create_input_field(self.right_frame, "Science Image Folder Path:",
                                                 "C:\\folder1\\calibrated_images", row=5,
                                                 validation_func=lambda x: len(x.strip()) > 0,  # Empty
-                                                error_message="Please enter a file pathway.")
+                                                error_message="Please enter a file pathway.",
+                                                browse_type="folder")
 
         # Buttons for comparison selector
         tk.Button(self.right_frame, text="Run Comparison Selector", font=self.button_font, bg="#003366", fg="white",
@@ -708,22 +877,26 @@ class ProgramLauncher(tk.Tk):
         reduced_images_path = self.create_input_field(self.right_frame, "Reduced Images Path:",
                                                       "C:\\folder1\\reduced_images", row=2,
                                                       validation_func=lambda x: len(x.strip()) > 0,  # Empty
-                                                      error_message="Please enter a file pathway.")
+                                                      error_message="Please enter a file pathway.",
+                                                      browse_type="folder")
 
         radec_b_file = self.create_input_field(self.right_frame, "RADEC File (B Filter):",
                                                "C:\\folder1\\B.radec", row=3,
                                                validation_func=lambda x: len(x.strip()) > 0,  # Empty
-                                               error_message="Please enter a file pathway with file name")
+                                               error_message="Please enter a file pathway with file name",
+                                               browse_type="folder")
 
         radec_v_file = self.create_input_field(self.right_frame, "RADEC File (V Filter):",
                                                "C:\\folder1\\V.radec", row=4,
                                                validation_func=lambda x: len(x.strip()) > 0,  # Empty
-                                               error_message="Please enter a file pathway with file name.")
+                                               error_message="Please enter a file pathway with file name.",
+                                               browse_type="folder")
 
         radec_r_file = self.create_input_field(self.right_frame, "RADEC File (R Filter):",
                                                "C:\\folder1\\R.radec", row=5,
                                                validation_func=lambda x: len(x.strip()) > 0,  # Empty
-                                               error_message="Please enter a file pathway with file name.")
+                                               error_message="Please enter a file pathway with file name.",
+                                               browse_type="folder")
 
         # Run button
         self.create_run_button(self.right_frame, self.run_multi_aperture_photometry, row=6,
@@ -768,7 +941,8 @@ class ProgramLauncher(tk.Tk):
         output_file = self.create_input_field(self.right_frame, "Output File Path:",
                                               "C:\\folder1\\Gaia_[star name].txt", row=3,
                                               validation_func=lambda x: len(x.strip()) > 0,  # Empty
-                                              error_message="Please enter a file pathway.")
+                                              error_message="Please enter a file pathway.",
+                                              browse_type="folder")
 
         # Run button
         self.create_run_button(self.right_frame, self.run_gaia_query, row=4,
@@ -788,7 +962,7 @@ class ProgramLauncher(tk.Tk):
         """Display the O'Connell Effect panel."""
         self.clear_right_frame()
 
-        # Configure grid
+        # Configure grid for the right frame
         self.right_frame.grid_columnconfigure(0, weight=1)
         self.right_frame.grid_columnconfigure(1, weight=1)
 
@@ -803,25 +977,59 @@ class ProgramLauncher(tk.Tk):
         # File path variables
         file_path_vars = [tk.StringVar() for _ in range(3)]
 
+        # List to store all entry field components (label, entry frame)
+        file_entry_widgets = []
+
         # Function to dynamically display entry fields
         def update_file_path_fields():
-            for i in range(3):
-                if i < filter_count_var.get():
-                    file_entries[i].grid()
-                else:
-                    file_entries[i].grid_remove()
+            selected_count = filter_count_var.get()  # Get the selected filter count
+
+            # Remove all widgets first
+            for widgets in file_entry_widgets:
+                for widget in widgets:
+                    widget.grid_forget()  # Hide it properly (alternative to destroy)
+
+            file_entry_widgets.clear()  # Reset the list
+
+            # Recreate only the required number of entries
+            # filter_list = ["B", "V", "R"]
+            for i in range(selected_count):
+                # Label for the file path
+                label = tk.Label(self.right_frame, text=f"File Path {i + 1}:", font=self.label_font, bg="#ffffff")
+                label.grid(row=3 + i, column=0, padx=10, pady=2, sticky="e")
+
+                # Create a frame for entry + browse button (keeps them together)
+                entry_frame = tk.Frame(self.right_frame, bg="#ffffff", highlightthickness=1,
+                                       highlightbackground="#cccccc")
+                entry_frame.grid(row=3 + i, column=1, padx=10, pady=2, sticky="w")
+
+                # Entry widget (set width to match output file path)
+                entry = tk.Entry(entry_frame, textvariable=file_path_vars[i], font=self.label_font, width=30,
+                                 borderwidth=0)
+                entry.grid(row=0, column=0, sticky="w", padx=(5, 0), ipadx=10, ipady=3)
+
+                # Browse button inside the entry frame
+                browse_button = tk.Button(
+                    entry_frame, text="Browse", font=("Helvetica", 9), bg="#f0f0f0",
+                    command=lambda var=file_path_vars[i]: var.set(filedialog.askopenfilename(title="Select File"))
+                )
+                browse_button.grid(row=0, column=1, padx=(5, 5), pady=2, sticky="e")
+
+                # Store references to all elements
+                file_entry_widgets.append((label, entry_frame))
 
         # Radio buttons for selecting filter count
         tk.Label(self.right_frame, text="Select Number of Filters:", font=self.label_font, bg="#ffffff").grid(
-            row=1, column=0, columnspan=2, pady=5, sticky=""
+            row=1, column=0, padx=10, pady=5, sticky="e"
         )
 
-        filter_frame = tk.Frame(self.right_frame, bg="#ffffff")
-        filter_frame.grid(row=2, column=0, columnspan=2, sticky="")
+        # Frame for radio buttons (reduces spacing)
+        radio_frame = tk.Frame(self.right_frame, bg="#ffffff")
+        radio_frame.grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
         for i in range(1, 4):
             tk.Radiobutton(
-                filter_frame,
+                radio_frame,
                 text=f"{i} Filter{'s' if i > 1 else ''}",
                 variable=filter_count_var,
                 value=i,
@@ -829,22 +1037,9 @@ class ProgramLauncher(tk.Tk):
                 font=self.label_font,
                 bg="#ffffff",
                 anchor="w"
-            ).pack(side="left", padx=10)
+            ).pack(side="left", padx=5)  # Adjust padding to reduce spacing
 
-        # Create entry fields for file paths
-        file_entries = []
-        filter_list = ["B", "V", "R"]
-        for i in range(3):
-            entry = self.create_input_field(
-                parent=self.right_frame,
-                label_text=f"File Path {i + 1}:",
-                placeholder_text=f"C:\\folder1\\{filter_list[i]}.txt",
-                row=3 + i,
-                variable=file_path_vars[i]
-            )
-            file_entries.append(entry)
-
-        # Initially hide extra file entries
+        # Initially display the correct number of fields
         update_file_path_fields()
 
         # HJD input
@@ -858,23 +1053,35 @@ class ProgramLauncher(tk.Tk):
         )
 
         # Period input
-        period_var = self.create_input_field(self.right_frame, "Period:",
-                                             "0.3175", row=7,
-                                             validation_func=lambda x: x.replace(".", "", 1).isdigit(),  # Is a float
-                                             error_message="Please enter a valid Period.")
+        period_var = self.create_input_field(
+            parent=self.right_frame,
+            label_text="Period:",
+            placeholder_text="0.3175",
+            row=7,
+            validation_func=lambda x: x.replace(".", "", 1).isdigit(),  # Is a float
+            error_message="Please enter a valid Period."
+        )
 
-        obj_name_var = self.create_input_field(self.right_frame, "System Name:",
-                                               "NSVS_896797", row=8,
-                                               validation_func=lambda x: len(x.strip()) > 0,  # Empty,  # Is a float
-                                               error_message="Please enter a System Name."
-                                               )
+        # System name input
+        obj_name_var = self.create_input_field(
+            parent=self.right_frame,
+            label_text="System Name:",
+            placeholder_text="NSVS_896797",
+            row=8,
+            validation_func=lambda x: len(x.strip()) > 0,  # Ensure not empty
+            error_message="Please enter a System Name."
+        )
 
-        # Output file path
-        output_var = self.create_input_field(self.right_frame, "Output File Path:",
-                                             "C:/folder1/folder2", row=9,
-                                             validation_func=lambda x: len(x.strip()) > 0,  # Empty,  # Is a float
-                                             error_message="Please enter a file pathway."
-                                             )
+        # Output file path input
+        output_var = self.create_input_field(
+            parent=self.right_frame,
+            label_text="Output File Path:",
+            placeholder_text="C:/folder1/folder2",
+            row=9,
+            validation_func=lambda x: len(x.strip()) > 0,  # Ensure not empty
+            error_message="Please enter a file pathway.",
+            browse_type="folder"
+        )
 
         # Button to run O'Connell Effect calculation
         tk.Button(
@@ -924,6 +1131,8 @@ class ProgramLauncher(tk.Tk):
                 self.write_to_log(f"Calibrated Images Path: {calibrated_path}")
                 self.write_to_log(f"Location: {loc}")
                 self.write_to_log(f"Use Dark Frames: {'Yes' if use_dark_frames else 'No'}")
+                self.write_to_log(f"Trim Region: {trim_region}")
+                self.write_to_log(f"Overscan Region: {overscan_region}")
                 self.write_to_log("Starting IRAF Reduction...\n")
 
                 # Call the IRAF Reduction script
@@ -1217,29 +1426,6 @@ class ProgramLauncher(tk.Tk):
         """Quit the program with confirmation and save settings."""
         if messagebox.askyesno("Exit", "Are you sure you want to exit?"):
             self.destroy()
-
-# class PlaceholderEntry(tk.Entry):
-#     def __init__(self, master=None, placeholder="Enter text...", placeholder_color="grey", *args, **kwargs):
-#         super().__init__(master, *args, **kwargs)
-#
-#         self.placeholder = placeholder
-#         self.placeholder_color = placeholder_color
-#         self.default_fg_color = self["fg"]
-#
-#         self.bind("<FocusIn>", self._clear_placeholder)
-#         self.bind("<FocusOut>", self._add_placeholder)
-#
-#         self._add_placeholder()
-#
-#     def _clear_placeholder(self, event=None):
-#         if self["fg"] == self.placeholder_color:
-#             self.delete(0, tk.END)
-#             self["fg"] = self.default_fg_color
-#
-#     def _add_placeholder(self, event=None):
-#         if not self.get():
-#             self.insert(0, self.placeholder)
-#             self["fg"] = self.placeholder_color
 
 
 def launch_main_gui():

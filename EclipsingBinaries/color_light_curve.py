@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Sep 17 12:45:40 2020
-Created on Tue Feb 16 19:29:16 2021
 @author: Alec Neal
 
-Last Edited: 12/16/2024
+Last Edited: 06/04/2025
 Editor: Kyle Koeller
 """
 
-# from vseq_updated import io, calc, FT, binning, plot, Flower, Pecaut  # testing purposes
-from .vseq_updated import io, calc, FT, binning, plot, Flower, Pecaut
+from vseq_updated import io, calc, FT, binning, plot, Flower, Pecaut
 import numpy as np
 import matplotlib.pyplot as plt
 import statistics as st
@@ -69,7 +67,8 @@ mean_mag = lambda maglist: -2.5 * np.log10(np.mean(10 ** (-0.4 * np.array(maglis
 
 
 def subtract_LC(Bfile, Vfile, Epoch, period,
-                max_tol=0.03, lower_lim=0.05, FTinterp=True, quad_range=0.075, index=""):
+                max_tol=0.03, lower_lim=0.05, FTinterp=True, quad_range=0.075, index="",
+                write_callback=None, cancel_event=None):
     """
     This function actually creates the B-V and R-V values
 
@@ -85,8 +84,15 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
 
     :return: returns the B-V value and other assorted values
     """
-    B_HJD, B_mag, _ = io.importFile_pd(Bfile)[:3:]
-    V_HJD, V_mag, _ = io.importFile_pd(Vfile)[:3:]
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
+
+    B_HJD, B_mag, B_magerr = io.importFile_pd(Bfile)[:3:]
+    V_HJD, V_mag, V_magerr = io.importFile_pd(Vfile)[:3:]
 
     Bpoly = binning.polybinner(Bfile, Epoch, period, sections=2, section_order=8)
     Bphase = Bpoly[1][0][0][1]
@@ -123,14 +129,14 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
             BVquadmag.append(B_interp_mag[n] - V_mag[n])
     quadcolor = mean_mag(BVquadmag)
     colorerr = st.stdev(BVquadmag, xbar=quadcolor)
-    print(index, " ", quadcolor, '+/-', colorerr)
+    log(index, " ", quadcolor, '+/-', colorerr)
 
     B_minus_V = B_interp_mag - np.array(V_mag)
     BV_mean = mean_mag(B_minus_V)
     # print(B_minus_V)
     BV_err = st.stdev(B_minus_V, xbar=BV_mean)
 
-    print('ave diff =', round(mean_diff * 100, 3), '% of period')
+    log('ave diff =', round(mean_diff * 100, 3), '% of period')
     aVphase, aV_mag, aB_interp_mag = plot.aliasing2(Vphase, V_mag, B_interp_mag)[:3:]
     aBphase, aB_mag = plot.aliasing2(Bphase, B_mag, B_mag)[:2:]
     aB_minus_V = plot.aliasing2(Vphase, B_minus_V, B_minus_V)[1]
@@ -150,7 +156,7 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
         temp_err = np.sqrt(temp_high[1]**2 + temp_low[1]**2)
         temp.append(t1[0])
         temp.append(temp_err)
-        print('T_BV =', temp[0], '+/-', temp[1])
+        log('T_BV =', temp[0], '+/-', temp[1])
     elif index == "VR":
         t1 = Pecaut.T.Teff(quadcolor - (0.58 / 3.1), colorerr)
         temp = []
@@ -166,16 +172,16 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
         temp.append(t1[0])
         temp.append(temp_err)
         if temp[0] == 0:
-            print("V-R color cannot be used to determine temperature.")
+            log("V-R color cannot be used to determine temperature.")
         else:
-            print('T_VR =', temp[0], '+/-', temp[1])
+            log('T_VR =', temp[0], '+/-', temp[1])
 
     return B_V, B, V, quadcolor, colorerr, temp
 
 
 # use this function below
 def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile='', FTinterp=True,
-               save=False, outName='noname_color.png', fs=12):
+               save=False, outName='noname_color.png', fs=12, write_callback=None, cancel_event=None):
     """
     This is a function version of the GUI and produces the same values but without the plotting aspect
 
@@ -192,8 +198,15 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
     :param fs:
     :return: assorted values
     """
-    B_V = subtract_LC(Bfile, Vfile, Epoch, period, max_tol=max_tol, lower_lim=lower_lim, FTinterp=FTinterp, index="BV")
-    Bphase, Bmag, _ = B_V[1][:3:]
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
+
+    B_V = subtract_LC(Bfile, Vfile, Epoch, period, max_tol=max_tol, lower_lim=lower_lim, FTinterp=FTinterp, index="BV", write_callback=write_callback, cancel_event=cancel_event)
+    Bphase, Bmag, B_interp_mag = B_V[1][:3:]
     Vphase, Vmag = B_V[2][:2:]
     aB_minus_V = B_V[0][3]
     quadcolor, colorerr = B_V[3:5:]
@@ -227,9 +240,9 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
     else:
         V_R = subtract_LC(Vfile, Rfile, Epoch, period, max_tol, lower_lim=lower_lim, index="VR")
         Rphase, Rmag = V_R[2][:2:]
-        # V_interp_mag = V_R[1][2]
+        V_interp_mag = V_R[1][2]
         aV_minus_R = V_R[0][3]
-        axs, _ = plot.multiplot((7, 9), height_ratios=[8, 3, 3])
+        axs, fig = plot.multiplot((7, 9), height_ratios=[8, 3, 3])
         mag = axs[0]
         bv = axs[2]
         vr = axs[1]
@@ -262,8 +275,8 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
         bv.set_xlabel(r'$\Phi$', fontsize=fs * 1.2)
     if save:
         plt.savefig(outName, bbox_inches='tight')
-    plt.show()
-    return quadcolor, colorerr
+    # plt.show()
+    log(f"Color Temp = {quadcolor} {colorerr}")
 
 
 # ==
@@ -280,7 +293,7 @@ class ToolTip(object):
         self.text = text
         if self.tipwindow or not self.text:
             return
-        x, y, _, cy = self.widget.bbox("insert")
+        x, y, cx, cy = self.widget.bbox("insert")
         x = x + self.widget.winfo_rootx() + 57
         y = y + cy + self.widget.winfo_rooty() + 27
         self.tipwindow = tw = Toplevel(self.widget)
@@ -446,7 +459,7 @@ def color_gui(developer=False):
         ' the three light curves will be shown along with interpolated B-V, V-R colors.'))
     # ====================
     getit = lambda entr: entr[1].get()
-    # temp = Label(root, text='')
+    temp = Label(root, text='')
     BVL = Label(root, text='')
     BVL.grid(row=len(entries) + 6, column=0, columnspan=2)
     BVL_temp = Label(root, text='')

@@ -3,7 +3,7 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 12/16/2024
+Last Edited: 06/04/2025
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -11,8 +11,7 @@ Last Edits Done By: Kyle Koeller
 
 # Importing necessary libraries
 import matplotlib.pyplot as plt
-from .vseq_updated import plot, binning, calc, FT, OConnell
-# from vseq_updated import plot, binning, calc, FT, OConnell  # testing purposes
+from vseq_updated import plot, binning, calc, FT, OConnell
 from tqdm import tqdm
 import numpy as np
 import statistics as st
@@ -23,84 +22,26 @@ sig_f = lambda f, x, sig_x: abs(f(x + sig_x) - f(x - sig_x)) / 2
 
 
 # Main function for calculating O'Connell Effect
-def main(filepath="", pipeline=False, radec_list=None, obj_name="", period=0, hjd=0):
-    if not pipeline:
-        # User interaction for number of filters
-        print("How many filters are you going to use?")
-        while True:
-            prompt = input(
-                "Enter 3 if you are going to use BVR or less than 3 for a combination of them of type 'Close' "
-                "to close the program: ")
-            if prompt.isnumeric():
-                if 0 < int(prompt) < 4:
-                    break
-                else:
-                    print("\nYou have entered in a wrong number not between 1-3. Please try again.\n")
-            elif prompt.lower() == "close":
-                exit()
-            else:
-                print("\nYou have entered a wrong value. Please try entering a number or the word 'Close'.\n")
-
-        # Logic to handle different numbers of filters
-        if prompt == "3":
-            # For 3 filters (BVR)
-            print("\nPlease enter full file pathways for the following prompt.\n")
-            while True:
-                infile1 = input("File 1 name: ")
-                infile2 = input("File 2 name: ")
-                infile3 = input("File 3 name: ")
-                if path.exists(infile1) and path.exists(infile2) and path.exists(infile3):
-                    break
-                else:
-                    print("\nOne of the files you have entered does not exist, please try all three again.\n")
-                    continue
-            hjd = float(input("What is the HJD: "))
-            period = float(input("What is the period: "))
-            outputile = input(
-                "What is the output file name and pathway with .pdf extension (i.e. C:\\folder1\\test.pdf): ")
-            multi_oconnell_total([infile1, infile2, infile3], hjd, period, order=10, sims=1000,
-                                 sections=4, section_order=7, plot_only=False, save=True, outName=outputile,
-                                 pipeline=pipeline)
-        elif prompt == "2":
-            # For 2 filters
-            print("\nPlease enter full file pathways for the following prompt.\n")
-            while True:
-                infile1 = input("File 1 name: ")
-                infile2 = input("File 2 name: ")
-                if path.exists(infile1) and path.exists(infile2):
-                    break
-                else:
-                    print("\nOne of the files you have entered does not exist, please try all three again.\n")
-                    continue
-            hjd = float(input("What is the HJD: "))
-            period = float(input("What is the period: "))
-            outputile = input(
-                "What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
-            multi_oconnell_total([infile1, infile2], hjd, period, order=10, sims=1000,
-                                 sections=4, section_order=7, plot_only=False, save=True, outName=outputile,
-                                 pipeline=pipeline)
+def main(filepath="", filter_files=None, obj_name="", period=0, hjd=0, write_callback=None, cancel_event=None):
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
         else:
-            # For 1 filter
-            print("\nPlease enter full file pathways for the following prompt.\n")
-            while True:
-                infile1 = input("File 1 name: ")
-                if path.exists(infile1):
-                    break
-                else:
-                    print("\nThe file you have entered does not exist, please try all three again.\n")
-                    continue
-            hjd = float(input("What is the HJD: "))
-            period = float(input("What is the period: "))
-            outputile = input(
-                "What is the output file name and pathway with .pdf exntension (i.e. C:\\folder1\\test.pdf): ")
-            multi_oconnell_total([infile1], hjd, period, order=10, sims=1000,
-                                 sections=4, section_order=7, plot_only=False, save=True, outName=outputile,
-                                 pipeline=pipeline)
-    else:
-        # If running in a pipeline mode
-        multi_oconnell_total([radec_list], hjd, period, order=10, sims=1000,
+            print(message)
+
+    try:
+        if cancel_event.is_set():
+            log("Task canceled.")
+            return
+
+        multi_OConnell_total(filter_files, hjd, period, order=10, sims=1000,
                              sections=4, section_order=7, plot_only=False, save=True,
-                             outName=(filepath + "\\" + obj_name + ".pdf"), pipeline=pipeline)
+                             outName=(filepath + "\\" + obj_name + ".pdf"),
+                             write_callback=write_callback, cancel_event=cancel_event)
+    except Exception as e:
+        log(f"An error occurred: {e}")
+        raise
 
 
 def quick_tex(thing):
@@ -118,7 +59,19 @@ dI_phi = lambda b, phase, order: 2 * sum(b[1:order + 1:] * np.sin(2 * np.pi * ph
 def Half_Comp(filter_files, Epoch, period,
               FT_order=10, sections=4, section_order=8,
               resolution=512, offset=0.25, save=False, outName='noname_halfcomp.png',
-              title=None, filter_names=None, sans_font=False):
+              title=None, filter_names=None, sans_font=False,
+              write_callback=None, cancel_event=None):
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
+
+    if cancel_event.is_set():
+        log("Task canceled.")
+        return
+
     # Setting font family if not using sans font
     if sans_font == False:
         plt.rcParams['font.family'] = 'serif'  # Set font family to serif if sans_font is False
@@ -128,7 +81,7 @@ def Half_Comp(filter_files, Epoch, period,
     bands = len(filter_files)
 
     # Create subplots for flux and dI
-    axs, _ = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
+    axs, fog = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
     flux = axs[0]  # Flux subplot
     dI = axs[1]  # dI subplot
 
@@ -178,6 +131,10 @@ def Half_Comp(filter_files, Epoch, period,
         # Plot dI
         dI.plot(FTphase1, dIlist, linestyle=styles[band], color=colors[band])
 
+    if cancel_event.is_set():
+        log("Task canceled.")
+        return
+
     # Set x-axis limit for flux subplot
     plt.xlim(-0.025, 0.525)
 
@@ -198,28 +155,41 @@ def Half_Comp(filter_files, Epoch, period,
     # Save figure if save is True
     if save:
         plt.savefig(outName, bbox_inches='tight')
-        print(outName + ' saved.')
+        log(outName + ' saved.')
 
-    plt.show()  # Show the plot
+    # plt.show()  # Show the plot
 
     # Reset font settings to default
     plt.rcParams['font.family'] = 'sans'
     plt.rcParams['mathtext.fontset'] = 'dejavusans'
 
-    return print('\nDone.')  # Return "Done" message
+    return None  # Return "Done" message
 
 
 def OConnell_total(inputFile, Epoch, period, order, sims=1000,
                    sections=4, section_order=8, norm_factor='alt',
-                   starName='', filterName='', FT_order=10, FTres=500):
+                   starName='', filterName='', FT_order=10, FTres=500,
+                   write_callback=None, cancel_event=None):
     """
     This function calculates various parameters related to the O'Connell Effect.
     It performs Monte Carlo simulations to estimate errors.
     Approximate runtime: ~ sims/1000 minutes.
     """
 
-    # Generating master parameters from the observational data.
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
 
+    if cancel_event.is_set():
+        log("Task canceled.")
+        return
+
+    """
+    Generating master parameters from the observational data.
+    """
     # ============================== DO NOT CHANGE ==============================
     # Binning the data
     PB = binning.polybinner(inputFile, Epoch, period, sections=sections, norm_factor=norm_factor,
@@ -243,7 +213,9 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     for sim in tqdm(range(sims), desc='Simulating light curves', position=0):
         master_simflux.append(FT.sim_ob_flux(FTsynth, ob_fluxerr))
     # ============
-
+    if cancel_event.is_set():
+        log("Task canceled.")
+        return
     # ============
     c_master_simflux = []
     nc_master_simflux = []
@@ -300,6 +272,10 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
         dIavelist.append(OConnell.Delta_I_mean_obs_noerror(ob_phaselist, ob_fluxlist, phase_range=0.05))
     # = end sim loop =
 
+    if cancel_event.is_set():
+        log("Task canceled.")
+        return
+
     # === end Monte Carlo ===
 
     """
@@ -319,6 +295,10 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
         b_model_err.append(bsig)
         a_rat.append(ar)
         b_rat.append(br)
+
+    if cancel_event.is_set():
+        log("Task canceled.")
+        return
 
     # == FT coefficients ==
     a_MC_err = np.array(list(map(st.stdev, zip(*master_a))))
@@ -357,21 +337,21 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
 
     valerr = lambda x, dx, label, PRECISION=6: print(label + ' =', round(x, PRECISION), '+/-', round(dx, PRECISION))
 
-    print('\n')
+    # print('\n')
     valerr(a[1], a_total_err[1], 'a1')
     valerr(a[2], a_total_err[2], 'a2')
     valerr(a[4], a_total_err[4], 'a4')
     valerr(a[2] * (0.125 - a[2]),
            sig_f(lambda x: x * (0.125 - x), a[2], (a_model_err[2] ** 2 + a_MC_err[2] ** 2) ** 0.5), 'a2(0.125-a2)')
-    print('')
+    # print('')
     valerr(OER, OER_total_err, 'OER')
-    print(r(OER_model_err), r(OER_MC_err), '\n')
+    # print(r(OER_model_err), r(OER_MC_err), '\n')
 
     valerr(LCA, LCA_total_err, 'LCA')
-    print(r(LCA_model_err), r(LCA_MC_err), '\n')
+    # print(r(LCA_model_err), r(LCA_MC_err), '\n')
 
     valerr(Delta_I_025, Delta_I_025_total_err, 'Delta_I')
-    print(r(Delta_I_025_model_err), r(Delta_I_025_MC_err), '\n')
+    # print(r(Delta_I_025_model_err), r(Delta_I_025_MC_err), '\n')
 
     valerr(Delta_I_ave, Delta_I_ave_err, 'Delta_I_ave')
 
@@ -379,20 +359,36 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
         OER, OER_total_err], [LCA, LCA_total_err], [a2_0125_a2, a2_0125_a2_err]
 
 
-def multi_oconnell_total(filter_files, Epoch, period, order=10,
+def multi_OConnell_total(filter_files, Epoch, period, order=10,
                          sims=1000, sections=4, section_order=8,
                          norm_factor='alt', starName='', filterNames=[r'$\rm B$', r'$\rm V$', r'$\rm R_C$'],
                          FT_order=10, FTres=500, plot_only=False,
-                         plotoff=0.25, save=False, outName='noname.png', pipeline=False):
+                         plotoff=0.25, save=False, outName='noname.png',
+                         write_callback=None, cancel_event=None):
     """
     This function generates a half-comparison plot and calculates various parameters related to the O'Connell Effect.
     If plot_only is set to True, only the half-comparison plot will be generated.
     """
 
+    def log(message):
+        """Log messages to the GUI if callback provided, otherwise print"""
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
+
+    if cancel_event.is_set():
+        log("Task canceled.")
+        return
+
     # Generate half-comparison plot
     Half_Comp(filter_files, Epoch, period, FT_order=order, sections=sections,
               section_order=section_order, offset=plotoff, save=save, outName=outName,
-              filter_names=filterNames)
+              filter_names=filterNames, write_callback=write_callback, cancel_event=cancel_event)
+
+    if cancel_event.is_set():
+        log("Task canceled.")
+        return
 
     # Perform O'Connell analysis
     if not plot_only:
@@ -417,7 +413,8 @@ def multi_oconnell_total(filter_files, Epoch, period, order=10,
             oc = OConnell_total(filter_files[band], Epoch, period, order, sims=sims,
                                 sections=sections, section_order=section_order,
                                 norm_factor=norm_factor, FT_order=order, FTres=FTres,
-                                filterName='Filter ' + str(band + 1))
+                                filterName='Filter ' + str(band + 1),
+                                write_callback=write_callback, cancel_event=cancel_event)
             a_all.append(oc[0][0])
             a_err_all.append(oc[0][1])
             b_all.append(oc[1][0])
@@ -432,6 +429,10 @@ def multi_oconnell_total(filter_files, Epoch, period, order=10,
             LCAs_err.append(oc[5][1])
             a22s.append(oc[6][0])
             a22s_err.append(oc[6][1])
+
+        if cancel_event.is_set():
+            log("Task canceled.")
+            return
 
         # LaTeX table creation
         table_header = '\\begin{table}[H]\n' + '\\begin{center}\n' + '\\begin{tabular}{c|'
@@ -464,6 +465,10 @@ def multi_oconnell_total(filter_files, Epoch, period, order=10,
             OER_line += '& $' + strr(OERs[band]) + '\pm ' + strr(OERs_err[band]) + '$ '
             LCA_line += '& $' + strr(LCAs[band]) + '\pm ' + strr(LCAs_err[band]) + '$ '
 
+        if cancel_event.is_set():
+            log("Task canceled.")
+            return
+
         lines = [a1_line, a2_line, a4_line, a22_line, b1_line, dIFT_line, dIave_line, OER_line, LCA_line]
         for count, _ in enumerate(lines):
             lines[count] += '\\\ \n'
@@ -475,14 +480,11 @@ def multi_oconnell_total(filter_files, Epoch, period, order=10,
             sims) + ' sims)}\n' + '\\label{tbl:OConnell}\n' + '\\end{center}\n' + '\\end{table}\n'
         # End LaTeX table creation
 
-        print(output)  # Output LaTeX table to console
-        outputfile = input("Please enter an output file name without the extension: ")
+        # print(output)  # Output LaTeX table to console
+        # outputfile = input("Please enter an output file name without the extension: ")
+        outputfile = outName.rstrip(".pdf")
         file = open(outputfile + ".txt", "w")
         file.write(output)  # Write LaTeX table to file
         file.close()
 
     return 'nada'
-
-
-if __name__ == '__main__':
-    main()

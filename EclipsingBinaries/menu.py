@@ -35,14 +35,14 @@ def dynamic_import(progress_queue):
         ("os", "import os"),
         ("traceback", "import traceback"),
         ("custom scripts", textwrap.dedent("""
-            from IRAF_Reduction import run_reduction
-            from tess_data_search import run_tess_search
-            from apass import comparison_selector
-            from multi_aperture_photometry import main as multi_ap
-            from gaia import target_star as gaia
-            from OConnell import main as oconnell
-            from color_light_curve import color_plot as color_plot
-            from version import __version__
+            from .IRAF_Reduction import run_reduction
+            from .tess_data_search import run_tess_search
+            from .apass import comparison_selector
+            from .multi_aperture_photometry import main as multi_ap
+            from .gaia import target_star as gaia
+            from .OConnell import main as oconnell
+            from .color_light_curve import color_plot as color_plot
+            from .version import __version__
         """)),
         ("Finishing up...", "")
     ]

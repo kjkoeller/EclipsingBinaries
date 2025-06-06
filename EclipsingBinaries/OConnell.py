@@ -3,7 +3,7 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 06/04/2025
+Last Edited: 06/05/2025
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -11,7 +11,7 @@ Last Edits Done By: Kyle Koeller
 
 # Importing necessary libraries
 import matplotlib.pyplot as plt
-from vseq_updated import plot, binning, calc, FT, OConnell
+from .vseq_updated import plot, binning, calc, FT, OConnell
 from tqdm import tqdm
 import numpy as np
 import statistics as st

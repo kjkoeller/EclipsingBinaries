@@ -3,11 +3,11 @@
 Created on Thu Sep 17 12:45:40 2020
 @author: Alec Neal
 
-Last Edited: 06/04/2025
+Last Edited: 06/05/2025
 Editor: Kyle Koeller
 """
 
-from vseq_updated import io, calc, FT, binning, plot, Flower, Pecaut
+from .vseq_updated import io, calc, FT, binning, plot, Flower, Pecaut
 import numpy as np
 import matplotlib.pyplot as plt
 import statistics as st

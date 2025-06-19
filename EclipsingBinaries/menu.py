@@ -4,11 +4,13 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 05/26/2025
+Last Updated: 06/04/2025
 """
 from tkinterdnd2 import TkinterDnD, DND_FILES
 import tkinter as tk
 from tkinter import ttk
+from pathlib import Path
+import sys
 import threading
 import queue
 import time
@@ -17,9 +19,12 @@ import textwrap
 
 def dynamic_import(progress_queue):
     """
-    Dynamically imports the required imports within the splash screen and not when the GUI is loaded. It makes the
-    splash screen load in faster and shows the user what packages are being imported.
+    Dynamically imports the required modules while showing progress.
     """
+    project_dir = Path(__file__).resolve().parent
+    if str(project_dir) not in sys.path:
+        sys.path.insert(0, str(project_dir))
+
     packages = [
         ("tkinter", "from tkinter import messagebox, filedialog, ttk"),
         ("pathlib", "from pathlib import Path"),
@@ -29,13 +34,14 @@ def dynamic_import(progress_queue):
         ("json", "import json"),
         ("os", "import os"),
         ("traceback", "import traceback"),
-        ("custom_scripts", textwrap.dedent("""
+        ("custom scripts", textwrap.dedent("""
             from .IRAF_Reduction import run_reduction
             from .tess_data_search import run_tess_search
             from .apass import comparison_selector
             from .multi_aperture_photometry import main as multi_ap
             from .gaia import target_star as gaia
             from .OConnell import main as oconnell
+            from .color_light_curve import color_plot as color_plot
             from .version import __version__
         """)),
         ("Finishing up...", "")
@@ -44,18 +50,16 @@ def dynamic_import(progress_queue):
 
     try:
         for i, (name, command) in enumerate(packages, start=1):
-            # Uses the strings above and executes them to import the packages and display on the splash screen
-            exec(command, globals())
+            if command.strip():
+                exec(command, globals())
             progress_queue.put((i, total, f"Loading {name}..."))
             time.sleep(0.5)
 
         progress_queue.put((total, total, "Finalizing"))
 
     except Exception as e:
-        # Error handling incase something does not import correctly.
         progress_queue.put((None, None, f"Error loading {name}: {e}"))
-        # Prints the error to the command prompt as well
-        print(f"ERROR: {e}")
+        print(f"ERROR while importing {name}:\n{traceback.format_exc()}")
 
     progress_queue.put(None)
 
@@ -371,7 +375,7 @@ class ProgramLauncher(TkinterDnD.Tk):
             ("O-C Plotting", self.dummy_action),
             ("Gaia Search", self.show_gaia_query),
             ("O'Connell Effect", self.show_oconnell_effect),
-            ("Color Light Curve", self.dummy_action),
+            ("Color Light Curve", self.show_color_light_curve),
             ("Close Program", self.quit_program),
         ]
 
@@ -1091,8 +1095,8 @@ class ProgramLauncher(TkinterDnD.Tk):
             bg="#003366",
             fg="white",
             command=lambda: self.run_oconnell_effect(
-                filter_count_var,
-                file_entries,
+                filter_count_var.get(),
+                [var.get() for var in file_path_vars[:filter_count_var.get()]],  # Get actual file paths
                 hjd_var,
                 period_var,
                 obj_name_var,
@@ -1102,6 +1106,55 @@ class ProgramLauncher(TkinterDnD.Tk):
 
         # Create scrollbar for the log area
         self.create_scrollbar_and_log(11)
+
+    def show_color_light_curve(self):
+        """Display the Color Light Curve panel."""
+        self.clear_right_frame()
+        self.right_frame.grid_columnconfigure(0, weight=1)
+        self.right_frame.grid_columnconfigure(1, weight=1)
+
+        tk.Label(self.right_frame, text="Color Light Curve", font=self.header_font, bg="#ffffff").grid(
+            row=0, column=0, columnspan=2, pady=10, sticky="ew"
+        )
+
+        Bfile = self.create_input_field(self.right_frame, "B-band File:",
+                                        "C:\\folder\\b_band.txt", row=1,
+                                        validation_func=lambda x: len(x.strip()) > 0,
+                                        error_message="Please select a valid B-band file.",
+                                        browse_type="file")
+
+        Vfile = self.create_input_field(self.right_frame, "V-band File:",
+                                        "C:\\folder\\v_band.txt", row=2,
+                                        validation_func=lambda x: len(x.strip()) > 0,
+                                        error_message="Please select a valid V-band file.",
+                                        browse_type="file")
+
+        period = self.create_input_field(self.right_frame, "Period (days):",
+                                         "e.g. 1.234", row=3,
+                                         validation_func=lambda x: x.replace('.', '', 1).isdigit(),
+                                         error_message="Enter a numeric period.")
+
+        hjd = self.create_input_field(self.right_frame, "HJD (Epoch):",
+                                      "e.g. 2459000.123", row=4,
+                                      validation_func=lambda x: x.replace('.', '', 1).isdigit(),
+                                      error_message="Enter a numeric HJD.")
+
+        outname = self.create_input_field(self.right_frame, "Output Image Name:",
+                                          "color_curve.png", row=5,
+                                          validation_func=lambda x: x.strip().endswith('.png'),
+                                          error_message="Output must be a PNG file.")
+
+        self.create_run_button(self.right_frame, self.run_color_light_curve, row=6,
+                               Bfile=Bfile,
+                               Vfile=Vfile,
+                               period=period,
+                               hjd=hjd,
+                               outname=outname)
+
+        tk.Label(self.right_frame, text="Output Log:", font=self.label_font, bg="#ffffff").grid(
+            row=7, column=0, columnspan=2, pady=5
+        )
+        self.create_scrollbar_and_log(8)
 
     def run_iraf_reduction(self, raw_images_path, calibrated_images_path, location, dark_bool_var, overscan_var, trim_var):
         """Run the IRAF reduction process in a separate thread"""
@@ -1336,87 +1389,39 @@ class ProgramLauncher(TkinterDnD.Tk):
 
         self.run_task(gaia_query)
 
-    def run_oconnell_effect(self, filter_count, file_path_vars, hjd, period, obj_name, output_file):
-        """
-        Run the O'Connell Effect calculation based on the selected number of filters
-        and provided input values.
-        """
+    def run_color_light_curve(self, Bfile, Vfile, period, hjd, outname):
+        """Run the color light curve plotting task in a separate thread."""
 
-        def oconnell_task():
+        def task():
             try:
-                filter_count_var = filter_count.get()
-                # Collect file paths based on the selected filter count
-                file_paths = [var.get().strip() for var in file_path_vars[:filter_count_var]]
-                missing_paths = [path for path in file_paths if not path]
+                self.create_cancel_button(self.right_frame, self.cancel_task, row=6)
 
-                hjd_value = hjd.get().strip()
-                period_value = period.get().strip()
-                obj_name_value = obj_name.get().strip()
-                output_file_value = output_file.get().strip()
+                B = Bfile.get().strip()
+                V = Vfile.get().strip()
+                per = float(period.get().strip())
+                epoch = float(hjd.get().strip())
+                out = outname.get().strip()
 
-                # Validate inputs
-                if missing_paths:
-                    self.write_to_log("Error: Missing file paths for selected filters.")
-                    messagebox.showerror("Input Error", "Please provide file paths for all selected filters.")
-                    return
-                for file_path in file_paths:
-                    if not Path(file_path).exists():
-                        self.write_to_log(f"Error: File does not exist - {file_path}")
-                        messagebox.showerror("File Error", f"The file {file_path} does not exist.")
-                        return
-                if not hjd_value:
-                    self.write_to_log("Error: HJD is required.")
-                    messagebox.showerror("Input Error", "Please enter the Heliocentric Julian Date (HJD).")
-                    return
-                try:
-                    hjd_value = float(hjd_value)
-                except ValueError:
-                    self.write_to_log(f"Error: Invalid HJD value - {hjd_value}")
-                    messagebox.showerror("Input Error", f"Invalid HJD value: {hjd_value}")
-                    return
-                if not period_value:
-                    self.write_to_log("Error: Period is required.")
-                    messagebox.showerror("Input Error", "Please enter the period of the system.")
-                    return
-                if not obj_name_value:
-                    self.write_to_log("Error: System Name is required.")
-                    messagebox.showerror("Input Error", "Please enter the name of the system.")
-                if not output_file_value:
-                    self.write_to_log("Error: Output file path is required.")
-                    messagebox.showerror("Input Error", "Please provide an output file path.")
-                    return
+                self.write_to_log("Starting color light curve processing...")
+                self.write_to_log(f"B-band file: {B}")
+                self.write_to_log(f"V-band file: {V}")
+                self.write_to_log(f"Period: {per}")
+                self.write_to_log(f"HJD Epoch: {epoch}")
+                self.write_to_log(f"Output: {out}")
 
-                # Log inputs
-                self.write_to_log("Starting O'Connell Effect calculation with the following inputs:")
-                self.write_to_log(f"Number of Filters: {filter_count}")
-                self.write_to_log(f"File Paths: {', '.join(file_paths)}")
-                self.write_to_log(f"HJD: {hjd_value}")
-                self.write_to_log(f"Period: {period_value}")
-                self.write_to_log(f"Output File: {output_file_value}")
+                color_plot(Bfile=B, Vfile=V, Epoch=epoch, period=per, outName=out, save=True,
+                           write_callback=self.write_to_log, cancel_event=self.cancel_event)
 
-                # Run the O'Connell Effect calculation
-                # from oconnell_effect import main as oconnell_main
-                oconnell(
-                    filepath=output_file_value,
-                    filter_files=list(file_paths),
-                    obj_name="OConnell_Output",
-                    period=float(period_value),
-                    hjd=float(hjd_value),
-                    write_callback=self.write_to_log,
-                    cancel_event=self.cancel_event  # Pass cancel_event
-                )
-
-                # Notify success
-                self.write_to_log("O'Connell Effect calculation completed successfully.")
-                messagebox.showinfo("Success", "O'Connell Effect calculation completed successfully!")
+                if not self.cancel_event.is_set():
+                    messagebox.showinfo("Success", "Color light curve generated successfully!")
+                else:
+                    messagebox.showinfo("Cancelled", "Color light curve task was cancelled.")
 
             except Exception as e:
-                # Log and notify errors
-                self.write_to_log(f"An error occurred during O'Connell Effect calculation: {type(e).__name__}: {e}")
+                self.write_to_log(f"Error: {type(e).__name__}: {e}")
                 self.write_to_log(traceback.format_exc())
 
-        # Run the task in a separate thread
-        self.run_task(oconnell_task)
+        self.run_task(task)
 
     def dummy_action(self):
         """Dummy action for unimplemented features"""
@@ -1437,28 +1442,29 @@ def launch_main_gui():
 
 
 def main():
-    # Create a hidden root window for the splash screen
     root = tk.Tk()
     root.withdraw()
 
-    # Create a queue for progress updates
     progress_queue = queue.Queue()
+    import_done = threading.Event()  # <-- Add this
 
     def start_main_gui():
-        root.quit()  # Exit the splash screen's event loop
+        root.quit()
 
-    # Initialize the splash screen
     SplashScreen(root, progress_queue, on_close_callback=start_main_gui)
 
-    # Start a thread to dynamically import modules
-    threading.Thread(target=dynamic_import, args=(progress_queue,), daemon=True).start()
+    def import_wrapper():
+        dynamic_import(progress_queue)
+        import_done.set()  # <-- Signal that import is done
 
-    # Run the splash screen's event loop
+    threading.Thread(target=import_wrapper, daemon=True).start()
+
     root.mainloop()
+    root.destroy()
 
-    # Once the splash screen closes, launch the main GUI
-    root.destroy()  # Clean up the splash screen's hidden root window
+    import_done.wait()  # <-- Wait for imports to complete before launching GUI
     launch_main_gui()
+
 
 
 if __name__ == "__main__":

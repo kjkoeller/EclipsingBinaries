@@ -3,7 +3,7 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 06/05/2025
+Last Edited: 06/18/2025
 
 Original Author: Alec Neal
 Last Edits Done By: Kyle Koeller
@@ -81,7 +81,7 @@ def Half_Comp(filter_files, Epoch, period,
     bands = len(filter_files)
 
     # Create subplots for flux and dI
-    axs, fog = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
+    axs, _ = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
     flux = axs[0]  # Flux subplot
     dI = axs[1]  # dI subplot
 

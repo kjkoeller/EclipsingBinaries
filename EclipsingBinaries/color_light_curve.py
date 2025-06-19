@@ -3,7 +3,7 @@
 Created on Thu Sep 17 12:45:40 2020
 @author: Alec Neal
 
-Last Edited: 06/05/2025
+Last Edited: 06/18/2025
 Editor: Kyle Koeller
 """
 
@@ -91,8 +91,8 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
         else:
             print(message)
 
-    B_HJD, B_mag, B_magerr = io.importFile_pd(Bfile)[:3:]
-    V_HJD, V_mag, V_magerr = io.importFile_pd(Vfile)[:3:]
+    B_HJD, B_mag, _ = io.importFile_pd(Bfile)[:3:]
+    V_HJD, V_mag, _ = io.importFile_pd(Vfile)[:3:]
 
     Bpoly = binning.polybinner(Bfile, Epoch, period, sections=2, section_order=8)
     Bphase = Bpoly[1][0][0][1]
@@ -240,7 +240,7 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
     else:
         V_R = subtract_LC(Vfile, Rfile, Epoch, period, max_tol, lower_lim=lower_lim, index="VR")
         Rphase, Rmag = V_R[2][:2:]
-        V_interp_mag = V_R[1][2]
+        # V_interp_mag = V_R[1][2]
         aV_minus_R = V_R[0][3]
         axs, fig = plot.multiplot((7, 9), height_ratios=[8, 3, 3])
         mag = axs[0]
@@ -293,7 +293,7 @@ class ToolTip(object):
         self.text = text
         if self.tipwindow or not self.text:
             return
-        x, y, cx, cy = self.widget.bbox("insert")
+        x, y, _, cy = self.widget.bbox("insert")
         x = x + self.widget.winfo_rootx() + 57
         y = y + cy + self.widget.winfo_rooty() + 27
         self.tipwindow = tw = Toplevel(self.widget)

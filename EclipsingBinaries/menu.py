@@ -109,7 +109,7 @@ class SplashScreen(tk.Toplevel):
 
         # Progress Bar with style
         style = ttk.Style()
-        style.theme_use("clam")
+        style.theme_use("default")
         style.configure("TProgressbar", thickness=20, troughcolor="#002244", background="#00bfff")
         self.progress = ttk.Progressbar(
             self, orient="horizontal", length=int(splash_width * 0.8), mode="determinate", style="TProgressbar"
@@ -150,7 +150,7 @@ class ProgramLauncher(TkinterDnD.Tk):
 
         # Initialize ttk.Style
         self.style = ttk.Style()
-        self.style.theme_use("clam")  # Use a customizable ttk theme
+        self.style.theme_use("default")  # Use a customizable ttk theme
 
         self.config_file = "config.json"
 

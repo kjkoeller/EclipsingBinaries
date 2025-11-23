@@ -1,4 +1,4 @@
-[![Python OS 3.8, 3.9, 3.10](https://github.com/kjkoeller/Binary_Star_Research_Package/actions/workflows/ci_tests.yml/badge.svg)](https://github.com/kjkoeller/Binary_Star_Research_Package/actions/workflows/ci_tests.yml)
+[![Python OS 3.8, 3.9, 3.10, 3.11](https://github.com/kjkoeller/Binary_Star_Research_Package/actions/workflows/ci_tests.yml/badge.svg)](https://github.com/kjkoeller/Binary_Star_Research_Package/actions/workflows/ci_tests.yml)
 [![Documentation Status](https://readthedocs.org/projects/eclipsingbinaries/badge/?version=latest)](https://eclipsingbinaries.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/EclipsingBinaries.svg)](https://badge.fury.io/py/EclipsingBinaries)
 [![GitHub release](https://img.shields.io/github/v/release/kjkoeller/Variable_Star_Research_Package)](https://github.com/kjkoeller/Variable_Star_Research_Package/releases/)
@@ -22,9 +22,9 @@ You can find the documentation at this [site](https://eclipsingbinaries.readthed
 
 The list of OS's and Python versions listed below have been tested to be able to build the package on.
 
-*  Macos- 3.8, 3.9, 3.10
-*  Ubuntu- 3.8, 3.9, 3.10
-*  Windows- 3.8, 3.9, 3.10
+*  Macos- 3.8, 3.9, 3.10, 3.11
+*  Ubuntu- 3.8, 3.9, 3.10, 3.11
+*  Windows- 3.8, 3.9, 3.10, 3.11
 
 ***
 

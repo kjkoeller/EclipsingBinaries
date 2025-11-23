@@ -4,7 +4,7 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 06/04/2025
+Last Updated: 11/22/2025
 """
 from tkinterdnd2 import TkinterDnD, DND_FILES
 import tkinter as tk
@@ -1431,9 +1431,9 @@ class ProgramLauncher(TkinterDnD.Tk):
 
         def oconnell_task():
             try:
-                filter_count_var = filter_count.get()
+                filter_count_var = filter_count
                 # Collect file paths based on the selected filter count
-                file_paths = [var.get().strip() for var in file_path_vars[:filter_count_var]]
+                file_paths = [var.strip() for var in file_path_vars[:filter_count_var]]
                 missing_paths = [path for path in file_paths if not path]
 
                 hjd_value = hjd.get().strip()
@@ -1551,4 +1551,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

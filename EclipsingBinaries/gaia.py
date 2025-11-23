@@ -2,7 +2,7 @@
 Author: Kyle Koeller
 Date Created: 03/08/2023
 
-Last Edited: 06/05/2025
+Last Edited: 11/22/2025
 This program queries Gaia DR3, to gather specific parameters
 
 https://gea.esac.esa.int/archive/
@@ -17,6 +17,13 @@ import math as mt
 import os
 
 from vseq_updated import splitter
+
+# ---- TEMP PATCH FOR SSL BUG ----
+import ssl
+if isinstance(ssl._create_default_https_context, ssl.SSLContext):
+    # Reset to the normal factory function
+    ssl._create_default_https_context = ssl.create_default_context
+# ---- END TEMP PATCH ----
 
 
 def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_event=None):
@@ -89,7 +96,7 @@ def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_ev
             "Radial_velocity_err(km/s)": g.radial_velocity_error[:4],
         })
 
-        output_file = os.path.join(output_path, "gaia_results.tsv")
+        output_file = os.path.join(output_path, "gaia_results.csv")
 
         df.to_csv(output_file, sep="\t")
 
@@ -197,5 +204,5 @@ def tess_mag(ra, dec, write_callback, cancel_event):
         raise
 
 
-# if __name__ == '__main__':
-#     target_star()
+if __name__ == '__main__':
+    target_star()

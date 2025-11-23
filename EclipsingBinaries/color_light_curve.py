@@ -3,7 +3,7 @@
 Created on Thu Sep 17 12:45:40 2020
 @author: Alec Neal
 
-Last Edited: 06/18/2025
+Last Edited: 11/22/2025
 Editor: Kyle Koeller
 """
 
@@ -129,14 +129,14 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
             BVquadmag.append(B_interp_mag[n] - V_mag[n])
     quadcolor = mean_mag(BVquadmag)
     colorerr = st.stdev(BVquadmag, xbar=quadcolor)
-    log(index, " ", quadcolor, '+/-', colorerr)
+    log(str(index) + " " + str(quadcolor) + '+/-' + str(colorerr))
 
     B_minus_V = B_interp_mag - np.array(V_mag)
     BV_mean = mean_mag(B_minus_V)
     # print(B_minus_V)
     BV_err = st.stdev(B_minus_V, xbar=BV_mean)
 
-    log('ave diff =', round(mean_diff * 100, 3), '% of period')
+    log('ave diff =' + str(round(mean_diff * 100, 3)) + '% of period')
     aVphase, aV_mag, aB_interp_mag = plot.aliasing2(Vphase, V_mag, B_interp_mag)[:3:]
     aBphase, aB_mag = plot.aliasing2(Bphase, B_mag, B_mag)[:2:]
     aB_minus_V = plot.aliasing2(Vphase, B_minus_V, B_minus_V)[1]
@@ -156,7 +156,7 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
         temp_err = np.sqrt(temp_high[1]**2 + temp_low[1]**2)
         temp.append(t1[0])
         temp.append(temp_err)
-        log('T_BV =', temp[0], '+/-', temp[1])
+        log('T_BV =' + str(temp[0]) + '+/-' + str(temp[1]))
     elif index == "VR":
         t1 = Pecaut.T.Teff(quadcolor - (0.58 / 3.1), colorerr)
         temp = []
@@ -174,7 +174,7 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
         if temp[0] == 0:
             log("V-R color cannot be used to determine temperature.")
         else:
-            log('T_VR =', temp[0], '+/-', temp[1])
+            log('T_VR =' + str(temp[0]) + '+/-' + str(temp[1]))
 
     return B_V, B, V, quadcolor, colorerr, temp
 
@@ -665,3 +665,4 @@ def color_gui(developer=False):
 
 # or just the function itself
 # color_plot('Bfile','Vfile',Epoch,period)
+

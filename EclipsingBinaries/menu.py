@@ -4,7 +4,7 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 06/04/2025
+Last Updated: 11/22/2025
 """
 from tkinterdnd2 import TkinterDnD, DND_FILES
 import tkinter as tk
@@ -1423,6 +1423,88 @@ class ProgramLauncher(TkinterDnD.Tk):
 
         self.run_task(task)
 
+    def run_oconnell_effect(self, filter_count, file_path_vars, hjd, period, obj_name, output_file):
+        """
+        Run the O'Connell Effect calculation based on the selected number of filters
+        and provided input values.
+        """
+
+        def oconnell_task():
+            try:
+                filter_count_var = filter_count
+                # Collect file paths based on the selected filter count
+                file_paths = [var.strip() for var in file_path_vars[:filter_count_var]]
+                missing_paths = [path for path in file_paths if not path]
+
+                hjd_value = hjd.get().strip()
+                period_value = period.get().strip()
+                obj_name_value = obj_name.get().strip()
+                output_file_value = output_file.get().strip()
+
+                # Validate inputs
+                if missing_paths:
+                    self.write_to_log("Error: Missing file paths for selected filters.")
+                    messagebox.showerror("Input Error", "Please provide file paths for all selected filters.")
+                    return
+                for file_path in file_paths:
+                    if not Path(file_path).exists():
+                        self.write_to_log(f"Error: File does not exist - {file_path}")
+                        messagebox.showerror("File Error", f"The file {file_path} does not exist.")
+                        return
+                if not hjd_value:
+                    self.write_to_log("Error: HJD is required.")
+                    messagebox.showerror("Input Error", "Please enter the Heliocentric Julian Date (HJD).")
+                    return
+                try:
+                    hjd_value = float(hjd_value)
+                except ValueError:
+                    self.write_to_log(f"Error: Invalid HJD value - {hjd_value}")
+                    messagebox.showerror("Input Error", f"Invalid HJD value: {hjd_value}")
+                    return
+                if not period_value:
+                    self.write_to_log("Error: Period is required.")
+                    messagebox.showerror("Input Error", "Please enter the period of the system.")
+                    return
+                if not obj_name_value:
+                    self.write_to_log("Error: System Name is required.")
+                    messagebox.showerror("Input Error", "Please enter the name of the system.")
+                if not output_file_value:
+                    self.write_to_log("Error: Output file path is required.")
+                    messagebox.showerror("Input Error", "Please provide an output file path.")
+                    return
+
+                # Log inputs
+                self.write_to_log("Starting O'Connell Effect calculation with the following inputs:")
+                self.write_to_log(f"Number of Filters: {filter_count}")
+                self.write_to_log(f"File Paths: {', '.join(file_paths)}")
+                self.write_to_log(f"HJD: {hjd_value}")
+                self.write_to_log(f"Period: {period_value}")
+                self.write_to_log(f"Output File: {output_file_value}")
+
+                # Run the O'Connell Effect calculation
+                # from oconnell_effect import main as oconnell_main
+                oconnell(
+                    filepath=output_file_value,
+                    filter_files=list(file_paths),
+                    obj_name="OConnell_Output",
+                    period=float(period_value),
+                    hjd=float(hjd_value),
+                    write_callback=self.write_to_log,
+                    cancel_event=self.cancel_event  # Pass cancel_event
+                )
+
+                # Notify success
+                self.write_to_log("O'Connell Effect calculation completed successfully.")
+                messagebox.showinfo("Success", "O'Connell Effect calculation completed successfully!")
+
+            except Exception as e:
+                # Log and notify errors
+                self.write_to_log(f"An error occurred during O'Connell Effect calculation: {type(e).__name__}: {e}")
+                self.write_to_log(traceback.format_exc())
+
+        # Run the task in a separate thread
+        self.run_task(oconnell_task)
+
     def dummy_action(self):
         """Dummy action for unimplemented features"""
         messagebox.showinfo("Action", "This feature is not implemented yet.")
@@ -1469,3 +1551,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

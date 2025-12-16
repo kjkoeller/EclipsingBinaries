@@ -15,7 +15,14 @@ import threading
 import queue
 import time
 import textwrap
+import platform
 
+# pip install tkmacosx  
+# tk.Buttons don't style on macOS
+if platform.system() == "Darwin":
+    from tkmacosx import Button
+else:
+    Button = tk.Button
 
 def dynamic_import(progress_queue):
     """
@@ -239,7 +246,7 @@ class ProgramLauncher(TkinterDnD.Tk):
                     entry.config(fg="black")
                     validate_input()  # Validate on file/folder selection
 
-            browse_button = tk.Button(entry_frame, text="Browse", font=("Helvetica", 9), bg="#f0f0f0",
+            browse_button = Button(entry_frame, text="Browse", font=("Helvetica", 9), bg="#f0f0f0",
                                       width=8, command=browse_action)
             browse_button.grid(row=0, column=1, padx=(5, 5), pady=2, sticky="e")  # Positioned to the right
 
@@ -451,7 +458,7 @@ class ProgramLauncher(TkinterDnD.Tk):
 
         # Update all widgets
         for widget in self.left_frame.winfo_children():
-            if isinstance(widget, tk.Button):
+            if isinstance(widget, Button):
                 widget.configure(bg=button_bg, fg=font_color)
 
         for widget in self.right_frame.winfo_children():
@@ -477,7 +484,7 @@ class ProgramLauncher(TkinterDnD.Tk):
 
     def create_menu_button(self, text, command):
         """Create a menu button"""
-        tk.Button(self.left_frame, text=text, command=command,
+        Button(self.left_frame, text=text, command=command,
                   font=self.button_font,
                   bg="#003366", fg="white",
                   activebackground="#00509e", activeforeground="white",
@@ -569,7 +576,7 @@ class ProgramLauncher(TkinterDnD.Tk):
 
     def create_run_button(self, parent, action, row, **kwargs):
         """Create the 'Run' button dynamically with proper alignment"""
-        tk.Button(parent, text="Run", font=self.button_font,
+        Button(parent, text="Run", font=self.button_font,
                   bg="#003366", fg="white",
                   activebackground="#00509e", activeforeground="white",
                   relief="flat", cursor="hand2",
@@ -577,7 +584,7 @@ class ProgramLauncher(TkinterDnD.Tk):
                   command=lambda: action(**kwargs)).grid(row=row, column=0, columnspan=2, pady=20)
 
     def create_cancel_button(self, parent, action, row, **kwargs):
-        tk.Button(parent, text="Cancel", font=self.button_font,
+        Button(parent, text="Cancel", font=self.button_font,
                   bg="#003366", fg="white",
                   activebackground="#00509e", activeforeground="white",
                   relief="flat", cursor="hand2",
@@ -637,7 +644,7 @@ class ProgramLauncher(TkinterDnD.Tk):
                                        error_message="Please enter at least [:,:].")
 
         # Button to open and plot bias image
-        tk.Button(self.right_frame, text="Open Bias Image", font=self.button_font, bg="#003366", fg="white",
+        Button(self.right_frame, text="Open Bias Image", font=self.button_font, bg="#003366", fg="white",
                   command=self.open_bias_image).grid(row=7, column=0, columnspan=2, pady=10, sticky="")
 
         # Run button
@@ -783,7 +790,7 @@ class ProgramLauncher(TkinterDnD.Tk):
 
             # Add "Retrieve Sectors" button
             if not self.retrieve_button:
-                self.retrieve_button = tk.Button(
+                self.retrieve_button = Button(
                     self.right_frame, text="Retrieve Sectors", font=self.button_font, bg="#003366", fg="white",
                     command=lambda: self.retrieve_sectors(system_name=system_name, sector_dropdown=self.sector_dropdown)
                 )
@@ -846,7 +853,7 @@ class ProgramLauncher(TkinterDnD.Tk):
                                                 browse_type="folder")
 
         # Buttons for comparison selector
-        tk.Button(self.right_frame, text="Run Comparison Selector", font=self.button_font, bg="#003366", fg="white",
+        Button(self.right_frame, text="Run Comparison Selector", font=self.button_font, bg="#003366", fg="white",
                   command=lambda: self.run_comparison_selector(ra, dec, folder_path, obj_name, science_image)).grid(
             row=6, column=0, columnspan=2, pady=10, sticky=""
         )
@@ -1013,7 +1020,7 @@ class ProgramLauncher(TkinterDnD.Tk):
                 entry.grid(row=0, column=0, sticky="w", padx=(5, 0), ipadx=10, ipady=3)
 
                 # Browse button inside the entry frame
-                browse_button = tk.Button(
+                browse_button = Button(
                     entry_frame, text="Browse", font=("Helvetica", 9), bg="#f0f0f0",
                     command=lambda var=file_path_vars[i]: var.set(filedialog.askopenfilename(title="Select File"))
                 )
@@ -1088,7 +1095,7 @@ class ProgramLauncher(TkinterDnD.Tk):
         )
 
         # Button to run O'Connell Effect calculation
-        tk.Button(
+        Button(
             self.right_frame,
             text="Run O'Connell Effect",
             font=self.button_font,

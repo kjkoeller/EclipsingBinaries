@@ -2,7 +2,7 @@
 Author: Kyle Koeller
 Date Created: 03/08/2023
 
-Last Edited: 11/22/2025
+Last Edited: 01/23/2026
 This program queries Gaia DR3, to gather specific parameters
 
 https://gea.esac.esa.int/archive/

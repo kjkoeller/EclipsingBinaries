@@ -12,3 +12,4 @@ numba>=0.57.0
 seaborn>=0.12.2
 pyia<=1.41
 photutils>=1.8.0
+tkinterdnd2>=0.4.3

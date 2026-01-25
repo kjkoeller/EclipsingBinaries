@@ -2,7 +2,7 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 05/22/2025
+Last Updated: 01/25/2026
 """
 
 # import required packages
@@ -14,12 +14,6 @@ import os
 
 from astropy import units as u
 import pkg_resources
-
-# Helps with MacOS SSL certificates
-import ssl
-import certifi
-
-ssl._create_default_https_context = ssl.create_default_context(cafile=certifi.where())
 
 
 def run_tess_search(system_name, download_all, specific_sector, download_path, write_callback, cancel_event):
@@ -173,3 +167,4 @@ def download_sector(system_name, sector, download_path, write_callback, cancel_e
     except Exception as e:
         log(f"Failed to download Sector {sector}: {e}")
         raise
+

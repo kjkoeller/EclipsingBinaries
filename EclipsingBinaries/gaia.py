@@ -2,7 +2,7 @@
 Author: Kyle Koeller
 Date Created: 03/08/2023
 
-Last Edited: 11/22/2025
+Last Edited: 01/23/2026
 This program queries Gaia DR3, to gather specific parameters
 
 https://gea.esac.esa.int/archive/
@@ -11,20 +11,17 @@ https://iopscience.iop.org/article/10.3847/1538-3881/ab3467/pdf
 https://arxiv.org/pdf/2012.01916.pdf
 """
 
+# ---- SSL FIX (safe for Astropy / pyia / astroquery) ----
+import ssl
+ssl._create_default_https_context = ssl.create_default_context
+# ---- END SSL FIX ----
+
 from pyia import GaiaData
 import pandas as pd
 import math as mt
 import os
 
-from vseq_updated import splitter
-
-# ---- TEMP PATCH FOR SSL BUG ----
-import ssl
-if isinstance(ssl._create_default_https_context, ssl.SSLContext):
-    # Reset to the normal factory function
-    ssl._create_default_https_context = ssl.create_default_context
-# ---- END TEMP PATCH ----
-
+from .vseq_updated import splitter
 
 def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_event=None):
     """

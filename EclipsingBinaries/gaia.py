@@ -2,7 +2,7 @@
 Author: Kyle Koeller
 Date Created: 03/08/2023
 
-Last Edited: 01/23/2026
+Last Edited: 01/25/2026
 This program queries Gaia DR3, to gather specific parameters
 
 https://gea.esac.esa.int/archive/
@@ -10,11 +10,6 @@ https://iopscience.iop.org/article/10.3847/1538-3881/acaaa7/pdf
 https://iopscience.iop.org/article/10.3847/1538-3881/ab3467/pdf
 https://arxiv.org/pdf/2012.01916.pdf
 """
-
-# ---- SSL FIX (safe for Astropy / pyia / astroquery) ----
-import ssl
-ssl._create_default_https_context = ssl.create_default_context
-# ---- END SSL FIX ----
 
 from pyia import GaiaData
 import pandas as pd
@@ -203,3 +198,4 @@ def tess_mag(ra, dec, write_callback, cancel_event):
 
 if __name__ == '__main__':
     target_star()
+

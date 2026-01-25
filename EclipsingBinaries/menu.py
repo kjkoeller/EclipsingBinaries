@@ -4,7 +4,7 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 11/22/2025
+Last Updated: 01/25/2026
 """
 from tkinterdnd2 import TkinterDnD, DND_FILES
 import tkinter as tk
@@ -17,12 +17,13 @@ import time
 import textwrap
 import platform
 
-# pip install tkmacosx  
 # tk.Buttons don't style on macOS
 if platform.system() == "Darwin":
-    from tkmacosx import Button
+    import tkmacosx as tkm
+    Button = tkm.Button
 else:
     Button = tk.Button
+
 
 def dynamic_import(progress_queue):
     """
@@ -1558,5 +1559,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 

@@ -25,12 +25,6 @@ from PyAstronomy import pyasl
 from .gaia import tess_mag as ga
 from .vseq_updated import isNaN, conversion, splitter, decimal_limit
 
-# Helps with MacOS SSL certificates
-import ssl
-import certifi
-
-ssl._create_default_https_context = ssl.create_default_context(cafile=certifi.where())
-
 # turn off this warning that just tells the user,
 # "The warning raised when the contents of the FITS header have been modified to be standards compliant."
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)

@@ -65,7 +65,7 @@ This will print out all the options that are available to edit and change. The `
 
 ## Dependencies
 
-*   python >=3.7
+*   python >=3.12
 *   astropy>=5.1.1
 *   astroquery>=0.4.6
 *   ccdproc>=2.4.0

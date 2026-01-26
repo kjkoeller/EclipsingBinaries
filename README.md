@@ -22,9 +22,11 @@ You can find the documentation at this [site](https://eclipsingbinaries.readthed
 
 The list of OS's and Python versions listed below have been tested to be able to build the package on.
 
-*  Macos- 3.8, 3.9, 3.10, 3.11
-*  Ubuntu- 3.8, 3.9, 3.10, 3.11
-*  Windows- 3.8, 3.9, 3.10, 3.11
+*  Macos- 3.12
+*  Ubuntu- 3.12
+*  Windows- 312
+
+The minimum working Pythong version is 3.12 and as of right now no versions lower work with all aspects of this package.
 
 ***
 

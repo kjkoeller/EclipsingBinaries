@@ -3,7 +3,7 @@
 Created on Sat Feb 22 16:09:28 2020
 @author: Alec Neal
 
-Last Updated: 12/16/2024
+Last Updated: 02/12/2026
 Last Editor: Kyle Koeller
 
 Collection of functions, coefficients and equations commonly used
@@ -132,7 +132,7 @@ class io:
         if file_type == 'text':
             if delim_whitespace:
                 # Read text file with whitespace delimiter
-                file = pd.read_csv(inputFile, delim_whitespace=True, header=header, engine='python')
+                file = pd.read_csv(inputFile, sep='\s+', header=header, engine='python')
             else:
                 # Read text file with custom delimiter
                 file = pd.read_csv(inputFile, sep=delimit, header=header, engine='python')
@@ -1404,7 +1404,7 @@ class OConnell:  # O'Connell effect
         K2 = []
         for phase in Phi:
             K2.append(((2 * FT.sumatphase(phase, order, no_a, b)) / FT.sumatphase(phase, order, a, b)) ** 2)
-        LCA = np.sqrt(scipy.integrate.simps(K2, Phi))
+        LCA = np.sqrt(scipy.integrate.simpson(K2, Phi))
         return LCA
 
     def L_error(phase, order, a, b, a_unc, b_unc):
@@ -1479,8 +1479,8 @@ class OConnell:  # O'Connell effect
             Lerrlist.append(L_ap[1])
 
         # Integrate the LCA integrand and its uncertainties using Simpson's rule
-        int_L = scipy.integrate.simps(Llist, Phi)
-        int_L_error = scipy.integrate.simps(Lerrlist, Phi)
+        int_L = scipy.integrate.simpson(Llist, Phi)
+        int_L_error = scipy.integrate.simpson(Lerrlist, Phi)
 
         # Compute the LCA value and its uncertainty
         LCA = OConnell.LCA_FT(a, b, order, resolution)
@@ -1545,8 +1545,8 @@ class OConnell:  # O'Connell effect
             L_ap = L_error2(phase)
             Llist.append(L_ap[0])
             Lerrlist.append(L_ap[1])
-        int_L = scipy.integrate.simps(Llist, Phi)
-        int_L_error = scipy.integrate.simps(Lerrlist, Phi)
+        int_L = scipy.integrate.simpson(Llist, Phi)
+        int_L_error = scipy.integrate.simpson(Lerrlist, Phi)
         # print('L_err =',int_L_error,'L =',int_L)
         LCA = OConnell.LCA_FT(a, b, order, resolution)
         LCA_error = 0.5 * LCA * (int_L_error / int_L)

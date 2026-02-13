@@ -5,7 +5,7 @@ matplotlib>=3.5.1
 numpy>=1.22.3
 pandas>=1.4.2
 PyAstronomy>=0.18.1
-scipy>=1.9.3
+scipy>=1.17.0
 statsmodels>=0.13.5
 tqdm>=4.64.1
 numba>=0.57.0
@@ -13,3 +13,4 @@ seaborn>=0.12.2
 pyia<=1.41
 photutils>=1.8.0
 tkinterdnd2>=0.4.3
+

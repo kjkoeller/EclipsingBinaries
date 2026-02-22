@@ -3,7 +3,7 @@
 Created on Sat Feb 22 16:09:28 2020
 @author: Alec Neal
 
-Last Updated: 02/12/2026
+Last Updated: 02/21/2026
 Last Editor: Kyle Koeller
 
 Collection of functions, coefficients and equations commonly used
@@ -113,41 +113,99 @@ class io:
     """
     This class provides file input/output functionalities.
     """
-    def importFile_pd(inputFile, delimit=None, header=None, file_type='text', engine='python', delim_whitespace=True):
+
+    def importFile_pd(inputFile, delimit=None, header=None, file_type='text', engine='python',
+            delim_whitespace=True, expected_cols=None, numeric_cols=None, write_callback=None):
         """
         Imports a file and returns a list of columns.
+        Skips invalid rows but reports exact line + reason.
 
-        Parameters:
-        - inputFile: Path to the input file.
-        - delimit: Delimiter used in the file. If None, delimiter_whitespace is used for text files.
-        - header: Row number(s) to use as the column names.
-        - file_type: Type of the input file. Can be 'text' or 'excel'.
-        - engine: Parser engine to use. Default is 'python'.
-        - delim_whitespace: If True, whitespace is used as the delimiter for text files.
+        Parameters
+        ----------
+        inputFile : str
+            Path to file
+        delimit : str
+            Custom delimiter
+        header : int or None
+            Header row index
+        file_type : 'text' or 'excel'
+        expected_cols : int or None
+            Minimum expected column count
+        numeric_cols : list[int] or None
+            Column indices that must be numeric
+        write_callback : callable or None
+            Logging function (GUI or console)
 
-        Returns:
-        - columnlist: A list of columns extracted from the file.
+        Returns
+        -------
+        columnlist : list[list]
         """
 
-        if file_type == 'text':
-            if delim_whitespace:
-                # Read text file with whitespace delimiter
-                file = pd.read_csv(inputFile, sep='\s+', header=header, engine='python')
+        def _report(lineno, reason, raw):
+            msg = f"[Photometry Warning] {inputFile} line {lineno} → {reason}: \"{raw}\""
+            if write_callback:
+                write_callback(msg)
             else:
-                # Read text file with custom delimiter
-                file = pd.read_csv(inputFile, sep=delimit, header=header, engine='python')
+                print(msg)
+
+        # --- read raw lines for diagnostics ---
+        raw_lines = None
+        if file_type == 'text':
+            with open(inputFile, "r") as f:
+                raw_lines = f.readlines()
+
+            if delim_whitespace:
+                df = pd.read_csv(inputFile, sep=r"\s+", header=header, engine=engine)
+            else:
+                df = pd.read_csv(inputFile, sep=delimit, header=header, engine=engine)
+
         elif file_type == 'excel':
-            # Read Excel file
-            file = pd.read_excel(inputFile, sep=delimit, header=header, engine='python')
+            df = pd.read_excel(inputFile, header=header)
         else:
-            # Print error message for unsupported file types
-            print('File type not currently supported. Choose text or excel type.')
+            raise ValueError("File type not supported: choose 'text' or 'excel'")
 
-        # Extract columns from the file and append them to columnlist
-        columnlist = []
-        for column in range(len(list(file))):
-            columnlist.append(list(file[column]))
+        # --- validation ---
+        valid_mask = np.ones(len(df), dtype=bool)
+        skipped = 0
 
+        if expected_cols is not None:
+            for i, row in df.iterrows():
+                if len(row.dropna()) < expected_cols:
+                    raw = raw_lines[i].strip() if raw_lines else str(list(row))
+                    _report(i + 1, f"missing columns (<{expected_cols})", raw)
+                    valid_mask[i] = False
+                    skipped += 1
+
+        if numeric_cols is not None:
+            for i, row in df.iterrows():
+                if not valid_mask[i]:
+                    continue
+                for col in numeric_cols:
+                    try:
+                        float(row[col])
+                    except Exception:
+                        raw = raw_lines[i].strip() if raw_lines else str(list(row))
+                        _report(i + 1, f"non-numeric column {col}", raw)
+                        valid_mask[i] = False
+                        skipped += 1
+                        break
+
+        df = df[valid_mask].reset_index(drop=True)
+
+        # --- convert numeric columns ---
+        if numeric_cols is not None:
+            for col in numeric_cols:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        # --- summary ---
+        if write_callback:
+            write_callback(
+                f"[Photometry] Loaded {len(df)} rows from {inputFile} "
+                f"(skipped {skipped})"
+            )
+
+        # --- return columns ---
+        columnlist = [df[col].tolist() for col in df.columns]
         return columnlist
 
     def validate_file_path(prompt):
@@ -211,7 +269,6 @@ class io:
                     raise NotADirectoryError
             except (FileNotFoundError, NotADirectoryError):
                 print("Invalid directory. Please try again.")
-
 
 
 # =======================================
@@ -2141,4 +2198,5 @@ class Pecaut:  # V-R effective temperature fit from Pecaut and Mamajek 2013 http
                 return temp, err
             else:
                 return 0, 0
+
 

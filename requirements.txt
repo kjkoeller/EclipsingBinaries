@@ -13,4 +13,4 @@ seaborn>=0.12.2
 pyia<=1.41
 photutils>=1.8.0
 tkinterdnd2>=0.4.3
-
+tkmacosx>=1.0.4

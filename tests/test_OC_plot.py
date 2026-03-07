@@ -1,7 +1,7 @@
 import unittest
 # from unittest import mock
 from unittest.mock import patch
-from .OC_plot import calculate_oc, arguments
+from EclipsingBinaries.OC_plot import calculate_oc, arguments
 
 
 class TestCalculateOC(unittest.TestCase):

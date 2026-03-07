@@ -1,5 +1,5 @@
 import unittest
-from .IRAF_Reduction import BJD_TDB
+from EclipsingBinaries.IRAF_Reduction import BJD_TDB
 
 
 class TestBJDTDB(unittest.TestCase):

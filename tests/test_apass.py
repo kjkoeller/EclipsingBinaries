@@ -78,7 +78,7 @@ class TestProcessData(unittest.TestCase):
         columns = list(map(list, zip(*vizier_result)))
 
         expected = Table(columns, names=(
-            '_RAJ2000', '_DEJ2000', 'Vmag', 'e_Vmag', 'Bmag', 'e_Bmag', "g_mag", "e_g_mag", "r_mag", "e_r_mag"))
+            '_RAJ2000', '_DEJ2000', 'Bmag', 'e_Bmag', 'Vmag', 'e_Vmag', "g_mag", "e_g_mag", "r_mag", "e_r_mag"))
 
         expected_df = pd.DataFrame({
             "RA": [
@@ -91,19 +91,19 @@ class TestProcessData(unittest.TestCase):
                 '10:2:51.374', '10:4:23.624', '10:5:58.747', '10:7:59.790', '9:56:13.283',
                 '9:56:20.584', '10:1:27.642', '10:13:20.626', '10:8:38.432'
             ],
-            "Vmag": [
-                11.98, 12.97, 12.09, 12.63, 11.22, 11.41, 10.72, 11.51, 12.14, 11.67,
-                13.03, 10.89, 12.76, 12.13
-            ],
-            "e_Vmag": [
-                0.06, 0.06, 0.07, 0.05, 0.06, 0.06, 0.04, 0.05, 0.04, 0.06, 0.06, 0.06, 0.06, 0.05
-            ],
             "Bmag": [
                 12.79, 13.62, 12.77, 13.48, 11.85, 12.58, 11.92, 12.65, 12.84, 12.27,
                 13.90, 11.63, 13.49, 13.10
             ],
             "e_Bmag": [
                 0.07, 0.06, 0.07, 0.07, 0.07, 0.06, 0.07, 0.07, 0.08, 0.08, 0.07, 0.07, 0.08, 0.07
+            ],
+            "Vmag": [
+                11.98, 12.97, 12.09, 12.63, 11.22, 11.41, 10.72, 11.51, 12.14, 11.67,
+                13.03, 10.89, 12.76, 12.13
+            ],
+            "e_Vmag": [
+                0.06, 0.06, 0.07, 0.05, 0.06, 0.06, 0.04, 0.05, 0.04, 0.06, 0.06, 0.06, 0.06, 0.05
             ],
             "g'mag": [
                 12.30, 13.22, 12.35, 12.98, 11.46, 11.94, 11.25, 12.02, 12.40, 11.88,
@@ -122,10 +122,10 @@ class TestProcessData(unittest.TestCase):
         })
 
         actual_df = apass.process_data(expected)
-        actual_df["Vmag"] = actual_df["Vmag"].astype(float)
-        actual_df["e_Vmag"] = actual_df["e_Vmag"].astype(float)
         actual_df["Bmag"] = actual_df["Bmag"].astype(float)
         actual_df["e_Bmag"] = actual_df["e_Bmag"].astype(float)
+        actual_df["Vmag"] = actual_df["Vmag"].astype(float)
+        actual_df["e_Vmag"] = actual_df["e_Vmag"].astype(float)
         actual_df["g'mag"] = actual_df["g'mag"].astype(float)
         actual_df["e_g'mag"] = actual_df["e_g'mag"].astype(float)
         actual_df["r'mag"] = actual_df["r'mag"].astype(float)
@@ -151,7 +151,7 @@ class TestProcessData(unittest.TestCase):
         columns = list(map(list, zip(*vizier_result)))
 
         expected = Table(columns, names=(
-            '_RAJ2000', '_DEJ2000', 'Vmag', 'e_Vmag', 'Bmag', 'e_Bmag', "g_mag", "e_g_mag", "r_mag", "e_r_mag"))
+            '_RAJ2000', '_DEJ2000', 'Bmag', 'e_Bmag', 'Vmag', 'e_Vmag', "g_mag", "e_g_mag", "r_mag", "e_r_mag"))
 
         expected_df = pd.DataFrame({
             "RA": ['15:10:40.979', '15:11:0.362', '15:11:12.362', '15:11:18.112', '15:9:48.503', '15:10:49.390',
@@ -160,13 +160,13 @@ class TestProcessData(unittest.TestCase):
             "Dec": ['14:56:29.047', '15:2:7.850', '15:1:41.106', '15:4:51.136', '15:5:6.378', '15:6:4.385',
                     '15:6:37.454', '15:16:30.835', '15:18:44.712', '15:22:19.816']
             ,
-            "Vmag": [11.97, 11.33, 12.88, 12.72, 10.15, 13.31, 10.92, 12.14, 12.14, 12.05]
-            ,
-            "e_Vmag": [0.02, 0.03, 0.03, 0.02, 0.03, 0.03, 0.03, 0.01, 0.02, 0.02]
-            ,
             "Bmag": [12.86, 11.98, 13.47, 13.29, 10.76, 13.94, 11.44, 12.68, 12.70, 12.60]
             ,
             "e_Bmag": [0.04, 0.03, 0.02, 0.05, 0.03, 0.05, 0.04, 0.04, 0.04, 0.04]
+            ,
+            "Vmag": [11.97, 11.33, 12.88, 12.72, 10.15, 13.31, 10.92, 12.14, 12.14, 12.05]
+            ,
+            "e_Vmag": [0.02, 0.03, 0.03, 0.02, 0.03, 0.03, 0.03, 0.01, 0.02, 0.02]
             ,
             "g'mag": [12.40, 11.61, 13.15, 12.96, 10.54, 13.57, 11.12, 12.34, 12.35, 12.28]
             ,

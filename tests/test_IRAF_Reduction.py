@@ -20,4 +20,6 @@ class TestBJDTDB(unittest.TestCase):
         self.assertEqual(bjd.value, 2457143.762132256)
 
 
-unittest.main()
+if __name__ == "__main__":
+    import unittest
+    unittest.main()

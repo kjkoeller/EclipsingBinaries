@@ -12,7 +12,7 @@ import tempfile
 import unittest
 # from unittest import mock
 from unittest.mock import patch
-from EclipsingBinaries.apass import apass
+import EclipsingBinaries.apass as apass
 import numpy as np
 import pandas as pd
 from astropy.table import Table

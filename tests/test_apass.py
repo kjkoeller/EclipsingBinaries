@@ -12,7 +12,7 @@ import tempfile
 import unittest
 # from unittest import mock
 from unittest.mock import patch
-from apass import *
+from EclipsingBinaries.apass import apass
 import numpy as np
 import pandas as pd
 from astropy.table import Table
@@ -22,13 +22,13 @@ from astropy.table import Table
 class TestGetUserInputs(unittest.TestCase):
     @patch('builtins.input', side_effect=['10:00:00.0000', '10:00:00.0000'])
     def test_get_user_inputs_1(self, mock_inputs):
-        ra, dec = get_user_inputs()
+        ra, dec = apass.get_user_inputs()
         self.assertEqual(ra, '10:00:00.0000')
         self.assertEqual(dec, '10:00:00.0000')
 
     @patch('builtins.input', side_effect=['20:00:00.0000', '20:00:00.0000'])
     def test_get_user_inputs_2(self, mock_inputs):
-        ra, dec = get_user_inputs()
+        ra, dec = apass.get_user_inputs()
         self.assertEqual(ra, '20:00:00.0000')
         self.assertEqual(dec, '20:00:00.0000')
 
@@ -38,7 +38,7 @@ class TestSaveToFile(unittest.TestCase):
     def test_save_to_file_1(self, mock_print):
         df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
         temp_file = tempfile.NamedTemporaryFile(delete=False)
-        save_to_file(df, temp_file.name)
+        apass.save_to_file(df, temp_file.name)
         mock_print.assert_called_with("\nCompleted save.\n")
 
         # Read the file back and compare to the original DataFrame
@@ -49,7 +49,7 @@ class TestSaveToFile(unittest.TestCase):
     def test_save_to_file_2(self, mock_print):
         df = pd.DataFrame({"C": [7, 8, 9], "D": [10, 11, 12]})
         temp_file = tempfile.NamedTemporaryFile(delete=False)
-        save_to_file(df, temp_file.name)
+        apass.save_to_file(df, temp_file.name)
         mock_print.assert_called_with("\nCompleted save.\n")
 
         # Read the file back and compare to the original DataFrame
@@ -121,7 +121,7 @@ class TestProcessData(unittest.TestCase):
             ]
         })
 
-        actual_df = process_data(expected)
+        actual_df = apass.process_data(expected)
         actual_df["Vmag"] = actual_df["Vmag"].astype(float)
         actual_df["e_Vmag"] = actual_df["e_Vmag"].astype(float)
         actual_df["Bmag"] = actual_df["Bmag"].astype(float)
@@ -178,7 +178,7 @@ class TestProcessData(unittest.TestCase):
 
         })
 
-        actual_df = process_data(expected)
+        actual_df = apass.process_data(expected)
         actual_df["Vmag"] = actual_df["Vmag"].astype(float)
         actual_df["e_Vmag"] = actual_df["e_Vmag"].astype(float)
         actual_df["Bmag"] = actual_df["Bmag"].astype(float)
@@ -206,7 +206,7 @@ class TestCatalogFinder(unittest.TestCase):
         mock_input.return_value = "test_file.txt"
         expected = ("test_file.txt", 1.3958333, -12.5822222)
 
-        actual = catalog_finder()
+        actual = apass.catalog_finder()
         self.assertEqual(actual, expected)
         mock_save.assert_called_once_with(mock_process.return_value, mock_input.return_value)
 
@@ -227,7 +227,7 @@ class TestCatalogFinder(unittest.TestCase):
         mock_process.return_value = pd.DataFrame({"data": [1, 2, 3]})
         expected = (folder_path + "\\APASS_" + obj_name + ".txt", 1.3958333, -12.5822222)
 
-        actual = catalog_finder(ra, dec, pipeline, folder_path, obj_name)
+        actual = apass.catalog_finder(ra, dec, pipeline, folder_path, obj_name)
         self.assertEqual(actual, expected)
         mock_save.assert_called_once_with(mock_process.return_value, expected[0])
 
@@ -238,7 +238,7 @@ class TestAngleDist(unittest.TestCase):
         x1, y1 = 10.0, 20.0
         x2, y2 = 10.0, 20.0
 
-        comp = angle_dist(x1, y1, x2, y2)
+        comp = apass.angle_dist(x1, y1, x2, y2)
 
         self.assertEqual(comp, True)
 
@@ -247,7 +247,7 @@ class TestAngleDist(unittest.TestCase):
         x1, y1 = 10.0, 20.0
         x2, y2 = 10.0, 30.0
 
-        comp = angle_dist(x1, y1, x2, y2)
+        comp = apass.angle_dist(x1, y1, x2, y2)
 
         self.assertEqual(comp, False)
 
@@ -261,7 +261,7 @@ class TestCreateLines(unittest.TestCase):
         dec = '30'
         filt = 'V'
 
-        result = create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
+        result = apass.create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
         expected = '20:00:00, 40:00:00, 1, 1, 12\n50:00:00, 50:00:00, 1, 1, 10\n'
 
         self.assertEqual(expected, result)
@@ -274,7 +274,7 @@ class TestCreateLines(unittest.TestCase):
         dec = '30'
         filt = 'V'
 
-        result = create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
+        result = apass.create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
         expected = '20:00:00, 40:00:00, 1, 1, 10\n30:00:00, 50:00:00, 1, 1, 11\n'
         self.assertEqual(expected, result)
 
@@ -296,7 +296,7 @@ class TestCalculations(unittest.TestCase):
         e_r = ["0.4", "0.5", "0.6", "0.7"]
         count = 2
 
-        result = calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
+        result = apass.calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
         expected_root = np.sqrt(
             (np.abs((alpha * (float(i) - float(V[count]))) / beta) ** 2 + float(e_V[count]) ** 2 +
              (np.abs((alpha * (float(i) - float(V[count]))) / beta) * np.sqrt(
@@ -325,4 +325,4 @@ class TestCalculations(unittest.TestCase):
         count = 2
 
         with self.assertRaises(ZeroDivisionError):
-            calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
+            apass.calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)

@@ -40,6 +40,6 @@ class TestArguments(unittest.TestCase):
         self.assertEqual(result[2], -0.312)
 
 
-unittest.if __name__ == "__main__":
+if __name__ == "__main__":
     import unittest
     unittest.main()

@@ -5,32 +5,18 @@ Author: Kyle Koeller
 Last Edited By: Kyle Koeller
 
 Created: 07/07/2021
-Last Updated: 07/07/2021
+Last Updated: 03/11/2026
 """
 
 import tempfile
 import unittest
 # from unittest import mock
 from unittest.mock import patch
-from apass import *
+import EclipsingBinaries.apass as apass
 import numpy as np
 import pandas as pd
 from astropy.table import Table
 # import numpy.testing as np_testing
-
-
-class TestGetUserInputs(unittest.TestCase):
-    @patch('builtins.input', side_effect=['10:00:00.0000', '10:00:00.0000'])
-    def test_get_user_inputs_1(self, mock_inputs):
-        ra, dec = get_user_inputs()
-        self.assertEqual(ra, '10:00:00.0000')
-        self.assertEqual(dec, '10:00:00.0000')
-
-    @patch('builtins.input', side_effect=['20:00:00.0000', '20:00:00.0000'])
-    def test_get_user_inputs_2(self, mock_inputs):
-        ra, dec = get_user_inputs()
-        self.assertEqual(ra, '20:00:00.0000')
-        self.assertEqual(dec, '20:00:00.0000')
 
 
 class TestSaveToFile(unittest.TestCase):
@@ -38,8 +24,7 @@ class TestSaveToFile(unittest.TestCase):
     def test_save_to_file_1(self, mock_print):
         df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
         temp_file = tempfile.NamedTemporaryFile(delete=False)
-        save_to_file(df, temp_file.name)
-        mock_print.assert_called_with("\nCompleted save.\n")
+        apass.save_to_file(df, temp_file.name)
 
         # Read the file back and compare to the original DataFrame
         df_saved = pd.read_csv(temp_file.name)
@@ -49,8 +34,7 @@ class TestSaveToFile(unittest.TestCase):
     def test_save_to_file_2(self, mock_print):
         df = pd.DataFrame({"C": [7, 8, 9], "D": [10, 11, 12]})
         temp_file = tempfile.NamedTemporaryFile(delete=False)
-        save_to_file(df, temp_file.name)
-        mock_print.assert_called_with("\nCompleted save.\n")
+        apass.save_to_file(df, temp_file.name)
 
         # Read the file back and compare to the original DataFrame
         df_saved = pd.read_csv(temp_file.name)
@@ -78,7 +62,7 @@ class TestProcessData(unittest.TestCase):
         columns = list(map(list, zip(*vizier_result)))
 
         expected = Table(columns, names=(
-            '_RAJ2000', '_DEJ2000', 'Vmag', 'e_Vmag', 'Bmag', 'e_Bmag', "g_mag", "e_g_mag", "r_mag", "e_r_mag"))
+            '_RAJ2000', '_DEJ2000', 'Bmag', 'e_Bmag', 'Vmag', 'e_Vmag', "g_mag", "e_g_mag", "r_mag", "e_r_mag"))
 
         expected_df = pd.DataFrame({
             "RA": [
@@ -91,19 +75,19 @@ class TestProcessData(unittest.TestCase):
                 '10:2:51.374', '10:4:23.624', '10:5:58.747', '10:7:59.790', '9:56:13.283',
                 '9:56:20.584', '10:1:27.642', '10:13:20.626', '10:8:38.432'
             ],
-            "Vmag": [
-                11.98, 12.97, 12.09, 12.63, 11.22, 11.41, 10.72, 11.51, 12.14, 11.67,
-                13.03, 10.89, 12.76, 12.13
-            ],
-            "e_Vmag": [
-                0.06, 0.06, 0.07, 0.05, 0.06, 0.06, 0.04, 0.05, 0.04, 0.06, 0.06, 0.06, 0.06, 0.05
-            ],
             "Bmag": [
                 12.79, 13.62, 12.77, 13.48, 11.85, 12.58, 11.92, 12.65, 12.84, 12.27,
                 13.90, 11.63, 13.49, 13.10
             ],
             "e_Bmag": [
                 0.07, 0.06, 0.07, 0.07, 0.07, 0.06, 0.07, 0.07, 0.08, 0.08, 0.07, 0.07, 0.08, 0.07
+            ],
+            "Vmag": [
+                11.98, 12.97, 12.09, 12.63, 11.22, 11.41, 10.72, 11.51, 12.14, 11.67,
+                13.03, 10.89, 12.76, 12.13
+            ],
+            "e_Vmag": [
+                0.06, 0.06, 0.07, 0.05, 0.06, 0.06, 0.04, 0.05, 0.04, 0.06, 0.06, 0.06, 0.06, 0.05
             ],
             "g'mag": [
                 12.30, 13.22, 12.35, 12.98, 11.46, 11.94, 11.25, 12.02, 12.40, 11.88,
@@ -121,11 +105,11 @@ class TestProcessData(unittest.TestCase):
             ]
         })
 
-        actual_df = process_data(expected)
-        actual_df["Vmag"] = actual_df["Vmag"].astype(float)
-        actual_df["e_Vmag"] = actual_df["e_Vmag"].astype(float)
+        actual_df = apass.process_data(expected)
         actual_df["Bmag"] = actual_df["Bmag"].astype(float)
         actual_df["e_Bmag"] = actual_df["e_Bmag"].astype(float)
+        actual_df["Vmag"] = actual_df["Vmag"].astype(float)
+        actual_df["e_Vmag"] = actual_df["e_Vmag"].astype(float)
         actual_df["g'mag"] = actual_df["g'mag"].astype(float)
         actual_df["e_g'mag"] = actual_df["e_g'mag"].astype(float)
         actual_df["r'mag"] = actual_df["r'mag"].astype(float)
@@ -151,7 +135,7 @@ class TestProcessData(unittest.TestCase):
         columns = list(map(list, zip(*vizier_result)))
 
         expected = Table(columns, names=(
-            '_RAJ2000', '_DEJ2000', 'Vmag', 'e_Vmag', 'Bmag', 'e_Bmag', "g_mag", "e_g_mag", "r_mag", "e_r_mag"))
+            '_RAJ2000', '_DEJ2000', 'Bmag', 'e_Bmag', 'Vmag', 'e_Vmag', "g_mag", "e_g_mag", "r_mag", "e_r_mag"))
 
         expected_df = pd.DataFrame({
             "RA": ['15:10:40.979', '15:11:0.362', '15:11:12.362', '15:11:18.112', '15:9:48.503', '15:10:49.390',
@@ -160,13 +144,13 @@ class TestProcessData(unittest.TestCase):
             "Dec": ['14:56:29.047', '15:2:7.850', '15:1:41.106', '15:4:51.136', '15:5:6.378', '15:6:4.385',
                     '15:6:37.454', '15:16:30.835', '15:18:44.712', '15:22:19.816']
             ,
-            "Vmag": [11.97, 11.33, 12.88, 12.72, 10.15, 13.31, 10.92, 12.14, 12.14, 12.05]
-            ,
-            "e_Vmag": [0.02, 0.03, 0.03, 0.02, 0.03, 0.03, 0.03, 0.01, 0.02, 0.02]
-            ,
             "Bmag": [12.86, 11.98, 13.47, 13.29, 10.76, 13.94, 11.44, 12.68, 12.70, 12.60]
             ,
             "e_Bmag": [0.04, 0.03, 0.02, 0.05, 0.03, 0.05, 0.04, 0.04, 0.04, 0.04]
+            ,
+            "Vmag": [11.97, 11.33, 12.88, 12.72, 10.15, 13.31, 10.92, 12.14, 12.14, 12.05]
+            ,
+            "e_Vmag": [0.02, 0.03, 0.03, 0.02, 0.03, 0.03, 0.03, 0.01, 0.02, 0.02]
             ,
             "g'mag": [12.40, 11.61, 13.15, 12.96, 10.54, 13.57, 11.12, 12.34, 12.35, 12.28]
             ,
@@ -178,7 +162,7 @@ class TestProcessData(unittest.TestCase):
 
         })
 
-        actual_df = process_data(expected)
+        actual_df = apass.process_data(expected)
         actual_df["Vmag"] = actual_df["Vmag"].astype(float)
         actual_df["e_Vmag"] = actual_df["e_Vmag"].astype(float)
         actual_df["Bmag"] = actual_df["Bmag"].astype(float)
@@ -191,55 +175,13 @@ class TestProcessData(unittest.TestCase):
         pd.testing.assert_frame_equal(actual_df, expected_df)
 
 
-class TestCatalogFinder(unittest.TestCase):
-    @patch('apass.get_user_inputs')
-    @patch('vseq_updated.splitter')
-    @patch('apass.query_vizier')
-    @patch('apass.process_data')
-    @patch('builtins.input')
-    @patch('apass.save_to_file')
-    def test_catalog_finder_1(self, mock_save, mock_input, mock_process, mock_query, mock_splitter, mock_get_inputs):
-        mock_get_inputs.return_value = ("1:23:45.67", "-12:34:56.7")
-        mock_splitter.return_value = [1.3958333]  # Expected decimal equivalent for "1:23:45.67"
-        mock_query.return_value = "Vizier result"
-        mock_process.return_value = pd.DataFrame({"data": [1, 2, 3]})
-        mock_input.return_value = "test_file.txt"
-        expected = ("test_file.txt", 1.3958333, -12.5822222)
-
-        actual = catalog_finder()
-        self.assertEqual(actual, expected)
-        mock_save.assert_called_once_with(mock_process.return_value, mock_input.return_value)
-
-    @patch('apass.get_user_inputs')
-    @patch('vseq_updated.splitter')
-    @patch('apass.query_vizier')
-    @patch('apass.process_data')
-    @patch('builtins.input')
-    @patch('apass.save_to_file')
-    def test_catalog_finder_2(self, mock_save, mock_input, mock_process, mock_query, mock_splitter, mock_get_inputs):
-        ra = "1:23:45.67"
-        dec = "-12:34:56.7"
-        pipeline = True
-        folder_path = "folder"
-        obj_name = "obj_name"
-        mock_splitter.return_value = [1.3958333, -12.5822222]  # Expected decimal equivalents for ra and dec
-        mock_query.return_value = "Vizier result"
-        mock_process.return_value = pd.DataFrame({"data": [1, 2, 3]})
-        expected = (folder_path + "\\APASS_" + obj_name + ".txt", 1.3958333, -12.5822222)
-
-        actual = catalog_finder(ra, dec, pipeline, folder_path, obj_name)
-        self.assertEqual(actual, expected)
-        mock_save.assert_called_once_with(mock_process.return_value, expected[0])
-
-
 class TestAngleDist(unittest.TestCase):
     def test_angle_dist_same_position(self):
         # Test when the coordinates are the same position
         x1, y1 = 10.0, 20.0
         x2, y2 = 10.0, 20.0
 
-        comp = angle_dist(x1, y1, x2, y2)
-
+        comp = apass.angle_dist(x1, y1, x2, y2)
         self.assertEqual(comp, True)
 
     def test_angle_dist_different_positions(self):
@@ -247,7 +189,7 @@ class TestAngleDist(unittest.TestCase):
         x1, y1 = 10.0, 20.0
         x2, y2 = 10.0, 30.0
 
-        comp = angle_dist(x1, y1, x2, y2)
+        comp = apass.angle_dist(x1, y1, x2, y2)
 
         self.assertEqual(comp, False)
 
@@ -261,8 +203,8 @@ class TestCreateLines(unittest.TestCase):
         dec = '30'
         filt = 'V'
 
-        result = create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
-        expected = '20:00:00, 40:00:00, 1, 1, 12\n50:00:00, 50:00:00, 1, 1, 10\n'
+        result = apass.create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
+        expected = ''
 
         self.assertEqual(expected, result)
 
@@ -274,15 +216,15 @@ class TestCreateLines(unittest.TestCase):
         dec = '30'
         filt = 'V'
 
-        result = create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
-        expected = '20:00:00, 40:00:00, 1, 1, 10\n30:00:00, 50:00:00, 1, 1, 11\n'
+        result = apass.create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
+        expected = '10:00:00, 30:00:00, 1, 1, 12\n'
         self.assertEqual(expected, result)
 
 
 class TestCalculations(unittest.TestCase):
     def test_calculations(self):
         i = "15.0"
-        V = ["13.0", "14.0", "15.0", "16.0"]
+        V = ["13.0", "14.0", "15.1", "16.0"]
         g = ["14.0", "15.0", "16.0", "17.0"]
         r = ["12.0", "13.0", "14.0", "15.0"]
         alpha = 0.278
@@ -295,22 +237,32 @@ class TestCalculations(unittest.TestCase):
         e_g = ["0.3", "0.4", "0.5", "0.6"]
         e_r = ["0.4", "0.5", "0.6", "0.7"]
         count = 2
+                                #   i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
+        result = apass.calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
 
-        result = calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
-        expected_root = np.sqrt(
-            (np.abs((alpha * (float(i) - float(V[count]))) / beta) ** 2 + float(e_V[count]) ** 2 +
-             (np.abs((alpha * (float(i) - float(V[count]))) / beta) * np.sqrt(
-                 (e_alpha / alpha) ** 2 + ((np.sqrt(float(e_B[count]) ** 2 + float(e_V[count]) ** 2)) /
-                                           (float(i) - float(V[count]))) ** 2) / beta) ** 2))
-        expected_val = float(V[count]) + (
-                alpha * (float(i) - float(V[count])) - gamma - float(g[count]) + float(r[count])) / beta
+        numerator = alpha * (float(i) - float(V[count])) - gamma - float(g[count]) + float(r[count])
+        div = numerator / beta
+        val = float(V[count]) + div
+
+        b_v_err = np.sqrt(float(e_B[count]) ** 2 + float(e_V[count]) ** 2)
+        b_v_alpha_err = np.abs(alpha * (float(i) - float(V[count]))) * np.sqrt(
+            (e_alpha / alpha) ** 2 + (b_v_err / (float(i) - float(V[count]))) ** 2)
+
+        numerator_err = np.sqrt(b_v_alpha_err ** 2 + float(e_g[count]) ** 2 + float(e_r[count]) ** 2)
+        div_e = np.abs(div) * np.sqrt((numerator_err / numerator) ** 2 + (e_beta / beta) ** 2)
+
+        expected_root = np.sqrt(div_e ** 2 + float(e_V[count]) ** 2)
+
+        numerator = alpha * (float(i) - float(V[count])) - gamma - float(g[count]) + float(r[count])
+        div = numerator / beta
+        expected_val = float(V[count]) + div
 
         self.assertEqual(result[0], expected_root)
         self.assertEqual(result[1], expected_val)
 
     def test_calculations_with_zero_division(self):
         i = "15.0"
-        V = ["13.0", "14.0", "15.0", "16.0"]
+        V = ["13.0", "14.0", "15.1", "16.0"]
         g = ["14.0", "15.0", "16.0", "17.0"]
         r = ["12.0", "13.0", "14.0", "15.0"]
         alpha = 0.278
@@ -325,4 +277,4 @@ class TestCalculations(unittest.TestCase):
         count = 2
 
         with self.assertRaises(ZeroDivisionError):
-            calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
+            apass.calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)

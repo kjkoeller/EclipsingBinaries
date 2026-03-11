@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 12/16/2024
+Last Edited: 03/11/2026
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
@@ -446,18 +446,8 @@ def add_header(pathway, fname, imagetyp, filter_name, hjd, ra, dec, trim_region,
     fits.setval(image_name, "EPOCH", value="J2000.0")
     # fits.setval(bias_image, "FILTER", value=filter_name)
     if imagetyp == "LIGHT":
-        if location.lower() == "bsuo":
-            # location of BSUO
-            obs_location = {
-                'lon': -85.411896,  # degrees
-                'lat': 40.199879,  # degrees
-                'elevation': 0.2873  # kilometers
-            }
-            bjd = BJD_TDB(hjd, obs_location, ra, dec)
-            fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
-        else:
-            bjd = BJD_TDB(hjd, location, ra, dec)
-            fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
+        bjd = BJD_TDB(hjd, obs_location, ra, dec)
+        fits.setval(image_name, "BJD_TDB", value=bjd.value, comment="Bary. Julian Date, Bary. Dynamical Time")
 
 
 def BJD_TDB(hjd, loc, ra, dec):
@@ -470,8 +460,22 @@ def BJD_TDB(hjd, loc, ra, dec):
     :param loc: location of the observations
     :return: Newly calculated BJD_TDB that is light time corrected
     """
+    if loc.lower() == "bsuo":
+        # location of BSUO
+        location = {
+            'lon': -85.411896,  # degrees
+            'lat': 40.199879,  # degrees
+            'elevation': 0.2873  # kilometers
+        }
+    else:
+        loc = EarthLocation.of_site(loc)
+        location = {
+            'lon': loc.geodetic.lon.value,
+            'lat': loc.geodetic.lat.value,
+            'elevation': loc.geodetic.height.value
+        }
     helio = Time(hjd, scale='utc', format='jd')
-    obs = EarthLocation.from_geodetic(loc["lon"], loc["lat"], loc["elevation"])
+    obs = EarthLocation.from_geodetic(location["lon"], location["lat"], location["elevation"])
     star = SkyCoord(ra, dec, unit=(u.hour, u.deg))
     ltt = helio.light_travel_time(star, 'heliocentric', location=obs)
     guess = helio - ltt

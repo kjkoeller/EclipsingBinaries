@@ -1,7 +1,7 @@
 import unittest
 # from unittest import mock
 from unittest.mock import patch
-from .OC_plot import calculate_oc, arguments
+from EclipsingBinaries.OC_plot import calculate_oc, arguments
 
 
 class TestCalculateOC(unittest.TestCase):
@@ -40,4 +40,6 @@ class TestArguments(unittest.TestCase):
         self.assertEqual(result[2], -0.312)
 
 
-unittest.main()
+if __name__ == "__main__":
+    import unittest
+    unittest.main()

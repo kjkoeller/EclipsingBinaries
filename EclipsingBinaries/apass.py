@@ -3,7 +3,7 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 05/22/2025
+Last Updated: 03/11/2026
 """
 
 from astroquery.vizier import Vizier
@@ -599,7 +599,7 @@ def angle_dist(x1, y1, x2, y2):
     # noinspection PyUnresolvedReferences
     radial = pyasl.getAngDist(x1, y1, x2, y2)
     # print(f"Comparing ({x1}, {y1}) to ({x2}, {y2}), Radial distance: {radial}")
-    if 0.15 > radial > 0.01:  # Exclude exact target and include values within 15 arcminutes (0.25 degrees)
+    if 0.15 > radial >= 0.00:  # Exclude exact target and include values within 15 arcminutes (0.25 degrees)
         return True
     else:
         return False

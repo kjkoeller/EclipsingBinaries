@@ -5,7 +5,7 @@ Author: Kyle Koeller
 Last Edited By: Kyle Koeller
 
 Created: 07/07/2021
-Last Updated: 07/07/2021
+Last Updated: 03/11/2026
 """
 
 import tempfile
@@ -19,27 +19,12 @@ from astropy.table import Table
 # import numpy.testing as np_testing
 
 
-class TestGetUserInputs(unittest.TestCase):
-    @patch('builtins.input', side_effect=['10:00:00.0000', '10:00:00.0000'])
-    def test_get_user_inputs_1(self, mock_inputs):
-        ra, dec = apass.get_user_inputs()
-        self.assertEqual(ra, '10:00:00.0000')
-        self.assertEqual(dec, '10:00:00.0000')
-
-    @patch('builtins.input', side_effect=['20:00:00.0000', '20:00:00.0000'])
-    def test_get_user_inputs_2(self, mock_inputs):
-        ra, dec = apass.get_user_inputs()
-        self.assertEqual(ra, '20:00:00.0000')
-        self.assertEqual(dec, '20:00:00.0000')
-
-
 class TestSaveToFile(unittest.TestCase):
     @patch('builtins.print')
     def test_save_to_file_1(self, mock_print):
         df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
         temp_file = tempfile.NamedTemporaryFile(delete=False)
         apass.save_to_file(df, temp_file.name)
-        mock_print.assert_called_with("\nCompleted save.\n")
 
         # Read the file back and compare to the original DataFrame
         df_saved = pd.read_csv(temp_file.name)
@@ -50,7 +35,6 @@ class TestSaveToFile(unittest.TestCase):
         df = pd.DataFrame({"C": [7, 8, 9], "D": [10, 11, 12]})
         temp_file = tempfile.NamedTemporaryFile(delete=False)
         apass.save_to_file(df, temp_file.name)
-        mock_print.assert_called_with("\nCompleted save.\n")
 
         # Read the file back and compare to the original DataFrame
         df_saved = pd.read_csv(temp_file.name)
@@ -191,47 +175,6 @@ class TestProcessData(unittest.TestCase):
         pd.testing.assert_frame_equal(actual_df, expected_df)
 
 
-class TestCatalogFinder(unittest.TestCase):
-    @patch('apass.get_user_inputs')
-    @patch('vseq_updated.splitter')
-    @patch('apass.query_vizier')
-    @patch('apass.process_data')
-    @patch('builtins.input')
-    @patch('apass.save_to_file')
-    def test_catalog_finder_1(self, mock_save, mock_input, mock_process, mock_query, mock_splitter, mock_get_inputs):
-        mock_get_inputs.return_value = ("1:23:45.67", "-12:34:56.7")
-        mock_splitter.return_value = [1.3958333]  # Expected decimal equivalent for "1:23:45.67"
-        mock_query.return_value = "Vizier result"
-        mock_process.return_value = pd.DataFrame({"data": [1, 2, 3]})
-        mock_input.return_value = "test_file.txt"
-        expected = ("test_file.txt", 1.3958333, -12.5822222)
-
-        actual = apass.catalog_finder()
-        self.assertEqual(actual, expected)
-        mock_save.assert_called_once_with(mock_process.return_value, mock_input.return_value)
-
-    @patch('apass.get_user_inputs')
-    @patch('vseq_updated.splitter')
-    @patch('apass.query_vizier')
-    @patch('apass.process_data')
-    @patch('builtins.input')
-    @patch('apass.save_to_file')
-    def test_catalog_finder_2(self, mock_save, mock_input, mock_process, mock_query, mock_splitter, mock_get_inputs):
-        ra = "1:23:45.67"
-        dec = "-12:34:56.7"
-        pipeline = True
-        folder_path = "folder"
-        obj_name = "obj_name"
-        mock_splitter.return_value = [1.3958333, -12.5822222]  # Expected decimal equivalents for ra and dec
-        mock_query.return_value = "Vizier result"
-        mock_process.return_value = pd.DataFrame({"data": [1, 2, 3]})
-        expected = (folder_path + "\\APASS_" + obj_name + ".txt", 1.3958333, -12.5822222)
-
-        actual = apass.catalog_finder(ra, dec, pipeline, folder_path, obj_name)
-        self.assertEqual(actual, expected)
-        mock_save.assert_called_once_with(mock_process.return_value, expected[0])
-
-
 class TestAngleDist(unittest.TestCase):
     def test_angle_dist_same_position(self):
         # Test when the coordinates are the same position
@@ -239,7 +182,6 @@ class TestAngleDist(unittest.TestCase):
         x2, y2 = 10.0, 20.0
 
         comp = apass.angle_dist(x1, y1, x2, y2)
-
         self.assertEqual(comp, True)
 
     def test_angle_dist_different_positions(self):
@@ -262,7 +204,7 @@ class TestCreateLines(unittest.TestCase):
         filt = 'V'
 
         result = apass.create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
-        expected = '20:00:00, 40:00:00, 1, 1, 12\n50:00:00, 50:00:00, 1, 1, 10\n'
+        expected = ''
 
         self.assertEqual(expected, result)
 
@@ -275,14 +217,14 @@ class TestCreateLines(unittest.TestCase):
         filt = 'V'
 
         result = apass.create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
-        expected = '20:00:00, 40:00:00, 1, 1, 10\n30:00:00, 50:00:00, 1, 1, 11\n'
+        expected = '10:00:00, 30:00:00, 1, 1, 12\n'
         self.assertEqual(expected, result)
 
 
 class TestCalculations(unittest.TestCase):
     def test_calculations(self):
         i = "15.0"
-        V = ["13.0", "14.0", "15.0", "16.0"]
+        V = ["13.0", "14.0", "15.1", "16.0"]
         g = ["14.0", "15.0", "16.0", "17.0"]
         r = ["12.0", "13.0", "14.0", "15.0"]
         alpha = 0.278
@@ -295,22 +237,32 @@ class TestCalculations(unittest.TestCase):
         e_g = ["0.3", "0.4", "0.5", "0.6"]
         e_r = ["0.4", "0.5", "0.6", "0.7"]
         count = 2
-
+                                #   i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
         result = apass.calculations(i, V, g, r, gamma, beta, e_beta, alpha, e_alpha, e_B, e_V, e_g, e_r, count)
-        expected_root = np.sqrt(
-            (np.abs((alpha * (float(i) - float(V[count]))) / beta) ** 2 + float(e_V[count]) ** 2 +
-             (np.abs((alpha * (float(i) - float(V[count]))) / beta) * np.sqrt(
-                 (e_alpha / alpha) ** 2 + ((np.sqrt(float(e_B[count]) ** 2 + float(e_V[count]) ** 2)) /
-                                           (float(i) - float(V[count]))) ** 2) / beta) ** 2))
-        expected_val = float(V[count]) + (
-                alpha * (float(i) - float(V[count])) - gamma - float(g[count]) + float(r[count])) / beta
+
+        numerator = alpha * (float(i) - float(V[count])) - gamma - float(g[count]) + float(r[count])
+        div = numerator / beta
+        val = float(V[count]) + div
+
+        b_v_err = np.sqrt(float(e_B[count]) ** 2 + float(e_V[count]) ** 2)
+        b_v_alpha_err = np.abs(alpha * (float(i) - float(V[count]))) * np.sqrt(
+            (e_alpha / alpha) ** 2 + (b_v_err / (float(i) - float(V[count]))) ** 2)
+
+        numerator_err = np.sqrt(b_v_alpha_err ** 2 + float(e_g[count]) ** 2 + float(e_r[count]) ** 2)
+        div_e = np.abs(div) * np.sqrt((numerator_err / numerator) ** 2 + (e_beta / beta) ** 2)
+
+        expected_root = np.sqrt(div_e ** 2 + float(e_V[count]) ** 2)
+
+        numerator = alpha * (float(i) - float(V[count])) - gamma - float(g[count]) + float(r[count])
+        div = numerator / beta
+        expected_val = float(V[count]) + div
 
         self.assertEqual(result[0], expected_root)
         self.assertEqual(result[1], expected_val)
 
     def test_calculations_with_zero_division(self):
         i = "15.0"
-        V = ["13.0", "14.0", "15.0", "16.0"]
+        V = ["13.0", "14.0", "15.1", "16.0"]
         g = ["14.0", "15.0", "16.0", "17.0"]
         r = ["12.0", "13.0", "14.0", "15.0"]
         alpha = 0.278

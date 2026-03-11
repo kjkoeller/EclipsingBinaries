@@ -18,40 +18,30 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: 'ubuntu-py312'
+          - name: ubuntu-py312
             os: ubuntu-latest
-            python: '3.12'
-            tox_env: 'py312-test-alldeps-numpy119-cov'
-
-          - name: 'ubuntu-py312'
+            python: "3.12"
+            tox_env: py312
+            
+          - name: ubuntu-py312-cov
             os: ubuntu-latest
-            python: '3.12'
-            tox_env: 'py312-test-alldeps-numpy121'
+            python: "3.12"
+            tox_env: py312-cov
 
-          - name: 'ubuntu-py312-bottleneck'
+          - name: ubuntu-py312-oldestdeps
             os: ubuntu-latest
-            python: '3.12'
-            tox_env: 'py312-test-alldeps-numpy119-cov-bottleneck'
+            python: "3.12"
+            tox_env: py312-oldestdeps
 
-          - name: 'macos-py312'
+          - name: macos-py312
             os: macos-latest
-            python: '3.12'
-            tox_env: 'py312-test-alldeps'
-
-          - name: 'windows-py312'
+            python: "3.12"
+            tox_env: py312
+    
+          - name: windows-py312
             os: windows-latest
-            python: '3.12'
-            tox_env: 'py312-test-alldeps'
-
-          - name: 'ubuntu-codestyle'
-            os: ubuntu-latest
-            python: '3.12'
-            tox_env: 'py312-test-alldeps'
-
-          - name: 'ubuntu-py312-test-alldeps-devdeps'
-            os: ubuntu-latest
-            python: '3.12'
-            tox_env: 'py312-test-alldeps-devdeps'
+            python: "3.12"
+            tox_env: py312
 
     steps:
     - name: Check out repository

@@ -343,13 +343,12 @@ class calc:  # assortment of functions
                 float: Result of the polynomial at the given value.
             """
             if deriv:
-                # Derivative of the polynomial
-                return sum(
-                    np.array(coeflist[1:]) * np.arange(1, len(coeflist)) * value ** (np.arange(len(coeflist)) - 1))
+                # Derivative: d/dx sum(c_n * x^n) = sum(n * c_n * x^(n-1))  for n=1..N
+                return sum(np.array(coeflist[1:]) * np.arange(1, len(coeflist)) * float(value) ** np.arange(len(coeflist) - 1))
             else:
-                # Evaluate the polynomial
-                return sum(np.array(coeflist) * value ** np.arange(len(coeflist) - 1))
-
+                # Evaluate: sum(c_n * x^n)  for n=0..N
+                return sum(np.array(coeflist) * float(value) ** np.arange(len(coeflist)))
+        
         def error(coeflist, value, error):
             """
             Calculates the propagated uncertainty of a polynomial.

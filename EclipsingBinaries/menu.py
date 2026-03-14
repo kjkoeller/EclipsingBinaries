@@ -108,100 +108,110 @@ class ProgramLauncher(TkinterDnD.Tk):
         # Bind quit to autosave settings
         self.protocol("WM_DELETE_WINDOW", self.quit_program)
 
-    def create_input_field(self, parent, label_text, placeholder_text, row, variable=None,
-                           validation_func=None, error_message="", browse_type=None):
-        """
-        Create a labeled input field with placeholder functionality, validation, and inline error message.
-        Includes an optional browse button integrated into the entry field.
-        """
-        # Create a label for the input field
-        tk.Label(parent, text=label_text, font=self.label_font, bg="#ffffff").grid(
-            row=row, column=0, padx=10, pady=5, sticky="e"
-        )
+   def _make_validator(self, entry, error_label, error_message, validation_func):
+    """Build and return the validate_input function for an entry field."""
+    def validate_input():
+        value = entry.get().strip()
+        is_placeholder = entry["fg"] == "gray"  # Check if it's still styled as a placeholder
+        if is_placeholder or not value:  # Input is empty
+            error_label.config(text=error_message or "This field is required.")
+            entry.config(bg="#ffe6e6")  # Highlight entry with a light red background
+        elif validation_func and not validation_func(value):  # Validation fails
+            error_label.config(text=error_message)
+            entry.config(bg="#ffe6e6")
+        else:  # Valid input
+            error_label.config(text="")
+            entry.config(bg="white")
+    return validate_input
 
-        # Create a frame to contain the entry and the browse button
-        entry_frame = tk.Frame(parent, bg="#ffffff", highlightthickness=1, highlightbackground="#cccccc")
-        entry_frame.grid(row=row, column=1, padx=10, pady=5, sticky="w")
-
-        # Create the entry widget
-        entry = tk.Entry(entry_frame, width=25, font=self.label_font, borderwidth=0)
-        entry.grid(row=0, column=0, sticky="w", padx=(5, 0))  # Use grid for internal layout
-
-        # Add a browse button inside the entry frame (if required)
-        if browse_type:
-            def browse_action():
-                selected_path = None
-                if browse_type == "file":
-                    selected_path = filedialog.askopenfilename(title="Select File")
-                elif browse_type == "folder":
-                    selected_path = filedialog.askdirectory(title="Select Folder")
-                if selected_path:
-                    entry.delete(0, "end")
-                    entry.insert(0, selected_path)
-                    entry.config(fg="black")
-                    validate_input()  # Validate on file/folder selection
-
-            browse_button = Button(entry_frame, text="Browse", font=("Helvetica", 9), bg="#f0f0f0",
-                                   width=8, command=browse_action)
-            browse_button.grid(row=0, column=1, padx=(5, 5), pady=2, sticky="e")  # Positioned to the right
-
-        # Error message label (initially empty)
-        error_label = tk.Label(
-            parent, text="", font=("Helvetica", 9), fg="red", bg="#ffffff"
-        )
-        error_label.grid(row=row, column=2, padx=(5, 10), sticky="w")  # Positioned to the right of the entry
-
-        # Placeholder functionality
-        def on_focus_in(event):
-            if entry.get() == placeholder_text and entry["fg"] == "gray":
-                entry.delete(0, "end")
-                entry.config(fg="black")
-
-        def on_focus_out(event):
-            if not entry.get().strip():  # If entry is empty
-                entry.insert(0, placeholder_text)
-                entry.config(fg="gray")
-            validate_input()  # Validate on focus out
-
-        # Validation function
-        def validate_input():
-            value = entry.get().strip()
-            is_placeholder = entry["fg"] == "gray"  # Check if it's still styled as a placeholder
-            if is_placeholder or not value:  # Input is empty
-                error_label.config(text=error_message or "This field is required.")
-                entry.config(bg="#ffe6e6")  # Highlight entry with a light red background
-            elif validation_func and not validation_func(value):  # Validation fails
-                error_label.config(text=error_message)
-                entry.config(bg="#ffe6e6")
-            else:  # Valid input
-                error_label.config(text="")
-                entry.config(bg="white")
-
-        # Bind events
-        entry.insert(0, placeholder_text)
-        entry.config(fg="gray")
-        entry.bind("<FocusIn>", on_focus_in)
-        entry.bind("<FocusOut>", on_focus_out)
-
-        # Bind variable (if provided)
-        if variable:
-            entry.config(textvariable=variable)
-
-        # Drag-and-drop support
-        def handle_drop(event):
-            dropped_path = event.data.strip()
-
-            # Remove curly braces if present (from tkinterdnd2 behavior)
-            if dropped_path.startswith("{") and dropped_path.endswith("}"):
-                dropped_path = dropped_path[1:-1]
-
+def _make_placeholder_bindings(self, entry, placeholder_text, validate_input):
+    """Bind focus-in, focus-out, and placeholder behaviour to an entry field."""
+    def on_focus_in(event):
+        if entry.get() == placeholder_text and entry["fg"] == "gray":
             entry.delete(0, "end")
-            entry.insert(0, dropped_path)
-            validate_input()
+            entry.config(fg="black")
 
-        self.enable_drag_and_drop(entry_frame, handle_drop)
+    def on_focus_out(event):
+        if not entry.get().strip():  # If entry is empty
+            entry.insert(0, placeholder_text)
+            entry.config(fg="gray")
+        validate_input()  # Validate on focus out
 
-        return entry
+    entry.insert(0, placeholder_text)
+    entry.config(fg="gray")
+    entry.bind("<FocusIn>", on_focus_in)
+    entry.bind("<FocusOut>", on_focus_out)
+
+def _make_browse_button(self, entry_frame, entry, browse_type, validate_input):
+    """Add a browse button inside the entry frame if browse_type is specified."""
+    if not browse_type:
+        return
+
+    def browse_action():
+        selected_path = None
+        if browse_type == "file":
+            selected_path = filedialog.askopenfilename(title="Select File")
+        elif browse_type == "folder":
+            selected_path = filedialog.askdirectory(title="Select Folder")
+        if selected_path:
+            entry.delete(0, "end")
+            entry.insert(0, selected_path)
+            entry.config(fg="black")
+            validate_input()  # Validate on file/folder selection
+
+    browse_button = Button(entry_frame, text="Browse", font=("Helvetica", 9), bg="#f0f0f0",
+                           width=8, command=browse_action)
+    browse_button.grid(row=0, column=1, padx=(5, 5), pady=2, sticky="e")  # Positioned to the right
+
+def _make_drop_handler(self, entry, validate_input):
+    """Build and return the drag-and-drop handler for an entry field."""
+    def handle_drop(event):
+        dropped_path = event.data.strip()
+
+        # Remove curly braces if present (from tkinterdnd2 behavior)
+        if dropped_path.startswith("{") and dropped_path.endswith("}"):
+            dropped_path = dropped_path[1:-1]
+
+        entry.delete(0, "end")
+        entry.insert(0, dropped_path)
+        validate_input()
+
+    return handle_drop
+
+def create_input_field(self, parent, label_text, placeholder_text, row, variable=None,
+                       validation_func=None, error_message="", browse_type=None):
+    """
+    Create a labeled input field with placeholder functionality, validation, and inline error message.
+    Includes an optional browse button integrated into the entry field.
+    """
+    # Create a label for the input field
+    tk.Label(parent, text=label_text, font=self.label_font, bg="#ffffff").grid(
+        row=row, column=0, padx=10, pady=5, sticky="e"
+    )
+
+    # Create a frame to contain the entry and the browse button
+    entry_frame = tk.Frame(parent, bg="#ffffff", highlightthickness=1, highlightbackground="#cccccc")
+    entry_frame.grid(row=row, column=1, padx=10, pady=5, sticky="w")
+
+    # Create the entry widget
+    entry = tk.Entry(entry_frame, width=25, font=self.label_font, borderwidth=0)
+    entry.grid(row=0, column=0, sticky="w", padx=(5, 0))  # Use grid for internal layout
+
+    # Error message label (initially empty)
+    error_label = tk.Label(parent, text="", font=("Helvetica", 9), fg="red", bg="#ffffff")
+    error_label.grid(row=row, column=2, padx=(5, 10), sticky="w")  # Positioned to the right of the entry
+
+    # Build validation, placeholder, browse, and drag-and-drop behaviours
+    validate_input = self._make_validator(entry, error_label, error_message, validation_func)
+    self._make_placeholder_bindings(entry, placeholder_text, validate_input)
+    self._make_browse_button(entry_frame, entry, browse_type, validate_input)
+    self.enable_drag_and_drop(entry_frame, self._make_drop_handler(entry, validate_input))
+
+    # Bind variable (if provided)
+    if variable:
+        entry.config(textvariable=variable)
+
+    return entry
 
     def enable_drag_and_drop(self, widget, callback):
         """

@@ -108,7 +108,7 @@ class ProgramLauncher(TkinterDnD.Tk):
         # Bind quit to autosave settings
         self.protocol("WM_DELETE_WINDOW", self.quit_program)
 
-   def _make_validator(self, entry, error_label, error_message, validation_func):
+def _make_validator(self, entry, error_label, error_message, validation_func):
     """Build and return the validate_input function for an entry field."""
     def validate_input():
         value = entry.get().strip()

@@ -8,7 +8,7 @@ import pytest
 import numpy as np
 import math
 
-from EclipsingBinaties.vseq_updated import (
+from EclipsingBinaries.vseq_updated import (
     isNaN, new_list, conversion, splitter, decimal_limit,
     calc, binning, FT, OConnell, Flower, Pecaut, Red, plot, Roche, M, wfactor,
 )

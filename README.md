@@ -86,7 +86,7 @@ This will print out all the options that are available to edit and change. The `
 - pandas>=2.1.0
 - PyAstronomy>=0.18.1
 - scipy>=1.11.2
-- statsmodels>=0.13.5
+- statsmodels>=0.14
 - tqdm>=4.64.1
 - numba>=0.59.0
 - seaborn>=0.12.2

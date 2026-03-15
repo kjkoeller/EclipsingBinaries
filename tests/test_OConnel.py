@@ -1,293 +1,199 @@
 # -*- coding: utf-8 -*-
 """
-Tests for color_light_curve.py
+Tests for OConnell.py
 
 """
 
 import pytest
 import numpy as np
-import os
-import tempfile
 
-from EclipsingBinaries.color_light_curve import (
-    occ2,
-    best_tol,
-    lin_interp,
-    mean_mag,
-)
+from EclipsingBinaries.OConnell import sig_f, dI_phi
 
 
 # ===========================================================================
-# lin_interp  (module-level lambda)
+# sig_f   lambda f, x, sig_x: abs(f(x + sig_x) - f(x - sig_x)) / 2
 # ===========================================================================
-class TestLinInterp:
-    def test_at_x1_returns_y1(self):
-        assert lin_interp(1.0, 1.0, 2.0, 10.0, 20.0) == pytest.approx(10.0)
-
-    def test_at_x2_returns_y2(self):
-        assert lin_interp(2.0, 1.0, 2.0, 10.0, 20.0) == pytest.approx(20.0)
-
-    def test_midpoint(self):
-        assert lin_interp(1.5, 1.0, 2.0, 10.0, 20.0) == pytest.approx(15.0)
-
-    def test_quarter_point(self):
-        assert lin_interp(1.25, 1.0, 2.0, 0.0, 4.0) == pytest.approx(1.0)
-
-    def test_extrapolation(self):
-        # Linear extrapolation beyond x2
-        assert lin_interp(3.0, 1.0, 2.0, 0.0, 1.0) == pytest.approx(2.0)
-
-    def test_flat_line(self):
-        assert lin_interp(1.7, 1.0, 2.0, 5.0, 5.0) == pytest.approx(5.0)
-
-    def test_negative_slope(self):
-        assert lin_interp(1.5, 1.0, 2.0, 10.0, 0.0) == pytest.approx(5.0)
-
-    def test_float_output(self):
-        result = lin_interp(1.5, 1.0, 2.0, 0.0, 1.0)
-        assert isinstance(result, float)
-
-
-# ===========================================================================
-# mean_mag  (module-level lambda)
-# ===========================================================================
-class TestMeanMag:
-    def test_single_value_roundtrip(self):
-        # mean_mag of a single magnitude should return that magnitude
-        mag = 14.5
-        assert mean_mag([mag]) == pytest.approx(mag, abs=1e-6)
-
-    def test_two_equal_values(self):
-        mag = 12.0
-        assert mean_mag([mag, mag]) == pytest.approx(mag, abs=1e-6)
-
-    def test_flux_weighted_average(self):
-        # mean_mag([m1, m2]) should equal -2.5*log10(mean(10^(-0.4*m1), 10^(-0.4*m2)))
-        mags = [13.0, 14.0]
-        expected = -2.5 * np.log10(np.mean(10 ** (-0.4 * np.array(mags))))
-        assert mean_mag(mags) == pytest.approx(expected, abs=1e-8)
-
-    def test_result_is_between_min_and_max(self):
-        mags = [12.0, 14.0, 16.0]
-        result = mean_mag(mags)
-        assert min(mags) <= result <= max(mags)
-
-    def test_brighter_weight_pulls_result_toward_brighter(self):
-        # mag 10 is much brighter than 15; flux-weighted mean should be closer to 10
-        result = mean_mag([10.0, 15.0])
-        assert result < 12.5  # simple arithmetic midpoint; flux mean should be lower (brighter)
-
-    def test_numpy_array_input(self):
-        mags = np.array([13.0, 14.0, 15.0])
-        result = mean_mag(mags)
-        assert np.isfinite(result)
-
-
-# ===========================================================================
-# occ2
-# ===========================================================================
-class TestOcc2:
+class TestSigF:
     """
-    occ2 finds, for each V observation, B observations within tol*period
-    that occurred before and after it.
+    sig_f propagates uncertainty through a function using a symmetric
+    finite-difference approximation: |f(x+dx) - f(x-dx)| / 2
     """
 
-    def _make_uniform(self, n=20, period=1.0, offset=0.0):
-        """Evenly spaced HJDs over one period."""
-        return list(np.linspace(2450000 + offset, 2450000 + period + offset, n, endpoint=False))
+    def test_linear_function_exact(self):
+        # f(x) = 3x  → sig_f = |3(x+dx) - 3(x-dx)| / 2 = 3*dx
+        f = lambda x: 3 * x
+        assert sig_f(f, 5.0, 0.1) == pytest.approx(3 * 0.1, abs=1e-10)
 
-    def test_returns_six_elements(self):
-        B = self._make_uniform(20)
-        V = self._make_uniform(20, offset=0.005)
-        result = occ2(B, V, period=1.0, tolerance=0.05)
-        assert len(result) == 6
+    def test_constant_function_zero(self):
+        # f(x) = 7  → no dependence on x → sig = 0
+        f = lambda x: 7.0
+        assert sig_f(f, 3.0, 0.5) == pytest.approx(0.0, abs=1e-10)
 
-    def test_bad_obs_is_integer(self):
-        B = self._make_uniform(20)
-        V = self._make_uniform(20, offset=0.005)
-        bad_obs = occ2(B, V, period=1.0, tolerance=0.05)[0]
-        assert isinstance(bad_obs, int)
+    def test_quadratic_near_zero(self):
+        # f(x) = x²  → sig_f ≈ 2*x*dx  (central diff is exact for quadratics)
+        f = lambda x: x ** 2
+        x, dx = 4.0, 0.01
+        expected = abs((x + dx) ** 2 - (x - dx) ** 2) / 2
+        assert sig_f(f, x, dx) == pytest.approx(expected, abs=1e-12)
 
-    def test_zero_bad_obs_when_well_sampled(self):
-        # Dense B sampling around every V point → no bad obs
-        period = 1.0
-        V = list(np.linspace(2450000, 2450001, 10, endpoint=False))
-        # Place B points just before and just after each V
-        B = []
-        tol = 0.02
-        for v in V:
-            B.append(v - tol * period * 0.5)
-            B.append(v + tol * period * 0.5)
-        bad_obs = occ2(B, V, period=period, tolerance=tol)[0]
-        assert bad_obs == 0
+    def test_always_nonnegative(self):
+        # abs() guarantees non-negative result for any function
+        f = lambda x: -10 * x
+        assert sig_f(f, 2.0, 0.5) >= 0
 
-    def test_all_bad_obs_when_no_overlap(self):
-        # B and V completely separated in time — nothing within tolerance
-        B = list(np.linspace(2450000, 2450001, 10))
-        V = list(np.linspace(2460000, 2460001, 10))  # far future
-        bad_obs = occ2(B, V, period=1.0, tolerance=0.01)[0]
-        assert bad_obs == len(V)
+    def test_scales_with_sig_x(self):
+        # Doubling sig_x should double the result for linear f
+        f = lambda x: 5 * x
+        result1 = sig_f(f, 3.0, 0.1)
+        result2 = sig_f(f, 3.0, 0.2)
+        assert result2 == pytest.approx(2 * result1, abs=1e-10)
 
-    def test_good_before_and_after_lengths_match_V(self):
-        B = self._make_uniform(20)
-        V = self._make_uniform(10, offset=0.005)
-        result = occ2(B, V, period=1.0, tolerance=0.05)
-        assert len(result[1]) == len(V)  # good_before
-        assert len(result[2]) == len(V)  # good_after
+    def test_zero_uncertainty_gives_zero(self):
+        f = lambda x: x ** 3
+        assert sig_f(f, 2.0, 0.0) == pytest.approx(0.0, abs=1e-10)
 
-    def test_index_before_and_after_are_valid_indices(self):
-        B = self._make_uniform(20)
-        V = self._make_uniform(10, offset=0.005)
-        result = occ2(B, V, period=1.0, tolerance=0.05)
-        index_before = result[3]
-        index_after = result[4]
-        for ib in index_before:
-            for idx in ib:
-                assert 0 <= idx < len(B)
-        for ia in index_after:
-            for idx in ia:
-                assert 0 <= idx < len(B)
-
-    def test_good_diff_all_positive(self):
-        B = self._make_uniform(20)
-        V = self._make_uniform(10, offset=0.005)
-        good_diff = occ2(B, V, period=1.0, tolerance=0.05)[5]
-        assert all(d >= 0 for d in good_diff)
-
-    def test_good_diff_within_tolerance(self):
-        period = 1.0
-        tolerance = 0.02
-        B = self._make_uniform(20, period=period)
-        V = self._make_uniform(10, period=period, offset=0.005)
-        good_diff = occ2(B, V, period=period, tolerance=tolerance)[5]
-        # Each diff is |ΔT|/period, so should be < tolerance
-        assert all(d < tolerance for d in good_diff)
-
-    def test_symmetry_before_after_separation(self):
-        # B point exactly before a V point and another exactly after
-        period = 1.0
-        tol = 0.05
-        V_hjd = [2450000.5]
-        delta = 0.02  # within tolerance
-        B_hjd = [2450000.5 - delta, 2450000.5 + delta]
-        result = occ2(B_hjd, V_hjd, period=period, tolerance=tol)
-        assert len(result[1][0]) == 1   # one before
-        assert len(result[2][0]) == 1   # one after
-
-    def test_tolerance_zero_gives_all_bad(self):
-        B = self._make_uniform(20)
-        V = self._make_uniform(10, offset=0.005)
-        # tolerance=0 means tol*period=0, nothing is strictly < 0
-        bad_obs = occ2(B, V, period=1.0, tolerance=0.0)[0]
-        assert bad_obs == len(V)
-
-    def test_large_tolerance_gives_zero_bad(self):
-        B = self._make_uniform(50)
-        V = self._make_uniform(10, offset=0.01)  # small offset; window of 0.5*period covers all
-        # tolerance=0.5 means window = 0.5*period, comfortably brackets every V point
-        bad_obs = occ2(B, V, period=1.0, tolerance=0.5)[0]
-        assert bad_obs == 0
-
-    def test_single_V_observation(self):
-        B = list(np.linspace(2450000, 2450001, 20))
-        V = [2450000.5]
-        result = occ2(B, V, period=1.0, tolerance=0.1)
-        assert len(result[1]) == 1
-        assert len(result[2]) == 1
-
-    def test_empty_good_diff_when_all_bad(self):
-        B = list(np.linspace(2450000, 2450001, 5))
-        V = list(np.linspace(2460000, 2460001, 5))
-        good_diff = occ2(B, V, period=1.0, tolerance=0.01)[5]
-        assert good_diff == []
-
-
-# ===========================================================================
-# best_tol
-# ===========================================================================
-class TestBestTol:
-    def _make_uniform(self, n, period=1.0, offset=0.0):
-        return list(np.linspace(2450000 + offset, 2450000 + period + offset, n, endpoint=False))
+    def test_polynomial_propagation(self):
+        # f(x) = x³; analytical deriv = 3x² so sig ≈ 3x²*dx (exact by central diff)
+        f = lambda x: x ** 3
+        x, dx = 2.0, 0.001
+        expected = abs(f(x + dx) - f(x - dx)) / 2
+        assert sig_f(f, x, dx) == pytest.approx(expected, abs=1e-12)
 
     def test_returns_float(self):
-        B = self._make_uniform(40)
-        V = self._make_uniform(20, offset=0.005)
-        result = best_tol(B, V, period=1.0)
+        result = sig_f(lambda x: x, 1.0, 0.1)
         assert isinstance(result, float)
 
-    def test_result_does_not_exceed_max_tol(self):
-        B = self._make_uniform(5)   # sparse B → needs high tolerance
-        V = self._make_uniform(20, offset=0.005)
-        max_t = 0.03
-        result = best_tol(B, V, period=1.0, max_tol=max_t)
-        # best_tol increments tol THEN checks > max_tol, so it can overshoot by dtol (0.001)
-        assert result <= max_t + 0.001 + 1e-9
+    def test_symmetric_around_x(self):
+        # sig_f should give the same result regardless of sign of x for even functions
+        f = lambda x: x ** 2
+        assert sig_f(f, 3.0, 0.1) == pytest.approx(sig_f(f, -3.0, 0.1), abs=1e-10)
 
-    def test_result_at_least_starting_tol(self):
-        B = self._make_uniform(40)
-        V = self._make_uniform(20, offset=0.005)
-        result = best_tol(B, V, period=1.0)
-        assert result >= 0.003  # starts at 0.003
-
-    def test_dense_sampling_stays_at_minimum(self):
-        # Very dense B relative to V → minimal tolerance needed
-        period = 1.0
-        V = self._make_uniform(10, period=period)
-        # Place B just before and after every V
-        B = []
-        for v in V:
-            B.append(v - 0.002)
-            B.append(v + 0.002)
-        result = best_tol(B, V, period=period, lower_lim=0.05, max_tol=0.03)
-        assert result <= 0.03
-
-    def test_sparse_sampling_hits_max_tol(self):
-        # B has only 2 points, V has 20 → tolerance will hit max_tol
-        # best_tol increments tol then breaks, so result is max_tol + dtol (0.001)
-        B = self._make_uniform(2)
-        V = self._make_uniform(20, offset=0.01)
-        max_t = 0.02
-        result = best_tol(B, V, period=1.0, max_tol=max_t)
-        assert result == pytest.approx(max_t + 0.001, abs=1e-6)
-
-    def test_bad_fraction_below_lower_lim_after_best_tol(self):
-        period = 1.0
-        B = self._make_uniform(40, period=period)
-        V = self._make_uniform(20, period=period, offset=0.005)
-        lower = 0.05
-        max_t = 0.03
-        tol = best_tol(B, V, period=period, lower_lim=lower, max_tol=max_t)
-        bad, *_ = occ2(B, V, period=period, tolerance=tol)
-        bad_fraction = bad / len(V)
-        # Either we achieved the lower limit, or we hit max_tol (with possible +dtol overshoot)
-        assert bad_fraction <= lower or tol <= max_t + 0.001 + 1e-9
-
-    def test_different_periods_scale_correctly(self):
-        # Using a different period should still return a value in [0.003, max_tol]
-        period = 0.5
-        B = self._make_uniform(30, period=period)
-        V = self._make_uniform(15, period=period, offset=0.003)
-        result = best_tol(B, V, period=period, max_tol=0.03)
-        assert 0.003 <= result <= 0.03
+    def test_sin_function(self):
+        # f(x) = sin(x); central diff ≈ cos(x)*dx
+        f = np.sin
+        x, dx = np.pi / 4, 0.001
+        expected = abs(np.sin(x + dx) - np.sin(x - dx)) / 2
+        assert sig_f(f, x, dx) == pytest.approx(expected, abs=1e-12)
 
 
 # ===========================================================================
-# Integration: lin_interp + mean_mag consistency
+# dI_phi  lambda b, phase, order:
+#         2 * sum(b[1:order+1] * sin(2π * phase * [1..order]))
 # ===========================================================================
-class TestIntegration:
-    def test_interpolated_mag_within_bounds(self):
-        # Interpolate between two magnitudes and verify mean_mag stays in range
-        m1, m2 = 13.5, 14.5
-        f1 = 10 ** (-0.4 * m1)
-        f2 = 10 ** (-0.4 * m2)
-        # Interpolate at midpoint in flux space
-        f_mid = lin_interp(0.5, 0.0, 1.0, f1, f2)
-        mag_mid = -2.5 * np.log10(f_mid)
-        assert m1 <= mag_mid <= m2  # dimmer number is larger in mag scale
+class TestDIPhi:
+    """
+    dI_phi computes the sine-component contribution to the O'Connell
+    flux difference at a given phase:
+        dI(φ) = 2 * Σ_{k=1}^{order} b_k * sin(2π k φ)
+    """
 
-    def test_mean_mag_of_interpolated_series(self):
-        # Generate a series of mags via lin_interp and check mean_mag is finite
-        mags = [lin_interp(t, 0.0, 1.0, 13.0, 15.0) for t in np.linspace(0, 1, 20)]
-        result = mean_mag(mags)
+    def test_zero_b_coefficients(self):
+        b = np.zeros(11)
+        assert dI_phi(b, 0.25, 10) == pytest.approx(0.0, abs=1e-10)
+
+    def test_zero_phase(self):
+        # sin(0) = 0 for all terms → result is 0 regardless of b
+        b = np.array([0.0, 1.0, 0.5, 0.25, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001])
+        assert dI_phi(b, 0.0, 10) == pytest.approx(0.0, abs=1e-10)
+
+    def test_half_phase(self):
+        # sin(2π*k*0.5) = sin(πk) = 0 for all integer k → result is 0
+        b = np.array([0.0, 1.0, 0.5, 0.25, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001])
+        assert dI_phi(b, 0.5, 10) == pytest.approx(0.0, abs=1e-10)
+
+    def test_single_term_order_1(self):
+        # b = [0, B1, 0, ...]; dI = 2 * B1 * sin(2π * 1 * φ)
+        b = np.zeros(11)
+        b[1] = 1.0
+        phase = 0.25
+        expected = 2 * 1.0 * np.sin(2 * np.pi * 1 * phase)
+        assert dI_phi(b, phase, 10) == pytest.approx(expected, abs=1e-10)
+
+    def test_single_term_order_2(self):
+        b = np.zeros(11)
+        b[2] = 0.5
+        phase = 0.1
+        expected = 2 * 0.5 * np.sin(2 * np.pi * 2 * phase)
+        assert dI_phi(b, phase, 10) == pytest.approx(expected, abs=1e-10)
+
+    def test_multiple_terms(self):
+        b = np.zeros(11)
+        b[1] = 1.0
+        b[2] = 0.5
+        b[3] = 0.25
+        phase = 0.3
+        expected = 2 * (
+            1.0 * np.sin(2 * np.pi * 1 * phase) +
+            0.5 * np.sin(2 * np.pi * 2 * phase) +
+            0.25 * np.sin(2 * np.pi * 3 * phase)
+        )
+        assert dI_phi(b, phase, 10) == pytest.approx(expected, abs=1e-10)
+
+    def test_order_zero_gives_zero(self):
+        # order=0 → sum over empty range → 0
+        b = np.zeros(11)
+        b[0] = 99.9  # b[0] (DC term) is not included
+        assert dI_phi(b, 0.25, 0) == pytest.approx(0.0, abs=1e-10)
+
+    def test_antisymmetry_at_quadrature(self):
+        # dI(0.25) = -dI(0.75) for pure sine series (odd symmetry around 0.5)
+        b = np.zeros(11)
+        b[1] = 0.3
+        b[3] = 0.1
+        val_025 = dI_phi(b, 0.25, 10)
+        val_075 = dI_phi(b, 0.75, 10)
+        assert val_025 == pytest.approx(-val_075, abs=1e-10)
+
+    def test_linearity_in_b(self):
+        # dI_phi(2*b) = 2 * dI_phi(b)
+        b = np.zeros(11)
+        b[1] = 0.4
+        b[2] = 0.2
+        phase = 0.15
+        result1 = dI_phi(b, phase, 10)
+        result2 = dI_phi(2 * b, phase, 10)
+        assert result2 == pytest.approx(2 * result1, abs=1e-10)
+
+    def test_order_truncation(self):
+        # Terms beyond `order` should be ignored
+        b = np.zeros(15)
+        b[1] = 1.0
+        b[11] = 999.0  # beyond order=10, should be ignored
+        phase = 0.2
+        expected = 2 * 1.0 * np.sin(2 * np.pi * phase)
+        assert dI_phi(b, phase, 10) == pytest.approx(expected, abs=1e-10)
+
+    def test_result_at_quadrature_only_odd_terms(self):
+        # At phase=0.25: sin(2π*k*0.25) = sin(πk/2)
+        # k=1: sin(π/2)=1; k=2: sin(π)=0; k=3: sin(3π/2)=-1; k=4: sin(2π)=0
+        b = np.zeros(5)
+        b[1] = 1.0
+        b[2] = 1.0
+        b[3] = 1.0
+        b[4] = 1.0
+        phase = 0.25
+        expected = 2 * (1.0 * 1 + 1.0 * 0 + 1.0 * (-1) + 1.0 * 0)
+        assert dI_phi(b, phase, 4) == pytest.approx(expected, abs=1e-10)
+
+    def test_b0_ignored(self):
+        # b[0] is the DC offset and should not appear in dI_phi
+        b1 = np.zeros(11)
+        b1[0] = 100.0
+        b2 = np.zeros(11)
+        b2[0] = 0.0
+        phase = 0.33
+        assert dI_phi(b1, phase, 10) == pytest.approx(dI_phi(b2, phase, 10), abs=1e-10)
+
+    def test_continuous_phase_variation(self):
+        # Verify output is continuous and finite across a range of phases
+        b = np.zeros(11)
+        b[1] = 0.2
+        b[3] = 0.1
+        phases = np.linspace(0, 1, 100)
+        results = [dI_phi(b, p, 10) for p in phases]
+        assert all(np.isfinite(r) for r in results)
+
+    def test_numpy_b_array(self):
+        b = np.array([0.0, 0.3, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001, 0.0005, 0.0002])
+        result = dI_phi(b, 0.25, 10)
         assert np.isfinite(result)
-        assert 13.0 <= result <= 15.0

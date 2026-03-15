@@ -3,7 +3,7 @@
 Created on Sat Feb 22 16:09:28 2020
 @author: Alec Neal
 
-Last Updated: 02/21/2026
+Last Updated: 03/14/2026
 Last Editor: Kyle Koeller
 
 Collection of functions, coefficients and equations commonly used
@@ -343,13 +343,12 @@ class calc:  # assortment of functions
                 float: Result of the polynomial at the given value.
             """
             if deriv:
-                # Derivative of the polynomial
-                return sum(
-                    np.array(coeflist[1:]) * np.arange(1, len(coeflist)) * value ** (np.arange(len(coeflist)) - 1))
+                # Derivative: d/dx sum(c_n * x^n) = sum(n * c_n * x^(n-1))  for n=1..N
+                return sum(np.array(coeflist[1:]) * np.arange(1, len(coeflist)) * float(value) ** np.arange(len(coeflist) - 1))
             else:
-                # Evaluate the polynomial
-                return sum(np.array(coeflist) * value ** np.arange(len(coeflist)))
-
+                # Evaluate: sum(c_n * x^n)  for n=0..N
+                return sum(np.array(coeflist) * float(value) ** np.arange(len(coeflist)))
+        
         def error(coeflist, value, error):
             """
             Calculates the propagated uncertainty of a polynomial.

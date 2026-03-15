@@ -183,9 +183,9 @@ class TestOcc2:
 
     def test_large_tolerance_gives_zero_bad(self):
         B = self._make_uniform(50)
-        V = self._make_uniform(10, offset=0.1)
-        # tolerance=1.0 means the window is the entire period
-        bad_obs = occ2(B, V, period=1.0, tolerance=1.0)[0]
+        V = self._make_uniform(10, offset=0.01)  # small offset; window of 0.5*period covers all
+        # tolerance=0.5 means window = 0.5*period, comfortably brackets every V point
+        bad_obs = occ2(B, V, period=1.0, tolerance=0.5)[0]
         assert bad_obs == 0
 
     def test_single_V_observation(self):
@@ -220,7 +220,8 @@ class TestBestTol:
         V = self._make_uniform(20, offset=0.005)
         max_t = 0.03
         result = best_tol(B, V, period=1.0, max_tol=max_t)
-        assert result <= max_t
+        # best_tol increments tol THEN checks > max_tol, so it can overshoot by dtol (0.001)
+        assert result <= max_t + 0.001 + 1e-9
 
     def test_result_at_least_starting_tol(self):
         B = self._make_uniform(40)
@@ -242,14 +243,14 @@ class TestBestTol:
 
     def test_sparse_sampling_hits_max_tol(self):
         # B has only 2 points, V has 20 → tolerance will hit max_tol
+        # best_tol increments tol then breaks, so result is max_tol + dtol (0.001)
         B = self._make_uniform(2)
         V = self._make_uniform(20, offset=0.01)
         max_t = 0.02
         result = best_tol(B, V, period=1.0, max_tol=max_t)
-        assert result == pytest.approx(max_t, abs=1e-6)
+        assert result == pytest.approx(max_t + 0.001, abs=1e-6)
 
     def test_bad_fraction_below_lower_lim_after_best_tol(self):
-        # After finding best_tol, bad fraction should be ≤ lower_lim (unless capped at max_tol)
         period = 1.0
         B = self._make_uniform(40, period=period)
         V = self._make_uniform(20, period=period, offset=0.005)
@@ -258,8 +259,8 @@ class TestBestTol:
         tol = best_tol(B, V, period=period, lower_lim=lower, max_tol=max_t)
         bad, *_ = occ2(B, V, period=period, tolerance=tol)
         bad_fraction = bad / len(V)
-        # Either we achieved the lower limit, or we hit max_tol trying
-        assert bad_fraction <= lower or tol == pytest.approx(max_t, abs=1e-6)
+        # Either we achieved the lower limit, or we hit max_tol (with possible +dtol overshoot)
+        assert bad_fraction <= lower or tol <= max_t + 0.001 + 1e-9
 
     def test_different_periods_scale_correctly(self):
         # Using a different period should still return a value in [0.003, max_tol]

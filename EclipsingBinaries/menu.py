@@ -4,18 +4,35 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 01/25/2026
+Last Updated: 03/13/2026
 """
-from tkinterdnd2 import TkinterDnD, DND_FILES
-import tkinter as tk
-from tkinter import ttk
-from pathlib import Path
-import sys
-import threading
-import queue
-import time
-import textwrap
+
+import json
 import platform
+import threading
+import traceback
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
+import tkinter as tk
+
+from importlib.metadata import version, PackageNotFoundError
+from tkinterdnd2 import TkinterDnD, DND_FILES
+from astropy.nddata import CCDData
+from astroquery.mast import Tesscut
+from matplotlib import pyplot as plt
+
+from .IRAF_Reduction import run_reduction
+from .tess_data_search import run_tess_search
+from .apass import comparison_selector
+from .multi_aperture_photometry import main as multi_ap
+from .gaia import target_star as gaia
+from .OConnell import main as oconnell
+from .color_light_curve import color_plot
+
+try:
+    __version__ = version("EclipsingBinaries")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 # tk.Buttons don't style on macOS
 if platform.system() == "Darwin":
@@ -25,136 +42,15 @@ else:
     Button = tk.Button
 
 
-def dynamic_import(progress_queue):
-    """
-    Dynamically imports the required modules while showing progress.
-    """
-    project_dir = Path(__file__).resolve().parent
-    if str(project_dir) not in sys.path:
-        sys.path.insert(0, str(project_dir))
-
-    packages = [
-        ("tkinter", "from tkinter import messagebox, filedialog, ttk"),
-        ("pathlib", "from pathlib import Path"),
-        ("astropy", "from astropy.nddata import CCDData"),
-        ("astroquery", "from astroquery.mast import Tesscut"),
-        ("matplotlib", "from matplotlib import pyplot as plt"),
-        ("json", "import json"),
-        ("os", "import os"),
-        ("traceback", "import traceback"),
-        ("custom scripts", textwrap.dedent("""
-            from .IRAF_Reduction import run_reduction
-            from .tess_data_search import run_tess_search
-            from .apass import comparison_selector
-            from .multi_aperture_photometry import main as multi_ap
-            from .gaia import target_star as gaia
-            from .OConnell import main as oconnell
-            from .color_light_curve import color_plot as color_plot
-            from .version import __version__
-        """)),
-        ("Finishing up...", "")
-    ]
-    total = len(packages)
-
-    try:
-        for i, (name, command) in enumerate(packages, start=1):
-            if command.strip():
-                exec(command, globals())
-            progress_queue.put((i, total, f"Loading {name}..."))
-            time.sleep(0.5)
-
-        progress_queue.put((total, total, "Finalizing"))
-
-    except Exception as e:
-        progress_queue.put((None, None, f"Error loading {name}: {e}"))
-        print(f"ERROR while importing {name}:\n{traceback.format_exc()}")
-
-    progress_queue.put(None)
-
-
-class SplashScreen(tk.Toplevel):
-    """
-    Splash Screen with progress bar and dynamic loading messages.
-    """
-    def __init__(self, root, progress_queue, on_close_callback):
-        super().__init__(root)
-        self.progress_queue = progress_queue
-        self.on_close_callback = on_close_callback
-        self.configure(bg="#003366")
-
-        # Center the splash screen
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-
-        splash_width = int(screen_width * 0.4)
-        splash_height = int(screen_height * 0.3)
-
-        x_position = (screen_width - splash_width) // 2
-        y_position = (screen_height - splash_height) // 2
-
-        self.geometry(f"{splash_width}x{splash_height}+{x_position}+{y_position}")
-        self.overrideredirect(True)  # Hide title bar
-
-        # Title Label
-        self.title_label = tk.Label(
-            self,
-            text="EclipsingBinaries",
-            font=("Helvetica", int(splash_height * 0.1), "bold"),
-            fg="white",
-            bg="#003366"
-        )
-        self.title_label.pack(pady=int(splash_height * 0.05))
-
-        # Dynamic Loading Label
-        self.message_label = tk.Label(
-            self,
-            text="Initializing...",
-            font=("Helvetica", int(splash_height * 0.05)),
-            fg="white",
-            bg="#003366"
-        )
-        self.message_label.pack(pady=int(splash_height * 0.05))
-
-        # Progress Bar with style
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("TProgressbar", thickness=20, troughcolor="#002244", background="#00bfff")
-        self.progress = ttk.Progressbar(
-            self, orient="horizontal", length=int(splash_width * 0.8), mode="determinate", style="TProgressbar"
-        )
-        self.progress.pack(pady=int(splash_height * 0.1))
-
-        # Start monitoring the queue
-        self.after(100, self.monitor_progress)
-
-    def monitor_progress(self):
-        """
-        Monitor the progress queue and update the splash screen.
-        """
-        try:
-            progress_data = self.progress_queue.get_nowait()
-            if progress_data is None:  # Should never receive a raw None due to safeguards
-                self.on_close_callback()
-                self.destroy()  # Close the splash screen when done
-                return
-
-            current, total, message = progress_data
-            if current is not None and total is not None:  # Ensure valid data for progress
-                self.progress["value"] = (current / total) * 100
-                self.message_label.config(text=message)
-
-            self.after(100, self.monitor_progress)  # Check again after 100 ms
-        except queue.Empty:
-            self.after(100, self.monitor_progress)  # If no data, keep checking
-
-
 # class ProgramLauncher(tk.Tk):
 class ProgramLauncher(TkinterDnD.Tk):
     """
     Main GUI that the user interacts with for each of the different options for analysis
     """
+
     def __init__(self):
         super().__init__()
+        self.update_idletasks()  # Force full tkinter init before any method calls
 
         # Initialize ttk.Style
         self.style = ttk.Style()
@@ -213,9 +109,78 @@ class ProgramLauncher(TkinterDnD.Tk):
         # Bind quit to autosave settings
         self.protocol("WM_DELETE_WINDOW", self.quit_program)
 
-    def create_input_field(
-            self, parent, label_text, placeholder_text, row, variable=None,
-            validation_func=None, error_message="", browse_type=None):
+    def _make_validator(self, entry, error_label, error_message, validation_func):
+        """Build and return the validate_input function for an entry field."""
+        def validate_input():
+            value = entry.get().strip()
+            is_placeholder = entry["fg"] == "gray"  # Check if it's still styled as a placeholder
+            if is_placeholder or not value:  # Input is empty
+                error_label.config(text=error_message or "This field is required.")
+                entry.config(bg="#ffe6e6")  # Highlight entry with a light red background
+            elif validation_func and not validation_func(value):  # Validation fails
+                error_label.config(text=error_message)
+                entry.config(bg="#ffe6e6")
+            else:  # Valid input
+                error_label.config(text="")
+                entry.config(bg="white")
+        return validate_input
+
+    def _make_placeholder_bindings(self, entry, placeholder_text, validate_input):
+        """Bind focus-in, focus-out, and placeholder behaviour to an entry field."""
+        def on_focus_in(event):
+            if entry.get() == placeholder_text and entry["fg"] == "gray":
+                entry.delete(0, "end")
+                entry.config(fg="black")
+
+        def on_focus_out(event):
+            if not entry.get().strip():  # If entry is empty
+                entry.insert(0, placeholder_text)
+                entry.config(fg="gray")
+            validate_input()  # Validate on focus out
+
+        entry.insert(0, placeholder_text)
+        entry.config(fg="gray")
+        entry.bind("<FocusIn>", on_focus_in)
+        entry.bind("<FocusOut>", on_focus_out)
+
+    def _make_browse_button(self, entry_frame, entry, browse_type, validate_input):
+        """Add a browse button inside the entry frame if browse_type is specified."""
+        if not browse_type:
+            return
+
+        def browse_action():
+            selected_path = None
+            if browse_type == "file":
+                selected_path = filedialog.askopenfilename(title="Select File")
+            elif browse_type == "folder":
+                selected_path = filedialog.askdirectory(title="Select Folder")
+            if selected_path:
+                entry.delete(0, "end")
+                entry.insert(0, selected_path)
+                entry.config(fg="black")
+                validate_input()  # Validate on file/folder selection
+
+        browse_button = Button(entry_frame, text="Browse", font=("Helvetica", 9), bg="#f0f0f0",
+                               width=8, command=browse_action)
+        browse_button.grid(row=0, column=1, padx=(5, 5), pady=2, sticky="e")  # Positioned to the right
+
+    def _make_drop_handler(self, entry, validate_input):
+        """Build and return the drag-and-drop handler for an entry field."""
+        def handle_drop(event):
+            dropped_path = event.data.strip()
+
+            # Remove curly braces if present (from tkinterdnd2 behavior)
+            if dropped_path.startswith("{") and dropped_path.endswith("}"):
+                dropped_path = dropped_path[1:-1]
+
+            entry.delete(0, "end")
+            entry.insert(0, dropped_path)
+            validate_input()
+
+        return handle_drop
+
+    def create_input_field(self, parent, label_text, placeholder_text, row, variable=None,
+                           validation_func=None, error_message="", browse_type=None):
         """
         Create a labeled input field with placeholder functionality, validation, and inline error message.
         Includes an optional browse button integrated into the entry field.
@@ -233,79 +198,19 @@ class ProgramLauncher(TkinterDnD.Tk):
         entry = tk.Entry(entry_frame, width=25, font=self.label_font, borderwidth=0)
         entry.grid(row=0, column=0, sticky="w", padx=(5, 0))  # Use grid for internal layout
 
-        # Add a browse button inside the entry frame (if required)
-        if browse_type:
-            def browse_action():
-                selected_path = None
-                if browse_type == "file":
-                    selected_path = filedialog.askopenfilename(title="Select File")
-                elif browse_type == "folder":
-                    selected_path = filedialog.askdirectory(title="Select Folder")
-                if selected_path:
-                    entry.delete(0, "end")
-                    entry.insert(0, selected_path)
-                    entry.config(fg="black")
-                    validate_input()  # Validate on file/folder selection
-
-            browse_button = Button(entry_frame, text="Browse", font=("Helvetica", 9), bg="#f0f0f0",
-                                      width=8, command=browse_action)
-            browse_button.grid(row=0, column=1, padx=(5, 5), pady=2, sticky="e")  # Positioned to the right
-
         # Error message label (initially empty)
-        error_label = tk.Label(
-            parent, text="", font=("Helvetica", 9), fg="red", bg="#ffffff"
-        )
+        error_label = tk.Label(parent, text="", font=("Helvetica", 9), fg="red", bg="#ffffff")
         error_label.grid(row=row, column=2, padx=(5, 10), sticky="w")  # Positioned to the right of the entry
 
-        # Placeholder functionality
-        def on_focus_in(event):
-            if entry.get() == placeholder_text and entry["fg"] == "gray":
-                entry.delete(0, "end")
-                entry.config(fg="black")
-
-        def on_focus_out(event):
-            if not entry.get().strip():  # If entry is empty
-                entry.insert(0, placeholder_text)
-                entry.config(fg="gray")
-            validate_input()  # Validate on focus out
-
-        # Validation function
-        def validate_input():
-            value = entry.get().strip()
-            is_placeholder = entry["fg"] == "gray"  # Check if it's still styled as a placeholder
-            if is_placeholder or not value:  # Input is empty
-                error_label.config(text=error_message or "This field is required.")
-                entry.config(bg="#ffe6e6")  # Highlight entry with a light red background
-            elif validation_func and not validation_func(value):  # Validation fails
-                error_label.config(text=error_message)
-                entry.config(bg="#ffe6e6")
-            else:  # Valid input
-                error_label.config(text="")
-                entry.config(bg="white")
-
-        # Bind events
-        entry.insert(0, placeholder_text)
-        entry.config(fg="gray")
-        entry.bind("<FocusIn>", on_focus_in)
-        entry.bind("<FocusOut>", on_focus_out)
+        # Build validation, placeholder, browse, and drag-and-drop behaviours
+        validate_input = self._make_validator(entry, error_label, error_message, validation_func)
+        self._make_placeholder_bindings(entry, placeholder_text, validate_input)
+        self._make_browse_button(entry_frame, entry, browse_type, validate_input)
+        self.enable_drag_and_drop(entry_frame, self._make_drop_handler(entry, validate_input))
 
         # Bind variable (if provided)
         if variable:
             entry.config(textvariable=variable)
-
-        # Drag-and-drop support
-        def handle_drop(event):
-            dropped_path = event.data.strip()
-
-            # Remove curly braces if present (from tkinterdnd2 behavior)
-            if dropped_path.startswith("{") and dropped_path.endswith("}"):
-                dropped_path = dropped_path[1:-1]
-
-            entry.delete(0, "end")
-            entry.insert(0, dropped_path)
-            validate_input()
-
-        self.enable_drag_and_drop(entry_frame, handle_drop)
 
         return entry
 
@@ -321,7 +226,6 @@ class ProgramLauncher(TkinterDnD.Tk):
 
     def remove_focus(self, event):
         """Remove focus from the currently focused widget unless it's an input widget."""
-        widget = self.focus_get()
         clicked_widget = self.winfo_containing(event.x_root, event.y_root)
 
         # Reset focus only if the clicked widget is not an input widget
@@ -470,13 +374,11 @@ class ProgramLauncher(TkinterDnD.Tk):
 
     def save_settings(self):
         """Save current theme settings to a config file."""
-        import json
         with open(self.config_file, "w") as file:
             json.dump(self.theme_settings, file)
 
     def load_settings(self):
         """Load theme settings from a config file."""
-        import json
         try:
             with open(self.config_file, "r") as file:
                 self.theme_settings = json.load(file)
@@ -486,12 +388,12 @@ class ProgramLauncher(TkinterDnD.Tk):
     def create_menu_button(self, text, command):
         """Create a menu button"""
         Button(self.left_frame, text=text, command=command,
-                  font=self.button_font,
-                  bg="#003366", fg="white",
-                  activebackground="#00509e", activeforeground="white",
-                  relief="flat", cursor="hand2",
-                  highlightbackground="#003366",  # Needed for macOS
-                  highlightthickness=1).pack(pady=5, padx=10, fill="x")
+               font=self.button_font,
+               bg="#003366", fg="white",
+               activebackground="#00509e", activeforeground="white",
+               relief="flat", cursor="hand2",
+               highlightbackground="#003366",  # Needed for macOS
+               highlightthickness=1).pack(pady=5, padx=10, fill="x")
 
     def open_help_window(self):
         """Open a separate Help window."""
@@ -578,19 +480,19 @@ class ProgramLauncher(TkinterDnD.Tk):
     def create_run_button(self, parent, action, row, **kwargs):
         """Create the 'Run' button dynamically with proper alignment"""
         Button(parent, text="Run", font=self.button_font,
-                  bg="#003366", fg="white",
-                  activebackground="#00509e", activeforeground="white",
-                  relief="flat", cursor="hand2",
-                  highlightbackground="#003366", highlightthickness=1,
-                  command=lambda: action(**kwargs)).grid(row=row, column=0, columnspan=2, pady=20)
+               bg="#003366", fg="white",
+               activebackground="#00509e", activeforeground="white",
+               relief="flat", cursor="hand2",
+               highlightbackground="#003366", highlightthickness=1,
+               command=lambda: action(**kwargs)).grid(row=row, column=0, columnspan=2, pady=20)
 
     def create_cancel_button(self, parent, action, row, **kwargs):
         Button(parent, text="Cancel", font=self.button_font,
-                  bg="#003366", fg="white",
-                  activebackground="#00509e", activeforeground="white",
-                  relief="flat", cursor="hand2",
-                  highlightbackground="#003366", highlightthickness=1,
-                  command=lambda: action(**kwargs)).grid(row=row, column=1, columnspan=2, pady=20)
+               bg="#003366", fg="white",
+               activebackground="#00509e", activeforeground="white",
+               relief="flat", cursor="hand2",
+               highlightbackground="#003366", highlightthickness=1,
+               command=lambda: action(**kwargs)).grid(row=row, column=1, columnspan=2, pady=20)
 
     def run_task(self, target, *args):
         """Run a task in a separate thread with cancellation support."""
@@ -613,20 +515,20 @@ class ProgramLauncher(TkinterDnD.Tk):
 
         # Input fields with placeholders
         raw_images_path = self.create_input_field(self.right_frame, "Raw Images Path:",
-                                                  "C:\\folder1\\raw_images", row=1,
-                                                  validation_func=lambda x: len(x.strip()) > 0, # Empty string
+                                                  r"C:\folder1\raw_images", row=1,
+                                                  validation_func=lambda x: len(x.strip()) > 0,
                                                   error_message="File path cannot be empty.",
                                                   browse_type="folder")
 
         calibrated_images_path = self.create_input_field(self.right_frame, "Calibrated Images Path:",
-                                                         "C:\\folder1\\calibrated_images", row=2,
-                                                         validation_func=lambda x: len(x.strip()) > 0, # Empty string
+                                                         r"C:\folder1\calibrated_images", row=2,
+                                                         validation_func=lambda x: len(x.strip()) > 0,
                                                          error_message="File path cannot be empty.",
                                                          browse_type="folder")
 
         location = self.create_input_field(self.right_frame, "Location:",
                                            "e.g., BSUO, CTIO, etc.", row=3,
-                                           validation_func=lambda x: isinstance(x, str) and x.isalpha(), # String
+                                           validation_func=lambda x: isinstance(x, str) and x.isalpha(),
                                            error_message="Value must be a string.")
 
         # Checkbox for dark frames
@@ -636,17 +538,17 @@ class ProgramLauncher(TkinterDnD.Tk):
         # Overscan and Trim region inputs
         overscan = self.create_input_field(self.right_frame, "Overscan Region:",
                                            "[2073:2115, :]", row=5,
-                                           validation_func=lambda x: len(x.strip()) > 0, # Empty
+                                           validation_func=lambda x: len(x.strip()) > 0,
                                            error_message="Please enter at least [:,:].")
 
         trim = self.create_input_field(self.right_frame, "Trim Region:",
                                        "[20:2060, 12:2057]", row=6,
-                                       validation_func=lambda x: len(x.strip()) > 0, # Empty
+                                       validation_func=lambda x: len(x.strip()) > 0,
                                        error_message="Please enter at least [:,:].")
 
         # Button to open and plot bias image
         Button(self.right_frame, text="Open Bias Image", font=self.button_font, bg="#003366", fg="white",
-                  command=self.open_bias_image).grid(row=7, column=0, columnspan=2, pady=10, sticky="")
+               command=self.open_bias_image).grid(row=7, column=0, columnspan=2, pady=10, sticky="")
 
         # Run button
         self.create_run_button(self.right_frame, self.run_iraf_reduction, row=8,
@@ -655,8 +557,7 @@ class ProgramLauncher(TkinterDnD.Tk):
                                location=location,
                                dark_bool_var=dark_bool_var,
                                overscan_var=overscan,
-                               trim_var=trim
-                               )
+                               trim_var=trim)
 
         # Log display area
         tk.Label(self.right_frame, text="Output Log:", font=self.label_font, bg="#ffffff").grid(
@@ -711,12 +612,12 @@ class ProgramLauncher(TkinterDnD.Tk):
         # Input fields
         system_name = self.create_input_field(self.right_frame, "System Name:",
                                               "NSVS 896797", row=1,
-                                              validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                              validation_func=lambda x: len(x.strip()) > 0,
                                               error_message="Please enter a system name.")
 
         download_path = self.create_input_field(self.right_frame, "Download Path:",
-                                                "C:\\folder1\\download", row=2,
-                                                validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                                r"C:\folder1\download", row=2,
+                                                validation_func=lambda x: len(x.strip()) > 0,
                                                 error_message="Please enter a file pathway.",
                                                 browse_type="folder")
 
@@ -780,20 +681,23 @@ class ProgramLauncher(TkinterDnD.Tk):
         if download_all_var.get():  # Checkbox is selected (True)
             # Add "Select Specific Sector" label
             if not self.sector_label:
-                self.sector_label = tk.Label(self.right_frame, text="Select Specific Sector:", font=self.label_font,
-                                             bg="#ffffff")
+                self.sector_label = tk.Label(self.right_frame, text="Select Specific Sector:",
+                                             font=self.label_font, bg="#ffffff")
                 self.sector_label.grid(row=5, column=0, sticky="e")
 
             # Add sector dropdown
             if not self.sector_dropdown:
-                self.sector_dropdown = ttk.Combobox(self.right_frame, state="readonly", values=[], font=self.label_font)
+                self.sector_dropdown = ttk.Combobox(self.right_frame, state="readonly",
+                                                    values=[], font=self.label_font)
                 self.sector_dropdown.grid(row=5, column=1, padx=10, pady=5, sticky="w")
 
             # Add "Retrieve Sectors" button
             if not self.retrieve_button:
                 self.retrieve_button = Button(
-                    self.right_frame, text="Retrieve Sectors", font=self.button_font, bg="#003366", fg="white",
-                    command=lambda: self.retrieve_sectors(system_name=system_name, sector_dropdown=self.sector_dropdown)
+                    self.right_frame, text="Retrieve Sectors", font=self.button_font,
+                    bg="#003366", fg="white",
+                    command=lambda: self.retrieve_sectors(
+                        system_name=system_name, sector_dropdown=self.sector_dropdown)
                 )
                 self.retrieve_button.grid(row=4, column=0, columnspan=2, pady=10)
         else:  # Checkbox is unselected (False)
@@ -828,34 +732,34 @@ class ProgramLauncher(TkinterDnD.Tk):
         # Input fields
         ra = self.create_input_field(self.right_frame, "Right Ascension (RA):",
                                      "HH:MM:SS.SSSS", row=1,
-                                     validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                     validation_func=lambda x: len(x.strip()) > 0,
                                      error_message="Please enter a RA.")
 
         dec = self.create_input_field(self.right_frame, "Declination (DEC):",
                                       "DD:MM:SS.SSSS or -DD:MM:SS.SSSS", row=2,
-                                      validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                      validation_func=lambda x: len(x.strip()) > 0,
                                       error_message="Please enter a DEC.")
 
         folder_path = self.create_input_field(self.right_frame, "Data Save Folder Path:",
-                                              "C:\\folder1\\download", row=3,
-                                              validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                              r"C:\folder1\download", row=3,
+                                              validation_func=lambda x: len(x.strip()) > 0,
                                               error_message="Please enter a file pathway.",
                                               browse_type="folder")
 
         obj_name = self.create_input_field(self.right_frame, "Object Name:",
                                            "NSVS 896797", row=4,
-                                           validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                           validation_func=lambda x: len(x.strip()) > 0,
                                            error_message="Please enter the object name.")
 
         science_image = self.create_input_field(self.right_frame, "Science Image Folder Path:",
-                                                "C:\\folder1\\calibrated_images", row=5,
-                                                validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                                r"C:\folder1\calibrated_images", row=5,
+                                                validation_func=lambda x: len(x.strip()) > 0,
                                                 error_message="Please enter a file pathway.",
                                                 browse_type="folder")
 
         # Buttons for comparison selector
         Button(self.right_frame, text="Run Comparison Selector", font=self.button_font, bg="#003366", fg="white",
-                  command=lambda: self.run_comparison_selector(ra, dec, folder_path, obj_name, science_image)).grid(
+               command=lambda: self.run_comparison_selector(ra, dec, folder_path, obj_name, science_image)).grid(
             row=6, column=0, columnspan=2, pady=10, sticky=""
         )
 
@@ -883,30 +787,30 @@ class ProgramLauncher(TkinterDnD.Tk):
         # Input fields
         obj_name = self.create_input_field(self.right_frame, "Object Name:",
                                            "NSVS 896797", row=1,
-                                           validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                           validation_func=lambda x: len(x.strip()) > 0,
                                            error_message="Please enter an object name.")
 
         reduced_images_path = self.create_input_field(self.right_frame, "Reduced Images Path:",
-                                                      "C:\\folder1\\reduced_images", row=2,
-                                                      validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                                      r"C:\folder1\reduced_images", row=2,
+                                                      validation_func=lambda x: len(x.strip()) > 0,
                                                       error_message="Please enter a file pathway.",
                                                       browse_type="folder")
 
         radec_b_file = self.create_input_field(self.right_frame, "RADEC File (B Filter):",
-                                               "C:\\folder1\\B.radec", row=3,
-                                               validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                               r"C:\folder1\B.radec", row=3,
+                                               validation_func=lambda x: len(x.strip()) > 0,
                                                error_message="Please enter a file pathway with file name",
                                                browse_type="folder")
 
         radec_v_file = self.create_input_field(self.right_frame, "RADEC File (V Filter):",
-                                               "C:\\folder1\\V.radec", row=4,
-                                               validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                               r"C:\folder1\V.radec", row=4,
+                                               validation_func=lambda x: len(x.strip()) > 0,
                                                error_message="Please enter a file pathway with file name.",
                                                browse_type="folder")
 
         radec_r_file = self.create_input_field(self.right_frame, "RADEC File (R Filter):",
-                                               "C:\\folder1\\R.radec", row=5,
-                                               validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                               r"C:\folder1\R.radec", row=5,
+                                               validation_func=lambda x: len(x.strip()) > 0,
                                                error_message="Please enter a file pathway with file name.",
                                                browse_type="folder")
 
@@ -942,25 +846,23 @@ class ProgramLauncher(TkinterDnD.Tk):
         # Input fields
         ra = self.create_input_field(self.right_frame, "Right Ascension (RA):",
                                      "HH:MM:SS.SSSS", row=1,
-                                     validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                     validation_func=lambda x: len(x.strip()) > 0,
                                      error_message="Please enter a RA.")
 
         dec = self.create_input_field(self.right_frame, "Declination (DEC):",
                                       "DD:MM:SS.SSSS or -DD:MM:SS.SSSS", row=2,
-                                      validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                      validation_func=lambda x: len(x.strip()) > 0,
                                       error_message="Please enter a DEC.")
 
         output_file = self.create_input_field(self.right_frame, "Output File Path:",
-                                              "C:\\folder1\\Gaia_[star name].txt", row=3,
-                                              validation_func=lambda x: len(x.strip()) > 0,  # Empty
+                                              r"C:\folder1\Gaia_[star name].txt", row=3,
+                                              validation_func=lambda x: len(x.strip()) > 0,
                                               error_message="Please enter a file pathway.",
                                               browse_type="folder")
 
         # Run button
         self.create_run_button(self.right_frame, self.run_gaia_query, row=4,
-                               ra=ra,
-                               dec=dec,
-                               output_file=output_file)
+                               ra=ra, dec=dec, output_file=output_file)
 
         # Log display area
         tk.Label(self.right_frame, text="Output Log:", font=self.label_font, bg="#ffffff").grid(
@@ -1105,10 +1007,7 @@ class ProgramLauncher(TkinterDnD.Tk):
             command=lambda: self.run_oconnell_effect(
                 filter_count_var.get(),
                 [var.get() for var in file_path_vars[:filter_count_var.get()]],  # Get actual file paths
-                hjd_var,
-                period_var,
-                obj_name_var,
-                output_var
+                hjd_var, period_var, obj_name_var, output_var
             )
         ).grid(row=10, column=0, columnspan=2, pady=20)
 
@@ -1125,14 +1024,14 @@ class ProgramLauncher(TkinterDnD.Tk):
             row=0, column=0, columnspan=2, pady=10, sticky="ew"
         )
 
-        Bfile = self.create_input_field(self.right_frame, "B-band File:",
-                                        "C:\\folder\\b_band.txt", row=1,
+        bfile = self.create_input_field(self.right_frame, "B-band File:",
+                                        r"C:\folder\b_band.txt", row=1,
                                         validation_func=lambda x: len(x.strip()) > 0,
                                         error_message="Please select a valid B-band file.",
                                         browse_type="file")
 
-        Vfile = self.create_input_field(self.right_frame, "V-band File:",
-                                        "C:\\folder\\v_band.txt", row=2,
+        vfile = self.create_input_field(self.right_frame, "V-band File:",
+                                        r"C:\folder\v_band.txt", row=2,
                                         validation_func=lambda x: len(x.strip()) > 0,
                                         error_message="Please select a valid V-band file.",
                                         browse_type="file")
@@ -1153,18 +1052,15 @@ class ProgramLauncher(TkinterDnD.Tk):
                                           error_message="Output must be a PNG file.")
 
         self.create_run_button(self.right_frame, self.run_color_light_curve, row=6,
-                               Bfile=Bfile,
-                               Vfile=Vfile,
-                               period=period,
-                               hjd=hjd,
-                               outname=outname)
+                               bfile=bfile, vfile=vfile, period=period, hjd=hjd, outname=outname)
 
         tk.Label(self.right_frame, text="Output Log:", font=self.label_font, bg="#ffffff").grid(
             row=7, column=0, columnspan=2, pady=5
         )
         self.create_scrollbar_and_log(8)
 
-    def run_iraf_reduction(self, raw_images_path, calibrated_images_path, location, dark_bool_var, overscan_var, trim_var):
+    def run_iraf_reduction(self, raw_images_path, calibrated_images_path, location,
+                           dark_bool_var, overscan_var, trim_var):
         """Run the IRAF reduction process in a separate thread"""
 
         def reduction_task():
@@ -1198,18 +1094,13 @@ class ProgramLauncher(TkinterDnD.Tk):
 
                 # Call the IRAF Reduction script
                 run_reduction(
-                    path=raw_path,
-                    calibrated=calibrated_path,
-                    location=loc,
-                    cancel_event=self.cancel_event,  # Pass cancel_event
-                    dark_bool=use_dark_frames,
-                    overscan_region=overscan_region,
-                    trim_region=trim_region,
+                    path=raw_path, calibrated=calibrated_path, location=loc,
+                    cancel_event=self.cancel_event, dark_bool=use_dark_frames,
+                    overscan_region=overscan_region, trim_region=trim_region,
                     write_callback=self.write_to_log
                 )
 
                 if not self.cancel_event.is_set():
-                    # self.write_to_log("IRAF Reduction completed successfully!")
                     messagebox.showinfo("Success", "IRAF Reduction completed successfully!")
                 else:
                     messagebox.showinfo("Cancelled", "IRAF Reduction was cancelled.")
@@ -1217,7 +1108,6 @@ class ProgramLauncher(TkinterDnD.Tk):
             except Exception as e:
                 self.write_to_log(f"An error occurred during IRAF Reduction: {type(e).__name__}: {e}")
                 self.write_to_log(traceback.format_exc())
-                # messagebox.showerror("Error", f"An error occurred during IRAF Reduction: {e}")
 
         # Run the reduction in a separate thread
         self.run_task(reduction_task)
@@ -1258,12 +1148,9 @@ class ProgramLauncher(TkinterDnD.Tk):
 
                 # Run TESS search
                 run_tess_search(
-                    system_name=system_name_value,
-                    download_all=download_all,
-                    specific_sector=specific_sector_value,
-                    download_path=download_path_value,
-                    write_callback=self.write_to_log,
-                    cancel_event=self.cancel_event  # Pass cancel_event
+                    system_name=system_name_value, download_all=download_all,
+                    specific_sector=specific_sector_value, download_path=download_path_value,
+                    write_callback=self.write_to_log, cancel_event=self.cancel_event
                 )
 
                 if not self.cancel_event.is_set():
@@ -1296,27 +1183,24 @@ class ProgramLauncher(TkinterDnD.Tk):
                     return
 
                 self.write_to_log(f"Running comparison selector for object: {obj_value}")
-                comparison_selector(ra=ra_value,
-                                    dec=dec_value,
-                                    pipeline=False,
-                                    folder_path=folder_value,
-                                    obj_name=obj_value,
+                comparison_selector(ra=ra_value, dec=dec_value, pipeline=False,
+                                    folder_path=folder_value, obj_name=obj_value,
                                     science_image=science_image_value,
-                                    write_callback=self.write_to_log,
-                                    cancel_event=self.cancel_event  # Pass cancel_event
-                                    )
+                                    write_callback=self.write_to_log, cancel_event=self.cancel_event)
 
                 if not self.cancel_event.is_set():
                     self.write_to_log("Comparison Selector completed successfully.")
                 else:
                     self.write_to_log("Comparison Selector was canceled.")
             except Exception as e:
-                self.write_to_log(f"An error occurred during comparison star selection: {type(e).__name__}: {e}")
+                self.write_to_log(
+                    f"An error occurred during comparison star selection: {type(e).__name__}: {e}")
                 self.write_to_log(traceback.format_exc())
 
         self.run_task(selector_task)
 
-    def run_multi_aperture_photometry(self, obj_name, reduced_images_path, radec_b_file, radec_v_file, radec_r_file):
+    def run_multi_aperture_photometry(self, obj_name, reduced_images_path,
+                                      radec_b_file, radec_v_file, radec_r_file):
         """Run the Multi-Aperture Photometry script in a separate thread."""
 
         def photometry_task():
@@ -1346,12 +1230,10 @@ class ProgramLauncher(TkinterDnD.Tk):
 
                 # Run the multi-aperture photometry script
                 multi_ap(
-                    path=reduced_path_value,
-                    pipeline=False,
+                    path=reduced_path_value, pipeline=False,
                     radec_list=[radec_b_path, radec_v_path, radec_r_path],
                     obj_name=obj_name_value,
-                    write_callback=self.write_to_log,
-                    cancel_event=self.cancel_event  # Pass cancel_event
+                    write_callback=self.write_to_log, cancel_event=self.cancel_event
                 )
 
                 if not self.cancel_event.is_set():
@@ -1359,7 +1241,8 @@ class ProgramLauncher(TkinterDnD.Tk):
                 else:
                     self.write_to_log("Multi-Aperture Photometry was canceled.")
             except Exception as e:
-                self.write_to_log(f"An error occurred during Multi-Aperture Photometry: {type(e).__name__}: {e}")
+                self.write_to_log(
+                    f"An error occurred during Multi-Aperture Photometry: {type(e).__name__}: {e}")
                 self.write_to_log(traceback.format_exc())
 
         # Run the photometry task in a separate thread
@@ -1381,43 +1264,38 @@ class ProgramLauncher(TkinterDnD.Tk):
                     return
 
                 self.write_to_log(f"Running Gaia Query for RA: {ra_value}, DEC: {dec_value}")
-
                 gaia(
-                    ra_input=ra_value,
-                    dec_input=dec_value,
-                    output_path=output_path,
-                    write_callback=self.write_to_log,
-                    cancel_event=self.cancel_event  # Pass cancel_event
-
+                    ra_input=ra_value, dec_input=dec_value, output_path=output_path,
+                    write_callback=self.write_to_log, cancel_event=self.cancel_event
                 )
 
             except Exception as e:
-                self.write_to_log(f"An error occurred during Multi-Aperture Photometry: {type(e).__name__}: {e}")
+                self.write_to_log(f"An error occurred during Gaia Query: {type(e).__name__}: {e}")
                 self.write_to_log(traceback.format_exc())
 
         self.run_task(gaia_query)
 
-    def run_color_light_curve(self, Bfile, Vfile, period, hjd, outname):
+    def run_color_light_curve(self, bfile, vfile, period, hjd, outname):
         """Run the color light curve plotting task in a separate thread."""
 
         def task():
             try:
                 self.create_cancel_button(self.right_frame, self.cancel_task, row=6)
 
-                B = Bfile.get().strip()
-                V = Vfile.get().strip()
+                b = bfile.get().strip()
+                v = vfile.get().strip()
                 per = float(period.get().strip())
                 epoch = float(hjd.get().strip())
                 out = outname.get().strip()
 
                 self.write_to_log("Starting color light curve processing...")
-                self.write_to_log(f"B-band file: {B}")
-                self.write_to_log(f"V-band file: {V}")
+                self.write_to_log(f"B-band file: {b}")
+                self.write_to_log(f"V-band file: {v}")
                 self.write_to_log(f"Period: {per}")
                 self.write_to_log(f"HJD Epoch: {epoch}")
                 self.write_to_log(f"Output: {out}")
 
-                color_plot(Bfile=B, Vfile=V, Epoch=epoch, period=per, outName=out, save=True,
+                color_plot(Bfile=b, Vfile=v, Epoch=epoch, period=per, outName=out, save=True,
                            write_callback=self.write_to_log, cancel_event=self.cancel_event)
 
                 if not self.cancel_event.is_set():
@@ -1476,6 +1354,7 @@ class ProgramLauncher(TkinterDnD.Tk):
                 if not obj_name_value:
                     self.write_to_log("Error: System Name is required.")
                     messagebox.showerror("Input Error", "Please enter the name of the system.")
+                    return
                 if not output_file_value:
                     self.write_to_log("Error: Output file path is required.")
                     messagebox.showerror("Input Error", "Please provide an output file path.")
@@ -1490,15 +1369,11 @@ class ProgramLauncher(TkinterDnD.Tk):
                 self.write_to_log(f"Output File: {output_file_value}")
 
                 # Run the O'Connell Effect calculation
-                # from oconnell_effect import main as oconnell_main
                 oconnell(
-                    filepath=output_file_value,
-                    filter_files=list(file_paths),
-                    obj_name="OConnell_Output",
-                    period=float(period_value),
-                    hjd=float(hjd_value),
-                    write_callback=self.write_to_log,
-                    cancel_event=self.cancel_event  # Pass cancel_event
+                    filepath=output_file_value, filter_files=list(file_paths),
+                    obj_name="OConnell_Output", period=float(period_value),
+                    hjd=float(hjd_value), write_callback=self.write_to_log,
+                    cancel_event=self.cancel_event
                 )
 
                 # Notify success
@@ -1507,7 +1382,8 @@ class ProgramLauncher(TkinterDnD.Tk):
 
             except Exception as e:
                 # Log and notify errors
-                self.write_to_log(f"An error occurred during O'Connell Effect calculation: {type(e).__name__}: {e}")
+                self.write_to_log(
+                    f"An error occurred during O'Connell Effect calculation: {type(e).__name__}: {e}")
                 self.write_to_log(traceback.format_exc())
 
         # Run the task in a separate thread
@@ -1523,42 +1399,10 @@ class ProgramLauncher(TkinterDnD.Tk):
             self.destroy()
 
 
-def launch_main_gui():
-    """
-    Launch the main GUI after the splash screen.
-    """
+def main():
     app = ProgramLauncher()
     app.mainloop()
 
 
-def main():
-    root = tk.Tk()
-    root.withdraw()
-
-    progress_queue = queue.Queue()
-    import_done = threading.Event()  # <-- Add this
-
-    def start_main_gui():
-        root.quit()
-
-    SplashScreen(root, progress_queue, on_close_callback=start_main_gui)
-
-    def import_wrapper():
-        dynamic_import(progress_queue)
-        import_done.set()  # <-- Signal that import is done
-
-    threading.Thread(target=import_wrapper, daemon=True).start()
-
-    root.mainloop()
-    root.destroy()
-
-    import_done.wait()  # <-- Wait for imports to complete before launching GUI
-    launch_main_gui()
-
-
-
 if __name__ == "__main__":
     main()
-
-
-

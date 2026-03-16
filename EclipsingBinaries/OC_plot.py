@@ -1,7 +1,7 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 12/16/2024
+Last Edited: 03/16/2026
 
 This calculates O-C values and produces an O-C plot.
 """
@@ -14,108 +14,72 @@ from numpy.polynomial import Polynomial
 import statsmodels.formula.api as smf
 import seaborn as sns
 from numba import jit
-import time
+from pathlib import Path
 
 
-def main(period=None, loop=0, num=None, nights=None):
-    if loop == 0:
-        print("\n\nThe format of these input files should be the of the raw form given from Dr. Robert Berrginton's"
-              " 'find_minimum' C program. Please check the GitHub for an example of this.")
-        print("Run TESS data by itself through the TESS option and filtered SARA/BSUO data through the BSU option.\n"
-              "DO NOT combine them in any way unless you have already run them through to get the (O-C) values and"
-              "are about to run the 'All Data' option.")
-        print("Enter the corresponding number to what you would like to do.\n")
-        try:
-            num = int(input("Would you like to use BSUO data(1), TESS data(2), All Data(3), or Close Program(4): "))
-        except ValueError:
-            print("Please enter either 1, 2, 3, or 4.\n")
-
-    while True:
-        if num == 1:
-            first_time = input("Do you already have an Epoch value 'Yes', 'No', or 'Close' to close the program: ")
-            if first_time.lower() == "no":
-                T0 = 0
-                To_err = 0
-                period = float(input("Please enter the period for your system: "))
-            elif first_time.lower() == "yes":
-                T0, To_err, period = arguments()
-                print("Example file pathway: C:\\folder1\\folder2\\[file name]")
-            else:
-                exit()
-            while True:
-                inB = input("Please enter your times of minimum file pathway for the Johnson B filter: ")
-                inV = input("Please enter your times of minimum file pathway for the Johnson V filter: ")
-                inR = input("Please enter your times of minimum file pathway for the Cousins R filter: ")
-                try:
-                    db = pd.read_csv(inB, header=None, delim_whitespace=True)
-                    dv = pd.read_csv(inV, header=None, delim_whitespace=True)
-                    dr = pd.read_csv(inR, header=None, delim_whitespace=True)
-                    break
-                except FileNotFoundError:
-                    print("You have entered in an incorrect file or file pathway. Please try again.\n")
-            _ = BSUO(T0, To_err, period, db, dv, dr)
-        elif num == 2:
-            first_time = input("Do you already have an Epoch value 'Yes' or 'No': ")
-            if first_time.lower() == "no":
-                T0 = 0
-                To_err = 0
-                period = float(input("Please enter the period for your system: "))
-            else:
-                T0, To_err, period = arguments()
-                print("Example file pathway: C:\\folder1\\folder2\\[file name]")
-            while True:
-                infile = input("Please enter your times of minimum file pathway: ")
-                try:
-                    df = pd.read_csv(infile, header=None, delim_whitespace=True)
-                    break
-                except FileNotFoundError:
-                    print("You have entered in an incorrect file or file pathway. Please try again.\n")
-            _ = TESS_OC(T0, To_err, period, df)
-        elif num == 3:
-            while True:
-                try:
-                    nights = int(input("How many files will you be using(i.e. if you have BSUO/SARA and TESS data "
-                                       "then you have 2 files): "))
-                    break
-                except ValueError:
-                    print("Please enter a valid whole number.\n")
-            period = float(input("Please enter the period of your system: "))
-            all_data(nights, period, loop)
-        elif num == 4:
-            exit()
+def main(period=None, loop=0, num=None, nights=None, write_callback=None, cancel_event=None):
+    """
+    Entry point kept for backwards compatibility.
+    In GUI mode this is not called directly — use BSUO_gui, TESS_OC_gui, or all_data_gui instead.
+    """
+    def log(message):
+        if write_callback:
+            write_callback(message)
         else:
-            print("Please enter either 1, 2, 3, or 4.\n")
+            print(message)
+
+    log("OC_plot.main() called directly. Use the GUI panel for interactive use.")
 
 
-def TESS_OC(T0, To_err, period, df):
+def TESS_OC(T0, To_err, period, df, output_path, write_callback=None, cancel_event=None):
     """
-    This function takes ToM data pre-gathered from TESS data and finds corresponding O-C values.
+    Takes ToM data pre-gathered from TESS data and finds corresponding O-C values.
 
-    :return: output file that will be used to plot the O-C data
+    Parameters
+    ----------
+    T0 : float
+        Initial epoch. If 0, the first ToM is used.
+    To_err : float
+        Error on T0.
+    period : float
+        Orbital period of the system.
+    df : pd.DataFrame
+        DataFrame with ToM data (column 0 = ToM, column 2 = error).
+    output_path : str
+        Full path for the output .txt file.
+    write_callback : callable, optional
+        Function to log messages.
+    cancel_event : threading.Event, optional
+        Event to check for cancellation.
+
+    Returns
+    -------
+    str
+        Path to the saved output file.
     """
-    # strict Kwee van Woerden method ToM
+    def log(message):
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
+
     min_strict = list(df[0])
     min_strict_err = list(df[2])
 
-    # modified Kwee van Woerdan method ToM for potential use later
-    # min_mod = list(df[3])
-    # min_mod_err = list(df[4])
-
-    # create the lists that will be used
     E_est = []
     O_C = []
     O_C_err = []
 
-    # this for loop, loops through the min_strict list and calculates a variety of values
     for count, val in enumerate(min_strict):
-        # call the function to calculate the O-C values
-        e, OC, OC_err, T0, To_err = calculate_oc(val, min_strict_err[count], T0, To_err, period)
+        if cancel_event and cancel_event.is_set():
+            log("Task canceled during TESS O-C calculation.")
+            return None
 
+        e, OC, OC_err, T0, To_err = calculate_oc(val, min_strict_err[count], T0, To_err, period)
         E_est.append(e)
         O_C.append(OC)
         O_C_err.append(OC_err)
 
-    # create a dataframe for all outputs to be places in for easy output
     dp = pd.DataFrame({
         "Minimums": min_strict,
         "Epoch": E_est,
@@ -123,23 +87,48 @@ def TESS_OC(T0, To_err, period, df):
         "O-C_Error": O_C_err
     })
 
-    # output file name to place the above dataframe into for saving
-    outfile = input("Please enter the output file pathway and file name with extension for the ToM "
-                    "(i.e. C:\\folder1\\test.txt): ")
+    outfile = output_path if output_path.endswith(".txt") else output_path + "_TESS.txt"
     dp.to_csv(outfile, index=None, sep="\t")
-    print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
-
+    log(f"Finished saving TESS O-C file to {outfile}")
     return outfile
 
 
-def BSUO(T0, To_err, period, db, dv, dr):
+def BSUO(T0, To_err, period, db, dv, dr, output_path, write_callback=None, cancel_event=None):
     """
-    This function uses BSUO filter ToM's to calculate and averaged ToM from the 3 filters used. Then calculates
-    O-C values to be plotted later.
+    Uses BSUO/SARA filter ToMs to calculate an averaged ToM and O-C values.
 
-    :return: output file that will be used to plot the O-C data
+    Parameters
+    ----------
+    T0 : float
+        Initial epoch. If 0, the first averaged ToM is used.
+    To_err : float
+        Error on T0.
+    period : float
+        Orbital period of the system.
+    db : pd.DataFrame
+        B filter ToM data.
+    dv : pd.DataFrame
+        V filter ToM data.
+    dr : pd.DataFrame
+        R filter ToM data.
+    output_path : str
+        Full path for the output .txt file.
+    write_callback : callable, optional
+        Function to log messages.
+    cancel_event : threading.Event, optional
+        Event to check for cancellation.
+
+    Returns
+    -------
+    str
+        Path to the saved output file.
     """
-    # strict Kwee van Woerden method ToM for all 3 filters
+    def log(message):
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
+
     strict_B = list(db[0])
     strict_B_err = list(db[2])
     strict_V = list(dv[0])
@@ -147,29 +136,28 @@ def BSUO(T0, To_err, period, db, dv, dr):
     strict_R = list(dr[0])
     strict_R_err = list(dr[2])
 
-    # create the lists that will be used
     E_est = []
     O_C = []
     O_C_err = []
     average_min = []
     average_err = []
 
-    # calculates the minimum by averaging the three filters together and getting the total error for that averaged ToM
     for count, val in enumerate(strict_B):
-        # calculate ToM and its error
+        if cancel_event and cancel_event.is_set():
+            log("Task canceled during BSUO O-C calculation.")
+            return None
+
         minimum = (val + strict_V[count] + strict_R[count]) / 3
         err = sqrt(strict_B_err[count] ** 2 + strict_V_err[count] ** 2 + strict_R_err[count] ** 2) / 3
 
         average_min.append("%.5f" % minimum)
         average_err.append(err)
 
-        # call the function to calculate the O-C values
         e, OC, OC_err, T0, To_err = calculate_oc(minimum, err, T0, To_err, period)
         E_est.append(e)
         O_C.append(OC)
         O_C_err.append(OC_err)
 
-    # create a dataframe for all outputs to be places in for easy output
     dp = pd.DataFrame({
         "Minimums": average_min,
         "Epoch": E_est,
@@ -177,39 +165,51 @@ def BSUO(T0, To_err, period, db, dv, dr):
         "O-C_Error": O_C_err
     })
 
-    # output file name to place the above dataframe into for saving
-    outfile = input("Please enter the output fil pathway and file name with extension for the ToM "
-                    "(i.e. C:\\folder1\\test.txt): ")
-    # noinspection PyTypeChecker
+    outfile = output_path if output_path.endswith(".txt") else output_path + "_BSUO.txt"
     dp.to_csv(outfile, index=None, sep="\t")
-    print("\nFinished saving file to " + outfile + ". This file is in the same folder as this python program.")
-
+    log(f"Finished saving BSUO O-C file to {outfile}")
     return outfile
 
 
-def all_data(nights, period, loop):
+def all_data(file_paths, period, output_path, write_callback=None, cancel_event=None):
     """
-    Merges all the data into a singular file for ease of use
+    Merges multiple O-C data files into a single combined output file.
 
-    :param nights: number of files there are for the first time through
-    :param period: period of the system
-    :param loop: number of loops through the program either o or 1
+    Parameters
+    ----------
+    file_paths : list of str
+        List of file paths to merge.
+    period : float
+        Period of the system.
+    output_path : str
+        Base output path (extension added automatically).
+    write_callback : callable, optional
+        Function to log messages.
+    cancel_event : threading.Event, optional
+        Event to check for cancellation.
 
-    :return: None
+    Returns
+    -------
+    str
+        Path to the saved merged output file.
     """
-    count = 0
+    def log(message):
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
 
     minimum_list = []
     e_list = []
     o_c_list = []
     o_c_err_list = []
 
-    while True:
-        print("\n\nPlease make sure that the very first line for each and every file that you have starts with the following\n"
-              "'Minimums	Epoch	O-C	O-C_Error'\n"
-              "With each space entered as a space.\n")
-        fname = input("Please enter a file name and pathway (i.e. C:\\folder1\\folder2\\[file name]): ")
-        df = pd.read_csv(fname, header=None, skiprows=[0], delim_whitespace=True)
+    for fname in file_paths:
+        if cancel_event and cancel_event.is_set():
+            log("Task canceled during All Data merge.")
+            return None
+
+        df = pd.read_csv(fname, header=None, skiprows=[0], sep=r"\s+")
         minimum = np.array(df[0])
         e = np.array(df[1])
         o_c = np.array(df[2])
@@ -220,11 +220,7 @@ def all_data(nights, period, loop):
             e_list.append(e[num])
             o_c_list.append("%.5f" % o_c[num])
             o_c_err_list.append("%.5f" % o_c_err[num])
-        if count + 1 == nights:
-            break
-        else:
-            count += 1
-            continue
+
     dp = pd.DataFrame({
         "Minimums": minimum_list,
         "Epoch": e_list,
@@ -232,310 +228,281 @@ def all_data(nights, period, loop):
         "O-C_Error": o_c_err_list
     })
 
-    outfile = input("Please enter the output file pathway and file name WITHOUT extension "
-                    "for the ToM (i.e. C:\\folder\[file_name]): ")
-    dp.to_csv(outfile + ".txt", index=None, sep="\t")
-    print("\nFinished saving file to " + outfile + ".txt\n")
+    outfile = output_path if output_path.endswith(".txt") else output_path + "_all.txt"
+    dp.to_csv(outfile, index=None, sep="\t")
+    log(f"Finished saving merged O-C file to {outfile}")
 
-    # LaTeX table stuff, don't change unless you know what you're doing!
-
-    table_header = "\\renewcommand{\\baselinestretch}{1.00} \small\\normalsize"
-    table_header += '\\begin{center}\n' + '\\begin{longtable}{ccc}\n'
-    table_header += '$BJD_{\\rm TDB}$ & ' + 'E & ' + 'O-C \\\ \n'
-    table_header += '\\hline\n' + '\\endfirsthead\n'
-    table_header += '\\multicolumn{3}{c}\n'
-    table_header += '{\\tablename\ \\thetable\ -- \\textit{Continued from previous page}} \\\ \n'
-    table_header += '$BJD_{\\rm TDB}$ & E & O-C \\\ \n'
-    table_header += '\\hline\n' + '\\endhead\n' + '\\hline\n'
-    table_header += '\\multicolumn{3}{c}{\\textit{Continued on next page}} \\\ \n'
-    table_header += '\\endfoot\n' + '\\endlastfoot\n'
+    # LaTeX table output
+    table_header = r"\renewcommand{\baselinestretch}{1.00} \small\normalsize"
+    table_header += r"\begin{center}" + "\n" + r"\begin{longtable}{ccc}" + "\n"
+    table_header += r"$BJD_{\rm TDB}$ & " + r"E & " + r"O-C \\" + "\n"
+    table_header += r"\hline" + "\n" + r"\endfirsthead" + "\n"
+    table_header += r"\multicolumn{3}{c}" + "\n"
+    table_header += r"{\tablename~\thetable~-- \textit{Continued from previous page}} \\" + "\n"
+    table_header += r"$BJD_{\rm TDB}$ & E & O-C \\" + "\n"
+    table_header += r"\hline" + "\n" + r"\endhead" + "\n" + r"\hline" + "\n"
+    table_header += r"\multicolumn{3}{c}{\textit{Continued on next page}} \\" + "\n"
+    table_header += r"\endfoot" + "\n" + r"\endlastfoot" + "\n"
 
     minimum_lines = []
-    for i in range(len(minimum)):
-        line = str("%.5f" % minimum[i]) + ' & ' + str(e[i]) + ' & $' + str("%.5f" % o_c[i]) + ' \pm ' + str(
-            "%.5f" % o_c_err[i]) + '$ ' + "\\\ \n"
+    for i in range(len(minimum_list)):
+        line = (str(minimum_list[i]) + " & " + str(e_list[i]) + " & $" +
+                str(o_c_list[i]) + r" \pm " + str(o_c_err_list[i]) + r"$ \\" + "\n")
         minimum_lines.append(line)
 
     output = table_header
-    for count, line in enumerate(minimum_lines):
+    for line in minimum_lines:
         output += line
 
-    output += '\\hline\n' + '\\caption{NSVS 896797 O-C. The first column is the \n' \
-                            '$BJD_{TDB}$ and column 2 is the epoch number with a whole number \n' \
-                            'being a primary eclipse and a half integer value being a secondary \n' \
-                            'eclipse. Column 3 is the $(O-C)$ value with the corresponding \n' \
-                            '1$\\sigma$ error.}\n' \
-              + '\\label{tbl:896797_OC}\n' + '\\end{longtable}\n' + '\\end{center}\n'
-    output += '\\renewcommand{\\baselinestretch}{1.66} \\small\\normalsize'
+    output += (r"\hline" + "\n" +
+               r"\caption{O-C table. Column 1 is $BJD_{TDB}$, column 2 is epoch number, "
+               r"column 3 is $(O-C)$ with 1$\sigma$ error.}" + "\n" +
+               r"\label{tbl:OC}" + "\n" +
+               r"\end{longtable}" + "\n" +
+               r"\end{center}" + "\n")
+    output += r"\renewcommand{\baselinestretch}{1.66} \small\normalsize"
+
+    tex_file = outfile.replace(".txt", ".tex")
+    with open(tex_file, "w") as f:
+        f.write(output)
+    log(f"LaTeX table saved to {tex_file}")
+
+    return outfile
+
+
+def arguments(write_callback=None):
     """
-    End LaTeX table stuff.
+    Kept for CLI backwards compatibility only.
+    In GUI mode, values are passed directly as parameters.
     """
+    def log(message):
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
 
-    # outputfile = input("Please enter an output file name without the extension: ")
-    file = open(outfile + ".tex", "w")
-    file.write(output)
-    file.close()
-
-    outfile += ".txt"
-
-    data_fit(outfile, period, loop, nights)
-
-
-def arguments():
-    """
-    This function asks the user for the T0
-
-    :return: T0, To_err, and period float values
-    """
     while True:
         try:
-            T0 = float(input("Please enter your Epoch number (ex. '2457143.761819') : "))  # First primary ToM
-            To_err = float(input("Please enter the Epoch error (ex. 0.0002803). : "))  # error associated with the T0
-            period = float(input("Please enter the period of your system (ex. 0.31297): "))  # period of a system
+            T0 = float(input("Please enter your Epoch number (ex. '2457143.761819'): "))
+            To_err = float(input("Please enter the Epoch error (ex. 0.0002803): "))
+            period = float(input("Please enter the period of your system (ex. 0.31297): "))
             break
         except ValueError:
-            print("You have entered an invalid value. Please only enter float values and please try again.\n")
+            log("You have entered an invalid value. Please only enter float values and try again.")
     return T0, To_err, period
 
 
 @jit(forceobj=True)
 def calculate_oc(m, err, T0, T0_err, p):
     """
-    Calculates O-C values and errors and find the eclipse number for primary and secondary eclipses
-    :param m: ToM
-    :param err: ToM error
-    :param T0: first ToM
-    :param T0_err: error for the T0
-    :param p: period of the system
+    Calculates O-C values and errors and finds the eclipse number.
 
-    :return: e (eclipse number), OC (O-C value), OC_err (corresponding O-C error)
+    Parameters
+    ----------
+    m : float
+        Time of minimum.
+    err : float
+        Error on the time of minimum.
+    T0 : float
+        Reference epoch. If 0, set to m.
+    T0_err : float
+        Error on T0.
+    p : float
+        Period of the system.
+
+    Returns
+    -------
+    tuple
+        (e, OC, OC_err, T0, T0_err)
     """
     if T0 == 0:
         T0 = m
         T0_err = err
-    # get the exact E value
+
     E_act = (m - T0) / p
-    # estimate for the primary or secondary eclipse by rounding to the nearest 0.5
-    if E_act<=0:
-        # if this is floor then the value would round down to a lower value instead of rounding up, results in values being off by 0.5
-        e=ceil((E_act*2)+0.5)/2
+
+    if E_act <= 0:
+        e = ceil((E_act * 2) + 0.5) / 2
     else:
-        e=floor((E_act*2)+0.5)/2
-    
-    # calculate the calculated ToM and find the O-C value
+        e = floor((E_act * 2) + 0.5) / 2
+
     T_calc = T0 + (e * p)
     OC = "%.5f" % (m - T_calc)
-
-    # determine the error of the O-C
     OC_err = "%.5f" % sqrt(T0_err ** 2 + err ** 2)
 
     return e, OC, OC_err, T0, T0_err
 
 
-def data_fit(input_file, period, loop, nights):
+def data_fit(input_file, period, output_path=None, write_callback=None, cancel_event=None):
     """
-    Create a linear fit by hand and then use scipy to create a polynomial fit given an equation along with their
-    respective residual plots
+    Creates linear and quadratic fits to O-C data and saves the plot and regression tables.
 
-    :param nights: number of files the user has
-    :param loop: number of loops the program has gone through either 0 or 1
-    :param period: period of the system
-    :param input_file: input file from either TESS or BSUO
+    Parameters
+    ----------
+    input_file : str
+        Path to the O-C data file (tab-separated with header row).
+    period : float
+        Period of the system.
+    output_path : str, optional
+        Base path for output files. Defaults to same directory as input_file.
+    write_callback : callable, optional
+        Function to log messages.
+    cancel_event : threading.Event, optional
+        Event to check for cancellation.
 
-    :return: None
+    Returns
+    -------
+    float or None
+        The adjusted period from the linear fit, or None if canceled.
     """
-    # read in the text file
-    df = pd.read_csv(input_file, header=0, delim_whitespace=True)
+    def log(message):
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
 
-    # append values to their respective lists for further and future potential use
+    df = pd.read_csv(input_file, header=0, sep=r"\s+")
+
     x = df["Epoch"]
     y = df["O-C"]
     y_err = df["O-C_Error"]
-
-    # weights for least squares fitting
     weights = 1 / (y_err ** 2)
 
-    # these next parts are mainly for O-C data as I just want to plot primary minima's and not both primary/secondary
-    x1_prim = []
-    y1_prim = []
-    y_err_new_prim = []
+    x1_prim, y1_prim, y_err_prim = [], [], []
+    x1_sec, y1_sec, y_err_sec = [], [], []
 
-    x1_sec = []
-    y1_sec = []
-    y_err_new_sec = []
-
-    # collects primary and secondary times of minima separately and its corresponding O-C and O-C error
     for count, val in enumerate(x):
-        # noinspection PyUnresolvedReferences
-        if val % 1 == 0:  # checks to see if the eclipse number is primary or secondary
+        if val % 1 == 0:
             x1_prim.append(float(val))
             y1_prim.append(float(y[count]))
-            y_err_new_prim.append(float(y_err[count]))
+            y_err_prim.append(float(y_err[count]))
         else:
             x1_sec.append(float(val))
             y1_sec.append(float(y[count]))
-            y_err_new_sec.append(float(y_err[count]))
+            y_err_sec.append(float(y_err[count]))
 
-    # converts the lists to numpy arrays
     x1_prim = np.array(x1_prim)
     y1_prim = np.array(y1_prim)
-    y_err_new_prim = np.array(y_err_new_prim)
-
+    y_err_prim = np.array(y_err_prim)
     x1_sec = np.array(x1_sec)
     y1_sec = np.array(y1_sec)
-    y_err_new_sec = np.array(y_err_new_sec)
+    y_err_sec = np.array(y_err_sec)
 
-    # different line styles that can be used
-    line_style = [(0, (1, 10)), (0, (1, 1)), (0, (5, 10)), (0, (5, 5)), (0, (5, 1)),
-                  (0, (3, 10, 1, 10)), (0, (3, 5, 1, 5)), (0, (3, 1, 1, 1)), (0, (3, 5, 1, 5, 1, 5)),
-                  (0, (3, 10, 1, 10, 1, 10)), (0, (3, 1, 1, 1, 1, 1))]
-    line_count = 0
-    i_string = ""
-
-    # beginning latex to a latex table
-    beginningtex = """\\documentclass{report}
-            \\usepackage{booktabs}
-            \\begin{document}"""
-    endtex = "\end{document}"
-
-    # opens a file with this name to begin writing to the file
-    output_test = None
-    while not output_test:
-        output_file = input("\nWhat is the output file name and pathway for the regression tables (either .txt or .tex): ")
-        if output_file.endswith((".txt", ".tex")):
-            output_test = True
-        else:
-            print("This is not an allowed file output. Please make sure the file has the extension .txt or .tex.\n")
-
-    # noinspection PyUnboundLocalVariable
-    f = open(output_file, 'w')
-    f.write(beginningtex)
-
-    # sets up the fitting parameters
     xs = np.linspace(x.min(), x.max(), 1000)
-    degree = 2
+    line_styles = [(0, (5, 5)), (0, (1, 1))]
     degree_list = ["Linear", "Quadratic"]
-    # noinspection PyUnboundLocalVariable
-    for i in range(1, degree + 1):
-        """
-        Inside the model variable:
-        'np.polynomial.polynomial.polyfit(x, y, i)' gathers the coefficients of the line fit
 
-        'Polynomial' then finds an array of y values given a set of x data
-        """
-        model = Polynomial(np.polynomial.polynomial.polyfit(x1_prim, y1_prim, i))
+    # Determine output paths
+    base = Path(output_path) if output_path else Path(input_file)
+    tex_path = str(base.with_suffix(".tex")) if output_path else str(Path(input_file).with_suffix(".tex"))
+    plot_path = str(base.with_suffix(".png")) if output_path else str(Path(input_file).with_suffix(".png"))
 
-        # plot the main graph with both fits (linear and poly) onto the same graph
-        plt.plot(xs, model(xs), color="black", label=degree_list[i - 1] + " fit",
-                 linestyle=line_style[line_count])
-        line_count += 1
+    beginningtex = "\\documentclass{report}\n\\usepackage{booktabs}\n\\begin{document}\n"
+    endtex = "\\end{document}"
 
-        # this if statement adds a string together to be used in the regression analysis
-        # pretty much however many degrees in the polynomial there are, there will be that many I values
-        if i >= 2:
-            i_string = i_string + " + I(x**" + str(i) + ")"
-            mod = smf.wls(formula='y ~ x' + i_string, data=df, weights=weights)
-            res = mod.fit()
-            f.write(res.summary().as_latex())
-        elif i == 1:
-            mod = smf.wls(formula='y ~ x', data=df, weights=weights)
-            res = mod.fit()
-            if loop == 0:
+    fig, ax = plt.subplots(figsize=(10, 6))
+    i_string = ""
+    new_period = period
+
+    with open(tex_path, "w") as f:
+        f.write(beginningtex)
+
+        for i in range(1, 3):
+            if cancel_event and cancel_event.is_set():
+                log("Task canceled during data fitting.")
+                plt.close(fig)
+                return None
+
+            model = Polynomial(np.polynomial.polynomial.polyfit(x1_prim, y1_prim, i))
+            ax.plot(xs, model(xs), color="black", label=degree_list[i - 1] + " fit",
+                    linestyle=line_styles[i - 1])
+
+            if i >= 2:
+                i_string += f" + I(x**{i})"
+                mod = smf.wls(formula="y ~ x" + i_string, data=df, weights=weights)
+                res = mod.fit()
+                f.write(res.summary().as_latex())
+            else:
+                mod = smf.wls(formula="y ~ x", data=df, weights=weights)
+                res = mod.fit()
                 period_add = res.params[1]
                 new_period = period + period_add
-                print("The amount added to the period to get the adjusted period is " + str(period_add) + " days.")
-                print("The new period then becomes " + str(new_period) + " days.")
-            f.write(res.summary().as_latex())
+                log(f"Period correction from linear fit: {period_add:.8f} days")
+                log(f"Adjusted period: {new_period:.8f} days")
+                f.write(res.summary().as_latex())
 
-    f.write(endtex)
-    # writes to the file the end latex code and then saves the file
-    f.close()
-    print("\nFinished saving latex/text file.\n\n")
+        f.write(endtex)
+
+    log(f"Regression tables saved to {tex_path}")
 
     fontsize = 14
-    plt.errorbar(x1_prim, y1_prim, yerr=y_err_new_prim, fmt="o", color="blue", label="Primary")
-    plt.errorbar(x1_sec, y1_sec, yerr=y_err_new_sec, fmt="s", color="green", label="Secondary")
-    # allows the legend to be moved wherever the user wants the legend to be placed rather than in a fixed location
-    print("\n\n\033[1m" + "\033[93m" + "NOTE" + "\033[00m" + ":")
-    print("You can drag the legend to move it wherever you would like, the default is the top right. Just click and drag"
-          " to move around the figure.\n")
-    plt.legend(loc="upper right", fontsize=fontsize).set_draggable(True)
+    ax.errorbar(x1_prim, y1_prim, yerr=y_err_prim, fmt="o", color="blue", label="Primary")
+    ax.errorbar(x1_sec, y1_sec, yerr=y_err_sec, fmt="s", color="green", label="Secondary")
+    ax.legend(loc="upper right", fontsize=fontsize)
+    ax.set_xlabel("Epoch", fontsize=fontsize)
+    ax.set_ylabel("O-C (days)", fontsize=fontsize)
+    ax.grid()
 
-    x_label = "Epoch"
-    y_label = "O-C (days)"
+    fig.savefig(plot_path, bbox_inches="tight", dpi=150)
+    plt.close(fig)
+    log(f"O-C plot saved to {plot_path}")
 
-    if loop == 0:
-        print("\nThe figure just plotted is with the original period. The program will start over using a "
-              "new period based on the linear fit.\n")
-
-    # noinspection PyUnboundLocalVariable
-    plt.xlabel(x_label, fontsize=fontsize)
-    plt.xticks(fontsize=fontsize)
-    # noinspection PyUnboundLocalVariable
-    plt.ylabel(y_label, fontsize=fontsize)
-    plt.yticks(fontsize=fontsize)
-    plt.grid()
-    time.sleep(1)
-    plt.show()
-
-    if loop == 0:
-        loop += 1
-        main(new_period, loop, nights)
-
-    # residuals(x1_prim, y1_prim, x_label, y_label, degree, model, xs)
+    return new_period
 
 
-def residuals(x, y, x_label, y_label, degree, model, xs):
+def residuals(x, y, x_label, y_label, degree, model, xs,
+              output_path=None, write_callback=None):
     """
-    This plots the residuals of the data from the input file
-    :param x: original x data
-    :param y: original y data
-    :param x_label: x-axis label
-    :param y_label: y-axis label
-    :param degree: degree of the polynomial fit
-    :param model: the last model (equation) that was used from above
-    :param xs: numpy x data set
+    Plots residuals of the O-C fit and saves to file.
 
-    :return: none
+    Parameters
+    ----------
+    x : array-like
+        Epoch values.
+    y : array-like
+        O-C values.
+    x_label : str
+        X-axis label.
+    y_label : str
+        Y-axis label.
+    degree : int
+        Polynomial degree used for residuals.
+    model : Polynomial
+        Fitted polynomial model.
+    xs : array-like
+        Dense x values for the model line.
+    output_path : str, optional
+        Path to save the residuals plot.
+    write_callback : callable, optional
+        Function to log messages.
     """
-    # appends the y values from the model to a variable
+    def log(message):
+        if write_callback:
+            write_callback(message)
+        else:
+            print(message)
+
     y_model = model(xs)
 
-    # makes dataframes for both the raw data and the model data
-    raw_dat = pd.DataFrame({
-        x_label: x,
-        y_label: y,
-    })
+    raw_dat = pd.DataFrame({x_label: x, y_label: y})
+    model_dat = pd.DataFrame({x_label: xs, y_label: y_model})
 
-    model_dat = pd.DataFrame({
-        x_label: xs,
-        y_label: y_model
-    })
-
-    # allows for easy change of the format of the subplots
-    rows = 2
-    cols = 1
-    # creates the figure subplot for appending next
-    _, (ax1, ax2) = plt.subplots(rows, cols)
-    # adds gridlines to both subplots
+    _, (ax1, ax2) = plt.subplots(2, 1)
     ax1.grid()
     ax2.grid()
-    # creates the model line fit
     sns.lineplot(x=x_label, y=y_label, data=model_dat, ax=ax1, color="red")
-    # plots the original data to the same subplot as the model fit
-    # edge color is removed to any sort of weird visual overlay on the plots as the normal edge color is white
     sns.scatterplot(x=x_label, y=y_label, data=raw_dat, ax=ax1, color="black", edgecolor="none")
-    # plots the residuals from the original data to the polynomial degree from  above
     sns.residplot(x=x_label, y=y_label, order=degree, data=raw_dat, ax=ax2, color="black",
                   scatter_kws=dict(edgecolor="none"))
-    # adds a horizontal line to the residual plot to represent the model line fit with the same color
     ax2.axhline(y=0, color="red")
 
-    plt.show()
+    if output_path:
+        plt.savefig(output_path, bbox_inches="tight", dpi=150)
+        plt.close()
+        log(f"Residuals plot saved to {output_path}")
+    else:
+        plt.show()
 
 
-# data_fit('254037_OC.txt', 0.31297, 1, 2)
-# data_fit('896797_OC.txt')
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

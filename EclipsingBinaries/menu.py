@@ -284,7 +284,7 @@ class ProgramLauncher(TkinterDnD.Tk):
             ("AIJ Comparison Star Selector", self.show_aij_comparison_selector),
             ("Multi-Aperture Calculation", self.show_multi_aperture_photometry),
             ("BSUO or SARA/TESS Night Filters", self.dummy_action),
-            ("O-C Plotting", self.dummy_action),
+            ("O-C Plotting", self.show_OC_plot),
             ("Gaia Search", self.show_gaia_query),
             ("O'Connell Effect", self.show_oconnell_effect),
             ("Color Light Curve", self.show_color_light_curve),
@@ -829,6 +829,114 @@ class ProgramLauncher(TkinterDnD.Tk):
 
         # Create scrollbar for the log area
         self.create_scrollbar_and_log(8)
+    
+    
+    def show_oc_plot(self):
+        """Display the O-C Plotting panel."""
+        self.clear_right_frame()
+        self.right_frame.grid_columnconfigure(0, weight=1)
+        self.right_frame.grid_columnconfigure(1, weight=1)
+    
+        tk.Label(self.right_frame, text="O-C Plotting", font=self.header_font, bg="#ffffff").grid(
+            row=0, column=0, columnspan=2, pady=10, sticky="ew"
+        )
+    
+        # Mode selector
+        tk.Label(self.right_frame, text="Data Source:", font=self.label_font, bg="#ffffff").grid(
+            row=1, column=0, padx=10, pady=5, sticky="e"
+        )
+        self.oc_mode_var = tk.StringVar(value="BSUO")
+        mode_frame = tk.Frame(self.right_frame, bg="#ffffff")
+        mode_frame.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+        for label, val in [("BSUO/SARA", "BSUO"), ("TESS", "TESS"), ("All Data", "ALL")]:
+            tk.Radiobutton(
+                mode_frame, text=label, variable=self.oc_mode_var, value=val,
+                font=self.label_font, bg="#ffffff",
+                command=self._update_oc_fields
+            ).pack(side="left", padx=5)
+    
+        # Has epoch checkbox
+        self.oc_has_epoch_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            self.right_frame, text="I already have an Epoch value",
+            variable=self.oc_has_epoch_var, font=self.label_font, bg="#ffffff"
+        ).grid(row=2, column=0, columnspan=2, padx=10, pady=5, sticky="w")
+    
+        # Shared fields
+        self.oc_epoch_entry = self.create_input_field(
+            self.right_frame, "Epoch (T0):", "e.g. 2457143.761819", row=3,
+            validation_func=lambda x: x.replace(".", "", 1).lstrip("-").isdigit(),
+            error_message="Please enter a valid float."
+        )
+        self.oc_epoch_err_entry = self.create_input_field(
+            self.right_frame, "Epoch Error:", "e.g. 0.0002803", row=4,
+            validation_func=lambda x: x.replace(".", "", 1).isdigit(),
+            error_message="Please enter a valid float."
+        )
+        self.oc_period_entry = self.create_input_field(
+            self.right_frame, "Period (days):", "e.g. 0.31297", row=5,
+            validation_func=lambda x: x.replace(".", "", 1).isdigit(),
+            error_message="Please enter a valid period."
+        )
+        self.oc_output_entry = self.create_input_field(
+            self.right_frame, "Output Folder:", r"C:\folder\output", row=6,
+            validation_func=lambda x: len(x.strip()) > 0,
+            error_message="Please enter an output folder path.",
+            browse_type="folder"
+        )
+    
+        # BSUO fields
+        self.oc_b_file_entry = self.create_input_field(
+            self.right_frame, "B Filter ToM File:", r"C:\folder\B_min.txt", row=7,
+            validation_func=lambda x: len(x.strip()) > 0,
+            error_message="Please enter a file path.",
+            browse_type="file"
+        )
+        self.oc_v_file_entry = self.create_input_field(
+            self.right_frame, "V Filter ToM File:", r"C:\folder\V_min.txt", row=8,
+            validation_func=lambda x: len(x.strip()) > 0,
+            error_message="Please enter a file path.",
+            browse_type="file"
+        )
+        self.oc_r_file_entry = self.create_input_field(
+            self.right_frame, "R Filter ToM File:", r"C:\folder\R_min.txt", row=9,
+            validation_func=lambda x: len(x.strip()) > 0,
+            error_message="Please enter a file path.",
+            browse_type="file"
+        )
+    
+        # TESS field
+        self.oc_tess_file_entry = self.create_input_field(
+            self.right_frame, "TESS ToM File:", r"C:\folder\tess_min.txt", row=7,
+            validation_func=lambda x: len(x.strip()) > 0,
+            error_message="Please enter a file path.",
+            browse_type="file"
+        )
+    
+        # All Data fields
+        self.oc_nights_entry = self.create_input_field(
+            self.right_frame, "Number of Files:", "e.g. 2", row=7,
+            validation_func=lambda x: x.isdigit(),
+            error_message="Please enter a whole number."
+        )
+        self.oc_all_files_entry = self.create_input_field(
+            self.right_frame, "O-C Files (comma separated):", r"C:\folder\file1.txt, C:\folder\file2.txt", row=8,
+            validation_func=lambda x: len(x.strip()) > 0,
+            error_message="Please enter file paths separated by commas."
+        )
+    
+        # Show correct fields for default mode
+        self._update_oc_fields()
+    
+        # Run button
+        self.create_run_button(self.right_frame, self.run_oc_plot, row=10)
+    
+        # Log
+        tk.Label(self.right_frame, text="Output Log:", font=self.label_font, bg="#ffffff").grid(
+            row=11, column=0, columnspan=2, pady=5
+        )
+        self.create_scrollbar_and_log(12)
+    
 
     def show_gaia_query(self):
         """Display the Gaia query panel."""
@@ -1247,6 +1355,95 @@ class ProgramLauncher(TkinterDnD.Tk):
 
         # Run the photometry task in a separate thread
         self.run_task(photometry_task)
+    
+    
+    def run_oc_plot(self):
+        """Collect inputs and pass them to OC_plot functions in a background thread."""
+    
+        def oc_plot():
+            try:
+                from .OC_plot import BSUO, TESS_OC, all_data, data_fit
+                import pandas as pd
+    
+                self.create_cancel_button(self.right_frame, self.cancel_task, row=10)
+    
+                mode = self.oc_mode_var.get()
+                period_str = self.oc_period_entry.get().strip()
+                output = self.oc_output_entry.get().strip()
+    
+                if not period_str:
+                    self.write_to_log("Error: Period is required.")
+                    return
+                period = float(period_str)
+    
+                if not output:
+                    self.write_to_log("Error: Output folder is required.")
+                    return
+    
+                # Determine T0 and error
+                if self.oc_has_epoch_var.get() and mode != "ALL":
+                    epoch_str = self.oc_epoch_entry.get().strip()
+                    epoch_err_str = self.oc_epoch_err_entry.get().strip()
+                    if not epoch_str or not epoch_err_str:
+                        self.write_to_log("Error: Epoch and Epoch Error are required.")
+                        return
+                    T0 = float(epoch_str)
+                    T0_err = float(epoch_err_str)
+                else:
+                    T0 = 0
+                    T0_err = 0
+    
+                if mode == "BSUO":
+                    b_path = self.oc_b_file_entry.get().strip()
+                    v_path = self.oc_v_file_entry.get().strip()
+                    r_path = self.oc_r_file_entry.get().strip()
+                    if not all([b_path, v_path, r_path]):
+                        self.write_to_log("Error: All three filter files are required.")
+                        return
+                    db = pd.read_csv(b_path, header=None, sep=r"\s+")
+                    dv = pd.read_csv(v_path, header=None, sep=r"\s+")
+                    dr = pd.read_csv(r_path, header=None, sep=r"\s+")
+                    outfile = BSUO(T0, T0_err, period, db, dv, dr, output,
+                                   write_callback=self.write_to_log,
+                                   cancel_event=self.cancel_event)
+    
+                elif mode == "TESS":
+                    tess_path = self.oc_tess_file_entry.get().strip()
+                    if not tess_path:
+                        self.write_to_log("Error: TESS ToM file is required.")
+                        return
+                    df = pd.read_csv(tess_path, header=None, sep=r"\s+")
+                    outfile = TESS_OC(T0, T0_err, period, df, output,
+                                      write_callback=self.write_to_log,
+                                      cancel_event=self.cancel_event)
+    
+                elif mode == "ALL":
+                    nights_str = self.oc_nights_entry.get().strip()
+                    if not nights_str.isdigit():
+                        self.write_to_log("Error: Number of files must be a whole number.")
+                        return
+                    all_files_str = self.oc_all_files_entry.get().strip()
+                    file_paths = [p.strip() for p in all_files_str.split(",") if p.strip()]
+                    if len(file_paths) != int(nights_str):
+                        self.write_to_log(f"Error: Expected {nights_str} files, got {len(file_paths)}.")
+                        return
+                    outfile = all_data(file_paths, period, output,
+                                       write_callback=self.write_to_log,
+                                       cancel_event=self.cancel_event)
+    
+                if outfile and not self.cancel_event.is_set():
+                    data_fit(outfile, period,
+                             write_callback=self.write_to_log,
+                             cancel_event=self.cancel_event)
+                    self.write_to_log("O-C plotting completed successfully.")
+    
+            except Exception as e:
+                import traceback
+                self.write_to_log(f"Error during O-C plotting: {type(e).__name__}: {e}")
+                self.write_to_log(traceback.format_exc())
+    
+        self.oc_plot(task)
+    
 
     def run_gaia_query(self, ra, dec, output_file):
         """Run the Gaia query in a separate thread."""

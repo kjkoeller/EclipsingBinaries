@@ -2,7 +2,7 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 01/25/2026
+Last Updated: 03/15/2026
 """
 
 # import required packages
@@ -13,7 +13,7 @@ import pandas as pd
 import os
 
 from astropy import units as u
-import pkg_resources
+from importlib import resources as pkg_resources
 
 
 def run_tess_search(system_name, download_all, specific_sector, download_path, write_callback, cancel_event):

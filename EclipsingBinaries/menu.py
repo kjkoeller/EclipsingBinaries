@@ -4,7 +4,7 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 03/13/2026
+Last Updated: 03/16/2026
 """
 
 import json
@@ -1442,7 +1442,7 @@ class ProgramLauncher(TkinterDnD.Tk):
                 self.write_to_log(f"Error during O-C plotting: {type(e).__name__}: {e}")
                 self.write_to_log(traceback.format_exc())
     
-        self.oc_plot(task)
+        self.run_task(oc_plot)
     
 
     def run_gaia_query(self, ra, dec, output_file):

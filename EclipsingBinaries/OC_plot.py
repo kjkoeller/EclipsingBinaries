@@ -17,36 +17,22 @@ from numba import jit
 from pathlib import Path
 
 
-def main(period=None, loop=0, num=None, nights=None, write_callback=None, cancel_event=None):
-    """
-    Entry point kept for backwards compatibility.
-    In GUI mode this is not called directly — use BSUO_gui, TESS_OC_gui, or all_data_gui instead.
-    """
-    def log(message):
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
-
-    log("OC_plot.main() called directly. Use the GUI panel for interactive use.")
-
-
-def TESS_OC(T0, To_err, period, df, output_path, write_callback=None, cancel_event=None):
+def TESS_OC(T0, T0_err, period, df, output_path, write_callback=None, cancel_event=None):
     """
     Takes ToM data pre-gathered from TESS data and finds corresponding O-C values.
 
     Parameters
     ----------
     T0 : float
-        Initial epoch. If 0, the first ToM is used.
-    To_err : float
+        Initial epoch. If 0, the first ToM is used as T0.
+    T0_err : float
         Error on T0.
     period : float
         Orbital period of the system.
     df : pd.DataFrame
         DataFrame with ToM data (column 0 = ToM, column 2 = error).
     output_path : str
-        Full path for the output .txt file.
+        Base output folder path.
     write_callback : callable, optional
         Function to log messages.
     cancel_event : threading.Event, optional
@@ -54,8 +40,8 @@ def TESS_OC(T0, To_err, period, df, output_path, write_callback=None, cancel_eve
 
     Returns
     -------
-    str
-        Path to the saved output file.
+    str or None
+        Path to the saved output file, or None if canceled.
     """
     def log(message):
         if write_callback:
@@ -75,7 +61,7 @@ def TESS_OC(T0, To_err, period, df, output_path, write_callback=None, cancel_eve
             log("Task canceled during TESS O-C calculation.")
             return None
 
-        e, OC, OC_err, T0, To_err = calculate_oc(val, min_strict_err[count], T0, To_err, period)
+        e, OC, OC_err, T0, T0_err = calculate_oc(val, min_strict_err[count], T0, T0_err, period)
         E_est.append(e)
         O_C.append(OC)
         O_C_err.append(OC_err)
@@ -87,21 +73,21 @@ def TESS_OC(T0, To_err, period, df, output_path, write_callback=None, cancel_eve
         "O-C_Error": O_C_err
     })
 
-    outfile = output_path if output_path.endswith(".txt") else output_path + "_TESS.txt"
+    outfile = str(Path(output_path) / "TESS_OC.txt")
     dp.to_csv(outfile, index=None, sep="\t")
     log(f"Finished saving TESS O-C file to {outfile}")
     return outfile
 
 
-def BSUO(T0, To_err, period, db, dv, dr, output_path, write_callback=None, cancel_event=None):
+def BSUO(T0, T0_err, period, db, dv, dr, output_path, write_callback=None, cancel_event=None):
     """
     Uses BSUO/SARA filter ToMs to calculate an averaged ToM and O-C values.
 
     Parameters
     ----------
     T0 : float
-        Initial epoch. If 0, the first averaged ToM is used.
-    To_err : float
+        Initial epoch. If 0, the first averaged ToM is used as T0.
+    T0_err : float
         Error on T0.
     period : float
         Orbital period of the system.
@@ -112,7 +98,7 @@ def BSUO(T0, To_err, period, db, dv, dr, output_path, write_callback=None, cance
     dr : pd.DataFrame
         R filter ToM data.
     output_path : str
-        Full path for the output .txt file.
+        Base output folder path.
     write_callback : callable, optional
         Function to log messages.
     cancel_event : threading.Event, optional
@@ -120,8 +106,8 @@ def BSUO(T0, To_err, period, db, dv, dr, output_path, write_callback=None, cance
 
     Returns
     -------
-    str
-        Path to the saved output file.
+    str or None
+        Path to the saved output file, or None if canceled.
     """
     def log(message):
         if write_callback:
@@ -153,7 +139,7 @@ def BSUO(T0, To_err, period, db, dv, dr, output_path, write_callback=None, cance
         average_min.append("%.5f" % minimum)
         average_err.append(err)
 
-        e, OC, OC_err, T0, To_err = calculate_oc(minimum, err, T0, To_err, period)
+        e, OC, OC_err, T0, T0_err = calculate_oc(minimum, err, T0, T0_err, period)
         E_est.append(e)
         O_C.append(OC)
         O_C_err.append(OC_err)
@@ -165,7 +151,7 @@ def BSUO(T0, To_err, period, db, dv, dr, output_path, write_callback=None, cance
         "O-C_Error": O_C_err
     })
 
-    outfile = output_path if output_path.endswith(".txt") else output_path + "_BSUO.txt"
+    outfile = str(Path(output_path) / "BSUO_OC.txt")
     dp.to_csv(outfile, index=None, sep="\t")
     log(f"Finished saving BSUO O-C file to {outfile}")
     return outfile
@@ -173,16 +159,17 @@ def BSUO(T0, To_err, period, db, dv, dr, output_path, write_callback=None, cance
 
 def all_data(file_paths, period, output_path, write_callback=None, cancel_event=None):
     """
-    Merges multiple O-C data files into a single combined output file.
+    Merges multiple O-C data files into a single combined output file and
+    generates a LaTeX table.
 
     Parameters
     ----------
     file_paths : list of str
-        List of file paths to merge.
+        List of paths to O-C data files to merge.
     period : float
-        Period of the system.
+        Orbital period of the system.
     output_path : str
-        Base output path (extension added automatically).
+        Base output folder path.
     write_callback : callable, optional
         Function to log messages.
     cancel_event : threading.Event, optional
@@ -190,8 +177,8 @@ def all_data(file_paths, period, output_path, write_callback=None, cancel_event=
 
     Returns
     -------
-    str
-        Path to the saved merged output file.
+    str or None
+        Path to the saved merged output file, or None if canceled.
     """
     def log(message):
         if write_callback:
@@ -228,14 +215,14 @@ def all_data(file_paths, period, output_path, write_callback=None, cancel_event=
         "O-C_Error": o_c_err_list
     })
 
-    outfile = output_path if output_path.endswith(".txt") else output_path + "_all.txt"
+    outfile = str(Path(output_path) / "all_data_OC.txt")
     dp.to_csv(outfile, index=None, sep="\t")
     log(f"Finished saving merged O-C file to {outfile}")
 
-    # LaTeX table output
+    # LaTeX table
     table_header = r"\renewcommand{\baselinestretch}{1.00} \small\normalsize"
-    table_header += r"\begin{center}" + "\n" + r"\begin{longtable}{ccc}" + "\n"
-    table_header += r"$BJD_{\rm TDB}$ & " + r"E & " + r"O-C \\" + "\n"
+    table_header += "\n" + r"\begin{center}" + "\n" + r"\begin{longtable}{ccc}" + "\n"
+    table_header += r"$BJD_{\rm TDB}$ & E & O-C \\" + "\n"
     table_header += r"\hline" + "\n" + r"\endfirsthead" + "\n"
     table_header += r"\multicolumn{3}{c}" + "\n"
     table_header += r"{\tablename~\thetable~-- \textit{Continued from previous page}} \\" + "\n"
@@ -244,14 +231,10 @@ def all_data(file_paths, period, output_path, write_callback=None, cancel_event=
     table_header += r"\multicolumn{3}{c}{\textit{Continued on next page}} \\" + "\n"
     table_header += r"\endfoot" + "\n" + r"\endlastfoot" + "\n"
 
-    minimum_lines = []
+    output = table_header
     for i in range(len(minimum_list)):
         line = (str(minimum_list[i]) + " & " + str(e_list[i]) + " & $" +
                 str(o_c_list[i]) + r" \pm " + str(o_c_err_list[i]) + r"$ \\" + "\n")
-        minimum_lines.append(line)
-
-    output = table_header
-    for line in minimum_lines:
         output += line
 
     output += (r"\hline" + "\n" +
@@ -262,34 +245,12 @@ def all_data(file_paths, period, output_path, write_callback=None, cancel_event=
                r"\end{center}" + "\n")
     output += r"\renewcommand{\baselinestretch}{1.66} \small\normalsize"
 
-    tex_file = outfile.replace(".txt", ".tex")
+    tex_file = str(Path(output_path) / "all_data_OC.tex")
     with open(tex_file, "w") as f:
         f.write(output)
     log(f"LaTeX table saved to {tex_file}")
 
     return outfile
-
-
-def arguments(write_callback=None):
-    """
-    Kept for CLI backwards compatibility only.
-    In GUI mode, values are passed directly as parameters.
-    """
-    def log(message):
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
-
-    while True:
-        try:
-            T0 = float(input("Please enter your Epoch number (ex. '2457143.761819'): "))
-            To_err = float(input("Please enter the Epoch error (ex. 0.0002803): "))
-            period = float(input("Please enter the period of your system (ex. 0.31297): "))
-            break
-        except ValueError:
-            log("You have entered an invalid value. Please only enter float values and try again.")
-    return T0, To_err, period
 
 
 @jit(forceobj=True)
@@ -304,7 +265,7 @@ def calculate_oc(m, err, T0, T0_err, p):
     err : float
         Error on the time of minimum.
     T0 : float
-        Reference epoch. If 0, set to m.
+        Reference epoch. If 0, set to m on first call.
     T0_err : float
         Error on T0.
     p : float
@@ -333,9 +294,10 @@ def calculate_oc(m, err, T0, T0_err, p):
     return e, OC, OC_err, T0, T0_err
 
 
-def data_fit(input_file, period, output_path=None, write_callback=None, cancel_event=None):
+def data_fit(input_file, period, write_callback=None, cancel_event=None):
     """
-    Creates linear and quadratic fits to O-C data and saves the plot and regression tables.
+    Creates linear and quadratic fits to O-C data, saves the plot and
+    regression tables to the same folder as the input file.
 
     Parameters
     ----------
@@ -343,8 +305,6 @@ def data_fit(input_file, period, output_path=None, write_callback=None, cancel_e
         Path to the O-C data file (tab-separated with header row).
     period : float
         Period of the system.
-    output_path : str, optional
-        Base path for output files. Defaults to same directory as input_file.
     write_callback : callable, optional
         Function to log messages.
     cancel_event : threading.Event, optional
@@ -392,10 +352,10 @@ def data_fit(input_file, period, output_path=None, write_callback=None, cancel_e
     line_styles = [(0, (5, 5)), (0, (1, 1))]
     degree_list = ["Linear", "Quadratic"]
 
-    # Determine output paths
-    base = Path(output_path) if output_path else Path(input_file)
-    tex_path = str(base.with_suffix(".tex")) if output_path else str(Path(input_file).with_suffix(".tex"))
-    plot_path = str(base.with_suffix(".png")) if output_path else str(Path(input_file).with_suffix(".png"))
+    # Output paths derived from input file location
+    base = Path(input_file)
+    tex_path = str(base.with_suffix(".tex"))
+    plot_path = str(base.with_suffix(".png"))
 
     beginningtex = "\\documentclass{report}\n\\usepackage{booktabs}\n\\begin{document}\n"
     endtex = "\\end{document}"
@@ -472,7 +432,7 @@ def residuals(x, y, x_label, y_label, degree, model, xs,
     xs : array-like
         Dense x values for the model line.
     output_path : str, optional
-        Path to save the residuals plot.
+        Path to save the residuals plot. If None, saves next to input file.
     write_callback : callable, optional
         Function to log messages.
     """
@@ -491,9 +451,10 @@ def residuals(x, y, x_label, y_label, degree, model, xs,
     ax1.grid()
     ax2.grid()
     sns.lineplot(x=x_label, y=y_label, data=model_dat, ax=ax1, color="red")
-    sns.scatterplot(x=x_label, y=y_label, data=raw_dat, ax=ax1, color="black", edgecolor="none")
-    sns.residplot(x=x_label, y=y_label, order=degree, data=raw_dat, ax=ax2, color="black",
-                  scatter_kws=dict(edgecolor="none"))
+    sns.scatterplot(x=x_label, y=y_label, data=raw_dat, ax=ax1,
+                    color="black", edgecolor="none")
+    sns.residplot(x=x_label, y=y_label, order=degree, data=raw_dat, ax=ax2,
+                  color="black", scatter_kws=dict(edgecolor="none"))
     ax2.axhline(y=0, color="red")
 
     if output_path:
@@ -501,8 +462,6 @@ def residuals(x, y, x_label, y_label, degree, model, xs,
         plt.close()
         log(f"Residuals plot saved to {output_path}")
     else:
-        plt.show()
-
-
-if __name__ == "__main__":
-    main()
+        plt.savefig("residuals.png", bbox_inches="tight", dpi=150)
+        plt.close()
+        log("Residuals plot saved to residuals.png")

@@ -68,7 +68,10 @@ class ProcessLock:
         if self._lock_file:
             fcntl.flock(self._lock_file, fcntl.LOCK_UN)
             self._lock_file.close()
-            Path(self.lock_path).unlink(missing_ok=True)
+            try:
+                Path(self.lock_path).unlink()
+            except FileNotFoundError:
+                pass
             self.log.info("Process lock released.")
 
 

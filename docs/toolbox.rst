@@ -4,19 +4,24 @@ Program Options
 ===============
 
 .. Important::
-    This documentation is not meant to go over all the physics/astronomy or background knowledge required to fully understand what the various programs are doing.
+    This documentation is not meant to go over all the physics/astronomy or background
+    knowledge required to fully understand what the various programs are doing.
 
 Menu
 ----
 
-After running the main script as described `here <https://eclipsingbinaries.readthedocs.io/en/latest/EB.html>`_. The user will be tasked with selecting different programs to run which is run by the ``menu.py`` file.
+After launching EclipsingBinaries as described `here <https://eclipsingbinaries.readthedocs.io/en/latest/EB.html>`_,
+the user is presented with a GUI that centralizes all available tools. The left panel
+contains the program menu and the right panel displays the inputs and output log for
+the selected program.
 
-The various programs to choose from are:
+The available programs are:
 
 + IRAF Reduction
-+ Find Minimum
++ Find Minimum (Work in Progress)
 + TESS Database Search/Download
 + AIJ Comparison Star Selector
++ Multi-Aperture Calculation
 + BSUO or SARA/TESS Night Filters
 + O-C Plotting
 + Gaia Search
@@ -28,131 +33,141 @@ IRAF Reduction
 --------------
 
 .. note::
-    The pipeline for this program is setup only for use at BSUO. This will be updated in the future.
+    The pipeline for this program is set up only for use at BSUO. This will be updated
+    in the future.
 
-Making heavy use of `Astropy's ccdproc <https://ccdproc.readthedocs.io/en/stable/ccddata.html>`_ and `Photutils <https://photutils.readthedocs.io/en/stable/aperture.html>`_ I was able to create an automatic data reduction process using Bias, Darks, and Flats to reduce science images.
+Making heavy use of `Astropy's ccdproc <https://ccdproc.readthedocs.io/en/stable/ccddata.html>`_
+and `Photutils <https://photutils.readthedocs.io/en/stable/aperture.html>`_, this program
+provides an automatic data reduction process using Bias, Dark, and Flat frames to reduce
+science images.
 
-The first thing that is done is set some global variables:
+The GUI panel accepts the following inputs:
 
-.. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 32-40
++ **Raw Images Path** — folder containing the raw, unreduced FITS images
++ **Calibrated Images Path** — folder where reduced images will be saved
++ **Location** — telescope site identifier (e.g. BSUO, CTIO)
++ **Use Dark Frames** — checkbox to include or skip dark frame subtraction
++ **Overscan Region** — format ``[columns, rows]``, e.g. ``[2073:2115, :]``
++ **Trim Region** — format ``[columns, rows]``, e.g. ``[20:2060, 12:2057]``
 
-If the user is using the ``pipeline`` as described in this `section <https://eclipsingbinaries.readthedocs.io/en/latest/pipeline.html>`_ then the following lines of code are used:
+A **Open Bias Image** button is provided to plot row 1000 of a selected bias frame,
+helping the user identify the overscan and trim regions before running the reduction.
 
-.. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 110-141
-
-Otherwise, these lines are used from the ``main`` function:
-
-.. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 55-108
-
-The only functional difference in these lines of code, is with the ``pipeline`` the user does not have to enter in folder and file locations manually where not using the ``pipeline`` the user does.
+.. note::
+    For ``ccdproc``, if the same rows are entered for both the overscan and trim region,
+    ``ccdproc`` will error out. The recommendation is to use all rows (``:``) for the
+    overscan region and specify exact rows only for the trim region.
 
 Default Values
 ^^^^^^^^^^^^^^
 
-If the user is not using the ``pipeline`` and is not at the ``BSUO`` location, then the user has the option to change those initial global settings with this function:
+The reduction uses the following default camera parameters which can be overridden
+in the GUI:
 
-.. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 189-217
-
-Where the default value is displayed but the user can change them to whatever value they like. There are no ``try excepts`` to catch incorrect ``types`` so the user has to be extra careful when entering in values.
++ **Gain** — 1.43 e⁻/ADU
++ **Read Noise** — 10.83 e⁻
++ **Memory Limit** — 450 MB (``450e6``)
 
 Reduction Functions
 ^^^^^^^^^^^^^^^^^^^
 
-Main functions of this program are ``bias``, ``dark``, ``flat``, and ``science``. Howeverm they all call this function for the actual data reducing of each image:
+The main reduction stages are ``bias``, ``dark``, ``flat``, and ``science``. Each calls
+a shared reduction function for the actual image processing:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
    :lines: 220-289
 
-Each process of reducing bias, darks, flats, and science image has its own section within the if statement.
+Each calibration type (bias, dark, flat, science) has its own section within the
+reduction pipeline.
 
 Bias
 ^^^^
 
-The bias function as shown below, first takes a flat image from the raw folder (when not using the pipeline) and displays it for the user to see:
-
-+ If there is an overscan region
-+ Where the data section (trim region) is
-
-The format for both of these variables is [columns, rows] as is the fits convention. However, if the user does not want to use all of the columns like for an overscan region, then an example would be this ``[2073:2115, :]``. Where the only columns used are between 2073 and 2115 but all of the rows are being used. Likewise, an example trim region would be ``[20:2060, 12:2057]``. This example uses columns 20-2060 and rows 12-2057.
-
-For ``ccdproc``, there is a weird bug where if the user enters the same rows for an overscan region and trim region, ``ccdproc`` errors out. So the recommendation is to use all of the rows for an overscan region and then specify where the user wants to trim the image after.
-
-Once the each image has been reduced, they must be combined to create what is called a ``master bias`` or ``zero`` image. This is done specifically by these lines:
-
-.. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 354-360
-
-The ``sigma_clip_dev_func`` computes the standard deviation about the center value (see `here <https://ccdproc.readthedocs.io/en/stable/api/ccdproc.Combiner.html#ccdproc.Combiner.sigma_clipping>`_ for more details regarding this). Also, the ``mem_limit`` can be changed but is set toa  default value of 16 Gb (1600e6). This might need to be reduced to be between 6 and 10 Gb as the average RAM is now 16 Gb. The purpose of this value is to aim to reduce and split the task of combining into chunks to reduce system RAM usage.
+The bias reduction subtracts the overscan and trims each raw bias frame, then
+combines them into a master bias using sigma clipping:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
    :lines: 292-370
 
+The ``sigma_clip_dev_func`` computes the standard deviation about the central value.
+See `ccdproc documentation <https://ccdproc.readthedocs.io/en/stable/api/ccdproc.Combiner.html#ccdproc.Combiner.sigma_clipping>`_
+for more details.
+
 Dark
 ^^^^
 
-Once the ``zero`` image has been created, the next step of the process is to create a ``master_dark``. However, some researchers forgo taking dark images as CCD's are cooled down so much that the thermal noise created by them in darks is virtually negligible and this is why there is a variable called ``dark_bool`` which has a default value of ``True``.
-
-The process is the exact same as above for Bias except, the ``zero`` image is subtracted off each and every dark image. The combining of these newly reduced darks is also slightly different:
+Once the master bias is created, dark frames are bias-subtracted and combined into
+a master dark. Dark subtraction can be skipped entirely using the **Use Dark Frames**
+checkbox, since modern cooled CCDs often have negligible thermal noise.
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
    :lines: 400-454
 
-As we now have to take into consideration the ``read nooise`` and ``gain`` of the CCD/camera.
-
 Flat
 ^^^^
 
-As stated above, the process is virtually the same but now the ``zero`` and ``master dark`` are both subtracted off each and every flat image. Now the combining of the images is slightly different as we now have filters.
+The master bias and master dark are subtracted from each flat frame. Master flats
+are created per filter:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
    :lines: 457-517
 
-This created ``master flats`` in each filter that the user is using.
-
 Science
 ^^^^^^^
 
-Again as stated above, the ``zero`` and ``master dark`` are subtracted from each science image and the ``master flats`` are used based on the filter used for each science image.
+Science images are bias-subtracted, dark-subtracted, and flat-divided using the
+master flat for the matching filter.
 
 Adding to the Header
 ^^^^^^^^^^^^^^^^^^^^
 
-Each of the previous four functions discussed all call the ``add_header`` function within the reduction loops. This function adds various values to the headers of each individual image:
+Each reduced image has the reduction parameters written to its FITS header by the
+``add_header`` function:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
    :lines: 550-580
 
-The goal of this is to make it easier in the future to tell what values were used in the reduction process.
-
 BJD_TDB
 ^^^^^^^
 
-The conversion between ``HJD`` and ``BJD_TDB`` is not an easy conversion. The purpose of including this in this package is to have a single time value across multiple telescopes or satellites. `TESS <https://tess.mit.edu/>`_ uses ``BJD_TDB`` while BSUO and various `SARA <https://www.saraobservatory.org/>`_ use ``HJD``.
+`TESS <https://tess.mit.edu/>`_ uses ``BJD_TDB`` while BSUO and
+`SARA <https://www.saraobservatory.org/>`_ use ``HJD``. This conversion is included
+to provide a consistent time standard across multiple telescopes and satellites:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
    :lines: 583-617
 
 TESS Database Search/Download
------------------------------
+------------------------------
 
-Searching the TESS Database allows for even more data collection than what is availabe through telescope time. TESS is a great resource because if a user's target object is in the database there is most likely a couple of months worth of data as TESS looks at the same spot in the sky for 27 days straight without stopping collecting data.
+TESS is a valuable resource for eclipsing binary research — if a target is in the
+database it typically has weeks to months of continuous photometry available.
+
+The GUI panel accepts the following inputs:
+
++ **System Name** — the TIC ID or common name of the target (e.g. ``NSVS 896797``)
++ **Download Path** — folder where sector data will be saved
++ **Download Specific Sector** — checkbox to select a single sector instead of all available sectors
+
+When **Download Specific Sector** is checked, a **Retrieve Sectors** button appears.
+Clicking it queries TESS for available sectors and populates a dropdown for the user
+to select from. The sector table is also printed to the output log.
 
 Searching TESS
 ^^^^^^^^^^^^^^
 
-Given an object's name, the program will find sector numbers (the number of the month data was taken). If there are no sectors available for a particular star then the program will ask the user for another star name.
+Given an object name, the program queries TESS for available sector numbers:
 
 .. literalinclude:: ../EclipsingBinaries/tess_data_search.py
    :lines: 29-36
 
-TESS ccd Information
+TESS CCD Information
 ^^^^^^^^^^^^^^^^^^^^
 
-TESS released information regarding its ccd's (there are four on board the satellite) and this is compiled into a text file called ``tess_ccd_info.txt`` located `here <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/tess_ccd_info.txt>`_ for reference. The program determined the gain given the sector's camera and ccd values and only takes every 4th value given repeats.
+TESS has four onboard CCDs. The gain for each camera/CCD combination is stored in
+``tess_ccd_info.txt``, available
+`here <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/tess_ccd_info.txt>`_.
+The program matches the sector's camera and CCD to the correct gain value:
 
 .. literalinclude:: ../EclipsingBinaries/tess_data_search.py
    :lines: 44-73
@@ -160,24 +175,21 @@ TESS released information regarding its ccd's (there are four on board the satel
 Downloading
 ^^^^^^^^^^^
 
-Starting the downloading after finding sector numbers is as simple as telling the program to download all the sectors for a first time run or to download a specific sector for new data release.
+Sectors are downloaded as ``30x30 arcmin`` cutouts — the maximum size allowed by TESS.
+Each sector is saved to its own numbered subdirectory inside the download path:
 
 .. literalinclude:: ../EclipsingBinaries/tess_data_search.py
    :lines: 83-106
 
-For either choice, the program calls the ``download`` function. This function actively retrieves the data based on system name and sector number.
-
 .. literalinclude:: ../EclipsingBinaries/tess_data_search.py
    :lines: 111-134
-
-The default size is the maximum size allowed by TESS which is a ``30x30 arcmin`` box. At this current time, there is no way to change this as an input, but if users are wanting this choice, this can be added at a later date.
 
 TESSCut
 ^^^^^^^
 
-At the line ``tCut(manifest, download_path)``, the program calls a new file named ``tesscut.py``. The reason for this file is to "unzip" the downloaded file from TESS. TESS outputs a fits file that has all images for a given sector inside of this.
-
-The extraction process is handled by this file and looks at the metadata of each extracted image to gather the mid exposure time in ``BJD_TDB`` at which that image was taken:
+The downloaded TESS file is a FITS file containing all images for a given sector.
+The ``tesscut.py`` file handles extracting individual images and reading the mid-exposure
+time in ``BJD_TDB`` from each image's metadata:
 
 .. literalinclude:: ../EclipsingBinaries/tesscut.py
    :lines: 97-98
@@ -188,52 +200,56 @@ The extraction process is handled by this file and looks at the metadata of each
 BJD to HJD
 ^^^^^^^^^^
 
-Converting from ``BJD_TDB`` to ``HJD`` is handled by the following function:
-
 .. literalinclude:: ../EclipsingBinaries/tesscut.py
    :lines: 146-156
 
-Takes a ``RA, DEC, BJD_TDB, location`` as inputs and finds the light travel time corrected ``HJD``. Currently the light travel time is not fully correct as it uses ``Greenwich England`` as the location but should be using the TESS satellite location. This will hopefully be added at a later date but is not a priority as the effect will be minimal.
+Takes ``RA``, ``DEC``, ``BJD_TDB``, and ``location`` as inputs and returns the
+light-travel-time corrected ``HJD``.
 
 Header Information
 ^^^^^^^^^^^^^^^^^^
 
-Lastly there are a few header updates that are added to each image as denoted by the following lines:
+The following header keywords are added to each extracted image:
 
 .. literalinclude:: ../EclipsingBinaries/tesscut.py
    :lines: 128-132
 
-The value ``LST_UPDT`` is when the file was edited by this program and the ``COMMENT`` is some information about the image like: date image was taken, sector number, etc.
+``LST_UPDT`` records when the file was processed and ``COMMENT`` contains the
+observation date, sector number, and other metadata.
 
 AIJ Comparison Star Selector
-----------------------------
+-----------------------------
 
-Catalog Finder
+Catalog Search
 ^^^^^^^^^^^^^^
 
-The first thing this program does is search the `Vizier APASS catalog <https://vizier.cds.unistra.fr/viz-bin/VizieR-3?-source=II/336/apass9&-out.max=50&-out.form=HTML%20Table&-out.add=_r&-out.add=_RAJ,_DEJ&-sort=_r&-oc.form=sexa>`_. Given a ``RA`` and ``DEC`` of a star, the program does the following:
+The GUI panel accepts the following inputs:
+
++ **Right Ascension (RA)** — format ``HH:MM:SS.SSSS``
++ **Declination (DEC)** — format ``DD:MM:SS.SSSS`` or ``-DD:MM:SS.SSSS``
++ **Data Save Folder Path** — where RADEC files will be written
++ **Object Name** — used for output file naming
++ **Science Image Folder Path** — folder containing calibrated science images for the overlay plot
+
+The program queries the `Vizier APASS catalog <https://vizier.cds.unistra.fr/viz-bin/VizieR-3?-source=II/336/apass9>`_
+using a 30 arcmin search box centered on the target:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
    :lines: 189-209
 
-This looks at a box of size 30 arcmin and gathers all APASS magnitude known stars and compiles them into a table. The first three inputs into the result variable are:
-
-+ ``columns`` Defines what to gather from the catalog database
-+ ``row_limit`` Set to ``-1`` to have no row limit (i.e. gather as many objects as possible)
-+ ``column_filters`` Only gather data on the stars with Johnson B and V magnitudes less than 14
+Only stars with Johnson B and V magnitudes below 14 are returned.
 
 Cousins R
 ^^^^^^^^^
 
 .. note::
-    Utilizes GPU accleration through ``numba`` for the ``calculations`` function.
+    Utilizes GPU acceleration through ``numba`` for the ``calculations`` function.
 
-After gathering all the comparison stars, the program then goes on to calculate the Cousins R band filter. For each and every comparison star by calling the ``calculations`` function:
+The Cousins R magnitude for each comparison star is calculated using the equation
+from `Jester et al. 2005 <https://arxiv.org/pdf/astro-ph/0609736.pdf>`_:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
    :lines: 526-539
-
-The final equation used comes from this `paper <https://arxiv.org/pdf/astro-ph/0609736.pdf>`_ by rearranging equation 2 to solve for the Cousins R variable. The error for the ``val`` is given by the variable ``root`` and this uses basic add the errors in quadrature.
 
 .. literalinclude:: ../EclipsingBinaries/examples/APASS_Catalog_ex.txt
     :lines: 1-10
@@ -241,49 +257,50 @@ The final equation used comes from this `paper <https://arxiv.org/pdf/astro-ph/0
 Gaia
 ^^^^
 
-The ``cousins_r`` function also searches the `Gaia <https://www.cosmos.esa.int/web/gaia/data-release-3>`_ catalog by calling the ``gaia.py`` file and specifically the ``tess_mag`` function. The function takes numerous Gaia magnitude values and calculates the TESS magnitude. Here are a number of papers on the subject:
+The comparison star selection also queries the
+`Gaia DR3 <https://www.cosmos.esa.int/web/gaia/data-release-3>`_ catalog to calculate
+TESS magnitudes for each comparison star. References:
 
 + https://iopscience.iop.org/article/10.3847/1538-3881/acaaa7/pdf
 + https://iopscience.iop.org/article/10.3847/1538-3881/ab3467/pdf
 + https://arxiv.org/pdf/2012.01916.pdf
-
-
 + https://arxiv.org/pdf/2301.03704
 
 .. literalinclude:: ../EclipsingBinaries/gaia.py
    :lines: 102-165
 
-If the value of the TESS magnitude for a given comparison is ``NaN`` then the value and its error are set to ``99.999`` to effectively guarantee that it will not be used later.
+If the TESS magnitude for a comparison star cannot be determined, its value and error
+are set to ``99.999`` so it will not be selected as a comparison star.
 
 Creating RADEC Files
 ^^^^^^^^^^^^^^^^^^^^
 
-The creation of RADEC files is carried out by the function ``create_radec`` and it uses Astro ImageJ (AIJ) convention of formatting these files:
+Four RADEC files are created — one each for Johnson B, Johnson V, Cousins R, and TESS —
+using Astro ImageJ (AIJ) formatting:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
    :lines: 383-434
 
-The function creates four RADEC files for each main filter used by BSUO (Johnson B, Johnson V, and Cousins R) and writes them to individual files.
-
 Overlay
 ^^^^^^^
 
-Displaying where all the comparison stars are located is optional. The function ``overlay`` takes the list of RA and DEC of the comparison stars and overlays their locations onto an image that the user enters in. The program plots circles around the stars and numbers them underneath those circles.
+An optional overlay plot shows the locations of all comparison stars on a science image,
+with circles and index numbers marking each star:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
    :lines: 437-500
 
 .. image:: ../EclipsingBinaries/examples/overlay_example.png
 
-BSUO or SARA/TESSS Night Filters
---------------------------------
+BSUO or SARA/TESS Night Filters
+---------------------------------
 
-Gather Data
-^^^^^^^^^^^
+When using Astro ImageJ (AIJ), it produces ``.dat`` files containing magnitude and
+flux data for each night of observations. This program combines all nightly files
+into a single file per filter.
 
-When using Astro ImageJ (AIJ), it produces ``.dat`` files that contain magntiude and flux data for every set of data anlyzed. The purpose of this code is to take all sets of the data files and combine them into a single file per filter, from the ``Night_Filters.py`` program.
-
-The program first checks how many nights the use will be using and then gathers each file pathway from a for loop inside the ``flux_mag`` function. It then checks if the user has both magnitude and flux data or just magnitude data by checking if there five or seven columns in the ``.dat`` files. Once that has been determined the program then writes those values into a text file in a format like the following:
+The program checks whether the ``.dat`` files contain five columns (magnitude only)
+or seven columns (magnitude and flux) and writes the combined output accordingly:
 
 .. literalinclude:: ../EclipsingBinaries/examples/test_B.txt
     :lines: 1-15
@@ -291,65 +308,76 @@ The program first checks how many nights the use will be using and then gathers 
 O-C Plotting
 ------------
 
-Calculating Observed minus Calculated (O-C) is done by the ``OC_plot.py`` program. Given a period and first primary ToM the program calculates the O-C values and respctive errors. The program first asks the user if they are calculating BSUO/SARA data, TESS data, or plotting all their data.
+The O-C plotting panel calculates Observed minus Calculated (O-C) values given a
+period and times of minimum (ToM), then fits linear and quadratic models to the data.
+
+The GUI panel offers three modes selected by radio buttons:
+
++ **BSUO/SARA** — averages ToM across Johnson B, V, and Cousins R filters
++ **TESS** — processes a single TESS ToM file
++ **All Data** — merges multiple pre-calculated O-C files into one combined dataset
+
+Common inputs across all modes:
+
++ **Period** — orbital period of the system in days
++ **Output Folder** — where all output files will be saved
++ **I already have an Epoch value** — checkbox to enter a known T0 and its error;
+  if unchecked the first ToM in the data is used as T0
 
 BSUO/SARA
 ^^^^^^^^^
 
-.. literalinclude:: ../EclipsingBinaries/OC_plot.py
-   :lines: 34-56
-
-As seen above, the program asks the user if they know what their ``T0`` and ``To_err`` and if they don't then the program calls the ``arguments`` function:
-
-.. literalinclude:: ../EclipsingBinaries/OC_plot.py
-   :lines: 286-300
-
-If the user does not have an Epoch value then the program uses the first time of minimum from the data provided and its corresponding error. For each index value for each filter, the ToM are averaged together. This gives the user the most likely time for that ToM:
+Requires three ToM files, one per filter (B, V, R). The program averages the three
+filters for each epoch:
 
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
    :lines: 159-162
 
-The averaging only occurs for datasets that contain multiple filters. For datasets like TESS, there is no averaging to be done as there is only a single filter.
+TESS
+^^^^
+
+Requires a single ToM file. No averaging is performed as only one filter is available.
+
+All Data
+^^^^^^^^
+
+.. note::
+    All input files must follow the format shown in
+    `example_OC_table.txt <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/examples/example_OC_table.txt>`_.
+
+Accepts a comma-separated list of pre-calculated O-C files and merges them into a
+single output. A LaTeX-formatted table is also produced automatically:
+
+.. literalinclude:: ../EclipsingBinaries/examples/O-C_paper_table.txt
 
 Calculations
 ^^^^^^^^^^^^
 
-After that, the programs calls the ``BSUO`` function which then calls the ``calculate_oc`` function that does the real calculations:
+The core O-C calculation is handled by the ``calculate_oc`` function:
 
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
    :lines: 304-334
 
-The very first line of the above code is utilizing the `Numba <https://numba.pydata.org/>`_ package. The following lines are what calculate the eclipse number and if the ``E_act`` is positive then use the floor function and if ``E_act`` is negative use the ceiling function. The ``OC`` and ``OC_err`` only take the first five decimal places, otherwise there would be like 10 decimal places (unrealistic accuracy).
+The `Numba <https://numba.pydata.org/>`_ ``@jit`` decorator accelerates this function.
+The eclipse number is determined using floor (positive epoch) or ceiling (negative epoch),
+and O-C values are rounded to five decimal places.
 
 .. literalinclude:: ../EclipsingBinaries/examples/example_OC_table.txt
     :lines: 1-10
 
-Plotting All Data
-^^^^^^^^^^^^^^^^^
+Fitting and Output
+^^^^^^^^^^^^^^^^^^
 
-.. note::
-    The format for all data files must follow the format as seen in this `example_OC_table.txt <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/examples/example_OC_table.txt>`_.
+After calculating O-C values, ``data_fit`` performs both a linear and quadratic weighted
+least squares fit. Output files written to the output folder:
 
-Once all calculations have been done through ``OC_plot.py`` or elsewhere, the program allows the user to plot all their data together. The program will first create a table that turns the input file into a ``.tex`` file that is formatted automatically to be turned into a paper ready table.
++ ``[mode]_OC.txt`` — the O-C data table
++ ``[mode]_OC.png`` — the O-C plot with linear and quadratic fits
++ ``[mode]_OC.tex`` — regression tables formatted for LaTeX
 
-.. literalinclude:: ../EclipsingBinaries/OC_plot.py
-   :lines: 244-271
-
-.. literalinclude:: ../EclipsingBinaries/examples/O-C_paper_table.txt
-
-Weights are calculated by this line:
-
-.. literalinclude:: ../EclipsingBinaries/OC_plot.py
-   :lines: 356
-
-The program splits up the primary and secondary ToM to help show potential trends and the plotting occurs with these lines:
-
-.. literalinclude:: ../EclipsingBinaries/OC_plot.py
-   :lines: 456-457
+The linear fit is used to calculate a period correction:
 
 .. image:: ../EclipsingBinaries/examples/O_C_ex.png
-
-When plotting the qudratic and linear fits, the program also produces a text file that shows the Least Squares fit for both fits. This file is also made to be used in a paper and is formatted in latex automatically.
 
 .. literalinclude:: ../EclipsingBinaries/examples/example_regression.txt
     :lines: 1-32
@@ -359,103 +387,130 @@ Gaia Search
 
 Query
 ^^^^^
-Some of the Gaia (``gaia.py``) has already been described in the `AIJ Comparison Star Selector Section <https://eclipsingbinaries.readthedocs.io/en/latest/toolbox.html#gaia>`_, but the other functionality of this program is to find parallax, effective temperature, radial velocity, and various Gaia mangitude data for a target star.
 
-The query comes from the package ``pyia`` and the function ``GaiaData``:
+Some Gaia functionality is described in the
+`AIJ Comparison Star Selector section <https://eclipsingbinaries.readthedocs.io/en/latest/toolbox.html#gaia>`_.
+The Gaia Search panel queries Gaia DR3 for physical parameters of a target star.
+
+The GUI panel accepts the following inputs:
+
++ **Right Ascension (RA)** — format ``HH:MM:SS.SSSS``
++ **Declination (DEC)** — format ``DD:MM:SS.SSSS`` or ``-DD:MM:SS.SSSS``
++ **Output File Path** — folder where the results CSV will be saved
+
+The query returns the top four matches within a 5 arcsecond search cone and saves
+the following parameters:
+
++ Parallax and error
++ Distance (lower, central, upper)
++ Effective temperature (lower, central, upper)
++ Gaia G, BP, and RP magnitudes
++ Radial velocity and error
 
 .. literalinclude:: ../EclipsingBinaries/gaia.py
    :lines: 40-61
-
-Then all that information gets saved to a text file with the name entered by the user:
 
 .. literalinclude:: ../EclipsingBinaries/gaia.py
    :lines: 64-88
 
 .. literalinclude:: ../EclipsingBinaries/examples/Gaia_output.txt
 
+.. note::
+    Parameters with a value of ``1e+20`` indicate that Gaia does not have data for
+    that parameter for the given star. Full parameter descriptions are available at the
+    `Gaia archive documentation <https://gea.esac.esa.int/archive/documentation/GDR3/Gaia_archive/chap_datamodel/sec_dm_main_source_catalogue/ssec_dm_gaia_source.html>`_.
+
 O'Connell Effect
 ----------------
 
 .. note::
-    Based on this `paper <https://app.aavso.org/jaavso/article/3511/>`_ and originally created by Alec J. Neal, the program ``OConnell.py`` solves various statistical anlalyses in regards to the O'Connell effect.
+    Based on this `paper <https://app.aavso.org/jaavso/article/3511/>`_ and originally
+    created by Alec J. Neal.
 
-Data
-^^^^
+The GUI panel accepts the following inputs:
 
-The program first tasks the user with entering in light curve data for 1-3 filters (Johnson B, Johnson V, and Cousins R). Which then calls the function ``multi_OConnell_total`` and there are options for one or two filters as well.
-
-.. literalinclude:: ../EclipsingBinaries/OConnell.py
-   :lines: 38-53
++ **Number of Filters** — radio buttons to select 1, 2, or 3 filters
++ **File Path(s)** — one file per selected filter (Johnson B, V, Cousins R)
++ **HJD** — reference epoch (first primary ToM)
++ **Period** — orbital period in days
++ **System Name** — used for output file naming
++ **Output File Path** — folder where results will be saved
 
 Calculations
 ^^^^^^^^^^^^
 
-After the files have been entered, the program converst the magnitude data into flux data and finds the phase at which each data point occurs from the period:
+Magnitude data is converted to flux and phased using the period:
 
 .. literalinclude:: ../EclipsingBinaries/OConnell.py
    :lines: 113-120
 
-Then plots the first half of the light curve flux on top of the second half light curve and finds the difference.
+The first and second halves of the phased light curve are compared:
 
 .. literalinclude:: ../EclipsingBinaries/OConnell.py
    :lines: 126-137
 
 .. image:: ../EclipsingBinaries/examples/OConnell_plot.png
 
-Once this gets plotted the program then finds the various statistical values and adds them to a list for each filter.
-
-.. literalinclude:: ../EclipsingBinaries/OConnell.py
-   :lines: 415-433
+Statistical values (OER, LCA, ΔI) are calculated for each filter using Monte Carlo
+simulations (1000 by default):
 
 .. literalinclude:: ../EclipsingBinaries/OConnell.py
    :lines: 298-328
 
-See `vseq_updated.py <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/vseq_updated.py#L1114>`_ for the actual calculations of all the values.
+See `vseq_updated.py <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/vseq_updated.py#L1114>`_
+for the full mathematical implementations.
 
 Output
 ^^^^^^
 
-Once the program goes through all the filters, it then creates a latex ready file for use in a paper with a table of all filters along with their respctive statistical values.
+A LaTeX-formatted table is produced containing all statistical values for each filter:
 
-.. literalinclude:: ../EclipsingBinaries/examples/OConnell_table.txt  
+.. literalinclude:: ../EclipsingBinaries/examples/OConnell_table.txt
 
 Color Light Curve
 -----------------
 
 .. note::
-    Originally created by Alec J. Neal but originally updated for this package by Kyle Koeller.
+    Originally created by Alec J. Neal, updated for this package by Kyle Koeller.
 
-This program is a little unique because instead of a command line interface, ``color_light_curve.py`` utilizes the ``tkinter`` package to use a GUI.
+The Color Light Curve panel calculates B-V and optionally V-R color indices and
+effective temperatures from multi-filter light curve data.
 
-.. image::  ../EclipsingBinaries/examples/gui_color_light.png
+The GUI panel accepts the following inputs:
 
-Required Files
-^^^^^^^^^^^^^^
++ **B-band File** — Johnson B light curve file
++ **V-band File** — Johnson V light curve file
++ **Period** — orbital period in days
++ **HJD (Epoch)** — first primary ToM
++ **Output Image Name** — filename for the saved plot (must end in ``.png``)
 
-The ``B file`` (Johnson B filter), ``V file`` (Johnson V), ``Epoch`` (first primary ToM), and ``Period`` are required for the program to run. The ``Max. tolerance`` and ``Lower limit`` should not be changed if the user does not know what they do. Once these required items have been entered, the program calls the ``subtract_LC``function.
+Subtract Light Curve
+^^^^^^^^^^^^^^^^^^^^
 
-Subtact Light Curve
-^^^^^^^^^^^^^^^^^^^
-
-The ``subtract_LC`` finds the ``B-V`` and ``V-R`` values and their errors.
+The ``subtract_LC`` function interpolates the B-band observations to the times of
+V-band observations, then calculates the instantaneous B-V color index:
 
 .. literalinclude:: ../EclipsingBinaries/color_light_curve.py
    :lines: 86-143
 
-At line 141, the program calculates the effective temperature found from each of these color index values from the `Flower P. J. 1996 <https://ui.adsabs.harvard.edu/abs/1996ApJ...469..355F/abstract>`_ with the Torres 2010 polynomial update.
+The effective temperature is derived from the color index using the polynomial fit
+from `Flower 1996 <https://ui.adsabs.harvard.edu/abs/1996ApJ...469..355F/abstract>`_
+with the Torres 2010 update:
 
 .. literalinclude:: ../EclipsingBinaries/vseq_updated.py
    :lines: 1499-1507
 
-Inside the GUI, the program will tell the user what the effective temperatures are along with outputting those values into the command line. The ``B-V`` is what Flower specifically created the polynomial fit for but this program uses the same polynomial fit for the ``V-R`` which cannot be assumed to be correct. This might be updated to the correct polynomial at a later date.
+.. note::
+    The B-V polynomial is the one Flower specifically derived. Using the same polynomial
+    for V-R is an approximation and should be treated with caution.
 
 Plotting
 ^^^^^^^^
 
-The program then plots the phase space light curve plots of each filter entered on an upper panel and the color index values in the lower panel as shown below:
+The output log displays the color index, its error, and the derived effective temperature.
+The plot shows the phased light curves in the upper panel and the color index variation
+in the lower panel:
 
-.. image::  ../EclipsingBinaries/examples/color_light_curve_ex.png
+.. image:: ../EclipsingBinaries/examples/color_light_curve_ex.png
 
-The program also plots a simple light curve plot of each filter separately from the color index plot.
-
-.. image::  ../EclipsingBinaries/examples/light_curve_ex.png
+.. image:: ../EclipsingBinaries/examples/light_curve_ex.png

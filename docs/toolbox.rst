@@ -75,10 +75,7 @@ The main reduction stages are ``bias``, ``dark``, ``flat``, and ``science``. Eac
 a shared reduction function for the actual image processing:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 220-289
-
-Each calibration type (bias, dark, flat, science) has its own section within the
-reduction pipeline.
+   :pyobject: reduce_image
 
 Bias
 ^^^^
@@ -87,7 +84,7 @@ The bias reduction subtracts the overscan and trims each raw bias frame, then
 combines them into a master bias using sigma clipping:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 292-370
+   :pyobject: bias
 
 The ``sigma_clip_dev_func`` computes the standard deviation about the central value.
 See `ccdproc documentation <https://ccdproc.readthedocs.io/en/stable/api/ccdproc.Combiner.html#ccdproc.Combiner.sigma_clipping>`_
@@ -101,7 +98,7 @@ a master dark. Dark subtraction can be skipped entirely using the **Use Dark Fra
 checkbox, since modern cooled CCDs often have negligible thermal noise.
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 400-454
+   :pyobject: dark
 
 Flat
 ^^^^
@@ -110,13 +107,16 @@ The master bias and master dark are subtracted from each flat frame. Master flat
 are created per filter:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 457-517
+   :pyobject: flat
 
 Science
 ^^^^^^^
 
 Science images are bias-subtracted, dark-subtracted, and flat-divided using the
 master flat for the matching filter.
+
+.. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
+   :pyobject: science
 
 Adding to the Header
 ^^^^^^^^^^^^^^^^^^^^
@@ -125,7 +125,7 @@ Each reduced image has the reduction parameters written to its FITS header by th
 ``add_header`` function:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 550-580
+   :pyobject: add_header
 
 BJD_TDB
 ^^^^^^^
@@ -135,7 +135,7 @@ BJD_TDB
 to provide a consistent time standard across multiple telescopes and satellites:
 
 .. literalinclude:: ../EclipsingBinaries/IRAF_Reduction.py
-   :lines: 583-617
+   :pyobject: bjd_tdb
 
 TESS Database Search/Download
 ------------------------------
@@ -159,18 +159,7 @@ Searching TESS
 Given an object name, the program queries TESS for available sector numbers:
 
 .. literalinclude:: ../EclipsingBinaries/tess_data_search.py
-   :lines: 29-36
-
-TESS CCD Information
-^^^^^^^^^^^^^^^^^^^^
-
-TESS has four onboard CCDs. The gain for each camera/CCD combination is stored in
-``tess_ccd_info.txt``, available
-`here <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/tess_ccd_info.txt>`_.
-The program matches the sector's camera and CCD to the correct gain value:
-
-.. literalinclude:: ../EclipsingBinaries/tess_data_search.py
-   :lines: 44-73
+   :pyobject: run_tess_search
 
 Downloading
 ^^^^^^^^^^^
@@ -179,10 +168,7 @@ Sectors are downloaded as ``30x30 arcmin`` cutouts — the maximum size allowed 
 Each sector is saved to its own numbered subdirectory inside the download path:
 
 .. literalinclude:: ../EclipsingBinaries/tess_data_search.py
-   :lines: 83-106
-
-.. literalinclude:: ../EclipsingBinaries/tess_data_search.py
-   :lines: 111-134
+   :pyobject: download_sector
 
 TESSCut
 ^^^^^^^
@@ -192,30 +178,16 @@ The ``tesscut.py`` file handles extracting individual images and reading the mid
 time in ``BJD_TDB`` from each image's metadata:
 
 .. literalinclude:: ../EclipsingBinaries/tesscut.py
-   :lines: 97-98
-
-.. literalinclude:: ../EclipsingBinaries/tesscut.py
-   :lines: 110
+   :pyobject: process_tess_cutout
 
 BJD to HJD
 ^^^^^^^^^^
 
 .. literalinclude:: ../EclipsingBinaries/tesscut.py
-   :lines: 146-156
+   :pyobject: bjd_to_hjd
 
 Takes ``RA``, ``DEC``, ``BJD_TDB``, and ``location`` as inputs and returns the
 light-travel-time corrected ``HJD``.
-
-Header Information
-^^^^^^^^^^^^^^^^^^
-
-The following header keywords are added to each extracted image:
-
-.. literalinclude:: ../EclipsingBinaries/tesscut.py
-   :lines: 128-132
-
-``LST_UPDT`` records when the file was processed and ``COMMENT`` contains the
-observation date, sector number, and other metadata.
 
 AIJ Comparison Star Selector
 -----------------------------
@@ -235,7 +207,7 @@ The program queries the `Vizier APASS catalog <https://vizier.cds.unistra.fr/viz
 using a 30 arcmin search box centered on the target:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
-   :lines: 189-209
+   :pyobject: comparison_selector
 
 Only stars with Johnson B and V magnitudes below 14 are returned.
 
@@ -249,7 +221,7 @@ The Cousins R magnitude for each comparison star is calculated using the equatio
 from `Jester et al. 2005 <https://arxiv.org/pdf/astro-ph/0609736.pdf>`_:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
-   :lines: 526-539
+   :pyobject: calculations
 
 .. literalinclude:: ../EclipsingBinaries/examples/APASS_Catalog_ex.txt
     :lines: 1-10
@@ -267,7 +239,7 @@ TESS magnitudes for each comparison star. References:
 + https://arxiv.org/pdf/2301.03704
 
 .. literalinclude:: ../EclipsingBinaries/gaia.py
-   :lines: 102-165
+   :pyobject: tess_mag
 
 If the TESS magnitude for a comparison star cannot be determined, its value and error
 are set to ``99.999`` so it will not be selected as a comparison star.
@@ -279,7 +251,7 @@ Four RADEC files are created — one each for Johnson B, Johnson V, Cousins R, a
 using Astro ImageJ (AIJ) formatting:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
-   :lines: 383-434
+   :pyobject: create_radec
 
 Overlay
 ^^^^^^^
@@ -288,7 +260,7 @@ An optional overlay plot shows the locations of all comparison stars on a scienc
 with circles and index numbers marking each star:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
-   :lines: 437-500
+   :pyobject: overlay
 
 .. image:: ../EclipsingBinaries/examples/overlay_example.png
 
@@ -331,12 +303,15 @@ Requires three ToM files, one per filter (B, V, R). The program averages the thr
 filters for each epoch:
 
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
-   :lines: 159-162
+   :pyobject: BSUO
 
 TESS
 ^^^^
 
-Requires a single ToM file. No averaging is performed as only one filter is available.
+Requires a single ToM file. No averaging is performed as only one filter is available:
+
+.. literalinclude:: ../EclipsingBinaries/OC_plot.py
+   :pyobject: TESS_OC
 
 All Data
 ^^^^^^^^
@@ -348,6 +323,9 @@ All Data
 Accepts a comma-separated list of pre-calculated O-C files and merges them into a
 single output. A LaTeX-formatted table is also produced automatically:
 
+.. literalinclude:: ../EclipsingBinaries/OC_plot.py
+   :pyobject: all_data
+
 .. literalinclude:: ../EclipsingBinaries/examples/O-C_paper_table.txt
 
 Calculations
@@ -356,7 +334,7 @@ Calculations
 The core O-C calculation is handled by the ``calculate_oc`` function:
 
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
-   :lines: 304-334
+   :pyobject: calculate_oc
 
 The `Numba <https://numba.pydata.org/>`_ ``@jit`` decorator accelerates this function.
 The eclipse number is determined using floor (positive epoch) or ceiling (negative epoch),
@@ -375,7 +353,8 @@ least squares fit. Output files written to the output folder:
 + ``[mode]_OC.png`` — the O-C plot with linear and quadratic fits
 + ``[mode]_OC.tex`` — regression tables formatted for LaTeX
 
-The linear fit is used to calculate a period correction:
+.. literalinclude:: ../EclipsingBinaries/OC_plot.py
+   :pyobject: data_fit
 
 .. image:: ../EclipsingBinaries/examples/O_C_ex.png
 
@@ -408,10 +387,7 @@ the following parameters:
 + Radial velocity and error
 
 .. literalinclude:: ../EclipsingBinaries/gaia.py
-   :lines: 40-61
-
-.. literalinclude:: ../EclipsingBinaries/gaia.py
-   :lines: 64-88
+   :pyobject: target_star
 
 .. literalinclude:: ../EclipsingBinaries/examples/Gaia_output.txt
 
@@ -439,23 +415,19 @@ The GUI panel accepts the following inputs:
 Calculations
 ^^^^^^^^^^^^
 
-Magnitude data is converted to flux and phased using the period:
+Magnitude data is converted to flux and phased using the period. The first and second
+halves of the phased light curve are then compared:
 
 .. literalinclude:: ../EclipsingBinaries/OConnell.py
-   :lines: 113-120
-
-The first and second halves of the phased light curve are compared:
-
-.. literalinclude:: ../EclipsingBinaries/OConnell.py
-   :lines: 126-137
-
-.. image:: ../EclipsingBinaries/examples/OConnell_plot.png
+   :pyobject: Half_Comp
 
 Statistical values (OER, LCA, ΔI) are calculated for each filter using Monte Carlo
 simulations (1000 by default):
 
 .. literalinclude:: ../EclipsingBinaries/OConnell.py
-   :lines: 298-328
+   :pyobject: OConnell_total
+
+.. image:: ../EclipsingBinaries/examples/OConnell_plot.png
 
 See `vseq_updated.py <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/vseq_updated.py#L1114>`_
 for the full mathematical implementations.
@@ -464,6 +436,9 @@ Output
 ^^^^^^
 
 A LaTeX-formatted table is produced containing all statistical values for each filter:
+
+.. literalinclude:: ../EclipsingBinaries/OConnell.py
+   :pyobject: multi_OConnell_total
 
 .. literalinclude:: ../EclipsingBinaries/examples/OConnell_table.txt
 
@@ -491,14 +466,14 @@ The ``subtract_LC`` function interpolates the B-band observations to the times o
 V-band observations, then calculates the instantaneous B-V color index:
 
 .. literalinclude:: ../EclipsingBinaries/color_light_curve.py
-   :lines: 86-143
+   :pyobject: subtract_LC
 
 The effective temperature is derived from the color index using the polynomial fit
 from `Flower 1996 <https://ui.adsabs.harvard.edu/abs/1996ApJ...469..355F/abstract>`_
 with the Torres 2010 update:
 
 .. literalinclude:: ../EclipsingBinaries/vseq_updated.py
-   :lines: 1499-1507
+   :pyobject: Flower.T.Teff
 
 .. note::
     The B-V polynomial is the one Flower specifically derived. Using the same polynomial
@@ -510,6 +485,9 @@ Plotting
 The output log displays the color index, its error, and the derived effective temperature.
 The plot shows the phased light curves in the upper panel and the color index variation
 in the lower panel:
+
+.. literalinclude:: ../EclipsingBinaries/color_light_curve.py
+   :pyobject: color_plot
 
 .. image:: ../EclipsingBinaries/examples/color_light_curve_ex.png
 

@@ -3,7 +3,28 @@
 import datetime
 from configparser import ConfigParser
 from importlib.metadata import version as get_version
+from unittest.mock import MagicMock
 import os
+import sys
+
+# Mock heavy dependencies that are not needed to build docs
+# and may not be installable in the ReadTheDocs environment
+MOCK_MODULES = [
+    'numba',
+    'tkinterdnd2',
+    'tkmacosx',
+    'ccdproc',
+    'photutils',
+    'photutils.aperture',
+    'pyia',
+    'astroquery',
+    'astroquery.mast',
+    'PyAstronomy',
+    'tqdm',
+]
+
+for mod_name in MOCK_MODULES:
+    sys.modules[mod_name] = MagicMock()
 
 # Get configuration information from setup.cfg
 conf = ConfigParser()
@@ -18,7 +39,10 @@ project = setup_cfg['name']
 author = setup_cfg['author']
 copyright = '{0}, {1}'.format(datetime.datetime.now().year, author)
 
-release = get_version("EclipsingBinaries")
+try:
+    release = get_version("EclipsingBinaries")
+except Exception:
+    release = "unknown"
 version = '.'.join(release.split('.')[:2])
 
 html_title = '{0} v{1}'.format(project, release)
@@ -31,8 +55,10 @@ man_pages = [('index', project.lower(), project + u' Documentation',
 
 extensions = [
     'sphinx_astropy',
+    'sphinx.ext.autodoc',
     'sphinx.ext.duration',
     'sphinx.ext.doctest',
+    'sphinx.ext.intersphinx',
 ]
 
 intersphinx_mapping = {

@@ -1,5 +1,4 @@
 version: 2
-# see this website for other commands https://docs.readthedocs.io/en/stable/config-file/v2.html
 
 build:
   os: "ubuntu-24.04"

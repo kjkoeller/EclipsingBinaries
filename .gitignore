@@ -1,0 +1,47 @@
+# Auto-generated version file from setuptools_scm
+EclipsingBinaries/_version.py
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Coverage reports
+.coverage
+htmlcov/
+coverage.xml
+
+# Tox
+.tox/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Sphinx build output
+docs/_build/
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# Distribution / packaging
+*.manifest
+*.spec

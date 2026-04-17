@@ -9,6 +9,7 @@ Last Updated: 03/11/2026
 from astroquery.vizier import Vizier
 import numpy as np
 import pandas as pd
+import os
 
 import astropy.units as u
 import astropy.coordinates as coord
@@ -175,7 +176,7 @@ def cousins_r(ra, dec, pipeline, folder_path, obj_name, write_callback, cancel_e
             "e_TMag": T_err_list
         })
 
-        output_file = folder_path + "\\APASS_" + obj_name + "_Rc.txt"
+        output_file = os.path.join(folder_path, "APASS_" + obj_name + "_Rc.txt")
         # noinspection PyTypeChecker
         final.to_csv(output_file, index=True, sep="\t")
         log("Completed Cousins R calculations.")
@@ -349,7 +350,7 @@ def catalog_finder(ra, dec, pipeline, folder_path, obj_name, write_callback, can
         log("Processing data from the Vizier catalog.")
         df = process_data(result)
 
-        text_file = folder_path + "\\APASS_" + obj_name + "_catalog.txt"
+        text_file = os.path.join(folder_path, "APASS_" + obj_name + "_catalog.txt")
 
         save_to_file(df, text_file)
 
@@ -464,7 +465,7 @@ def create_radec(df, ra, dec, T_list, pipeline, folder_path, obj_name, write_cal
             lines = create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
 
             output = header + lines
-            outputfile = folder_path + "\\" + obj_name + "_" + filt
+            outputfile = os.path.join(folder_path, obj_name + "_" + filt)
 
             with open(outputfile + ".radec", "w") as file:
                 file.write(output)
@@ -492,6 +493,15 @@ def overlay(df, tar_ra, tar_dec, fits_file):
     # NSVS_254037-S001-R004-C001-Empty-R-B2.fts
     # fits_file = input("Enter file pathway to one of your science image files for creating an overlay or "
     #                   "comparison stars: ")
+
+    # If a directory is given, find the first FITS file within it
+    if os.path.isdir(fits_file):
+        fits_extensions = ('.fits', '.fts', '.fit', '.FITS', '.FTS', '.FIT')
+        candidates = sorted(f for f in os.listdir(fits_file) if f.endswith(fits_extensions))
+        if not candidates:
+            print(f"No FITS files found in {fits_file}. Skipping overlay.")
+            return
+        fits_file = os.path.join(fits_file, candidates[0])
 
     # get the image data for plotting purposes
     header_data_unit_list = fits.open(fits_file)

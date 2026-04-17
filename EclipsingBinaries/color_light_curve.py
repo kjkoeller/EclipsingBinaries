@@ -233,7 +233,7 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
         mag.text(ytickpad, (max(Bmag) + min(Bmag)) / 2, 'B', rotation=90, fontsize=fs * 1.2)
         mag.text(ytickpad, (max(Vmag) + min(Vmag)) / 2, 'V', rotation=90, fontsize=fs * 1.2)
         # bv.set_xlabel('$\Phi$',fontsize=fs*1.2)
-        bv.set_xlabel('$\Phi$', fontsize=fs * 1.5, usetex=False)
+        bv.set_xlabel(r'$\Phi$', fontsize=fs * 1.5, usetex=False)
         bv.set_ylabel(r'$\rm B-V$', fontsize=fs * 1.2)
         # quadcolor,colorerr=B_V[3:5:]
         bv.axhline(quadcolor, color='gray', linewidth=None)
@@ -519,7 +519,7 @@ def color_gui(developer=False):
             mag.text(ytickpad, (max(Bmag) + min(Bmag)) / 2, 'B', rotation=90, fontsize=fs * 1.2)
             mag.text(ytickpad, (max(Vmag) + min(Vmag)) / 2, 'V', rotation=90, fontsize=fs * 1.2)
             # bv.set_xlabel('$\Phi$',fontsize=fs*1.2)
-            bv.set_xlabel('$\Phi$', fontsize=fs * 1.2, usetex=False)
+            bv.set_xlabel(r'$\Phi$', fontsize=fs * 1.2, usetex=False)
             bv.set_ylabel(r'$\rm B-V$', fontsize=fs * 1.2)
             # quadcolor,colorerr=B_V[3:5:]
             # bv.axhline(quadcolor,color='gray',linewidth=None)
@@ -586,11 +586,11 @@ def color_gui(developer=False):
                 # vr.plot([''])
                 # vr.annotate(r'$V-R_{\rm C}='+str(round(VRc,4))+'\pm'+str(round(VRerr,4))+'$',xy=(0.25,VRc),ha='center',va='center',bbox=dict(facecolor='white', edgecolor='gray',boxstyle='round',pad=0.1),fontsize=11)
 
-                vr.annotate(r'$V-R_{\rm C}=' + str(round(VRc, 4)) + '\pm' + str(round(VRerr, 4)) + '$',
+                vr.annotate(r'$V-R_{\rm C}=' + str(round(VRc, 4)) + r'\pm' + str(round(VRerr, 4)) + '$',
                             xytext=(0.25, vr.get_ylim()[-1]), xy=(0, VRc), ha='center', va='center',
                             bbox=dict(facecolor='white', edgecolor='gray', pad=0.1), fontsize=11,
                             arrowprops=dict(arrowstyle='-', color='gray', linewidth=1.5))
-                bv.annotate(r'$B-V=' + str(round(quadcolor, 4)) + '\pm' + str(round(colorerr, 4)) + '$',
+                bv.annotate(r'$B-V=' + str(round(quadcolor, 4)) + r'\pm' + str(round(colorerr, 4)) + '$',
                             xytext=(0.25, bv.get_ylim()[-1]), xy=(0, quadcolor), ha='center', va='center',
                             bbox=dict(facecolor='white', edgecolor='gray', linewidth=1.5), fontsize=11,
                             arrowprops=dict(arrowstyle='-', color='gray', linewidth=1.5))

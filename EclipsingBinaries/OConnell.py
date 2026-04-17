@@ -441,29 +441,29 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
         table_header += '}\n' + '\\hline\\hline\n' + 'Parameter '
         for band in range(filters):
             table_header += '& Filter ' + str(band + 1)
-        table_header += '\\\ \n' + '\\hline\n'
+        table_header += r'\\ ' + '\n' + '\\hline\n'
 
         a1_line = '$a_1$ '
         a2_line = '$a_2$ '
         a4_line = '$a_4$ '
         a22_line = '$a_2(0.125-a_2)$ '
         b1_line = '$2b_1$ '
-        dIFT_line = '$\Delta I_{\\rm FT}$ '
-        dIave_line = '$\Delta I_{\\rm ave}$ '
+        dIFT_line = r'$\Delta I_{\rm FT}$ '
+        dIave_line = r'$\Delta I_{\rm ave}$ '
         OER_line = 'OER '
         LCA_line = 'LCA '
 
         strr = lambda x, e=5: str(round(x, e))
         for band in range(filters):
-            a1_line += '& $' + strr(a_all[band][1]) + '\pm ' + strr(a_err_all[band][1]) + '$ '
-            a2_line += '& $' + strr(a_all[band][2]) + '\pm ' + strr(a_err_all[band][2]) + '$ '
-            a4_line += '& $' + strr(a_all[band][4]) + '\pm ' + strr(a_err_all[band][4]) + '$ '
-            a22_line += '& $' + strr(a22s[band]) + '\pm ' + strr(a22s_err[band]) + '$ '
-            b1_line += '& $' + strr(2 * b_all[band][1]) + '\pm ' + strr(2 * b_err_all[band][1]) + '$ '
-            dIFT_line += '& $' + strr(dI_FT[band]) + '\pm ' + strr(dI_FT_err[band]) + '$ '
-            dIave_line += '& $' + strr(dI_ave[band]) + '\pm ' + strr(dI_ave_err[band]) + '$ '
-            OER_line += '& $' + strr(OERs[band]) + '\pm ' + strr(OERs_err[band]) + '$ '
-            LCA_line += '& $' + strr(LCAs[band]) + '\pm ' + strr(LCAs_err[band]) + '$ '
+            a1_line += '& $' + strr(a_all[band][1]) + r'\pm ' + strr(a_err_all[band][1]) + '$ '
+            a2_line += '& $' + strr(a_all[band][2]) + r'\pm ' + strr(a_err_all[band][2]) + '$ '
+            a4_line += '& $' + strr(a_all[band][4]) + r'\pm ' + strr(a_err_all[band][4]) + '$ '
+            a22_line += '& $' + strr(a22s[band]) + r'\pm ' + strr(a22s_err[band]) + '$ '
+            b1_line += '& $' + strr(2 * b_all[band][1]) + r'\pm ' + strr(2 * b_err_all[band][1]) + '$ '
+            dIFT_line += '& $' + strr(dI_FT[band]) + r'\pm ' + strr(dI_FT_err[band]) + '$ '
+            dIave_line += '& $' + strr(dI_ave[band]) + r'\pm ' + strr(dI_ave_err[band]) + '$ '
+            OER_line += '& $' + strr(OERs[band]) + r'\pm ' + strr(OERs_err[band]) + '$ '
+            LCA_line += '& $' + strr(LCAs[band]) + r'\pm ' + strr(LCAs_err[band]) + '$ '
 
         if cancel_event.is_set():
             log("Task canceled.")
@@ -471,7 +471,7 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
 
         lines = [a1_line, a2_line, a4_line, a22_line, b1_line, dIFT_line, dIave_line, OER_line, LCA_line]
         for count, _ in enumerate(lines):
-            lines[count] += '\\\ \n'
+            lines[count] += r'\\ ' + '\n'
 
         output = table_header
         for _, line in enumerate(lines):

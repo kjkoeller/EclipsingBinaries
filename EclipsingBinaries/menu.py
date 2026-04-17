@@ -751,11 +751,11 @@ class ProgramLauncher(TkinterDnD.Tk):
                                            validation_func=lambda x: len(x.strip()) > 0,
                                            error_message="Please enter the object name.")
 
-        science_image = self.create_input_field(self.right_frame, "Science Image Folder Path:",
+        science_image = self.create_input_field(self.right_frame, "Science Image File:",
                                                 r"C:\folder1\calibrated_images", row=5,
                                                 validation_func=lambda x: len(x.strip()) > 0,
                                                 error_message="Please enter a file pathway.",
-                                                browse_type="folder")
+                                                browse_type="file")
 
         # Buttons for comparison selector
         Button(self.right_frame, text="Run Comparison Selector", font=self.button_font, bg="#003366", fg="white",

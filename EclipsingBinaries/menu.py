@@ -136,7 +136,8 @@ class ProgramLauncher(TkinterDnD.Tk):
             if not entry.get().strip():  # If entry is empty
                 entry.insert(0, placeholder_text)
                 entry.config(fg="gray")
-            validate_input()  # Validate on focus out
+            if not getattr(entry, '_browsing', False):  # Skip validation if browse dialog is open
+                validate_input()  # Validate on focus out
 
         entry.insert(0, placeholder_text)
         entry.config(fg="gray")
@@ -154,15 +155,19 @@ class ProgramLauncher(TkinterDnD.Tk):
                 selected_path = filedialog.askopenfilename(title="Select File")
             elif browse_type == "folder":
                 selected_path = filedialog.askdirectory(title="Select Folder")
+            entry._browsing = False  # Reset flag after dialog closes
             if selected_path:
                 entry.delete(0, "end")
                 entry.insert(0, selected_path)
                 entry.config(fg="black")
                 validate_input()  # Validate on file/folder selection
 
+        # width is in pixels on macOS (tkmacosx), in characters on other platforms
+        btn_width = 60 if platform.system() == "Darwin" else 8
         browse_button = Button(entry_frame, text="Browse", font=("Helvetica", 9), bg="#f0f0f0",
-                               width=8, command=browse_action)
+                               width=btn_width, command=browse_action)
         browse_button.grid(row=0, column=1, padx=(5, 5), pady=2, sticky="e")  # Positioned to the right
+        browse_button.bind("<ButtonPress>", lambda e: setattr(entry, '_browsing', True))
 
     def _make_drop_handler(self, entry, validate_input):
         """Build and return the drag-and-drop handler for an entry field."""

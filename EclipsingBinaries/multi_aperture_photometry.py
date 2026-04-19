@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 04/06/2026
+Last Updated: 04/19/2026
 """
 
 # Python imports
@@ -128,6 +128,10 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
             pbar.write(message)
         else:
             tqdm.write(message)
+    
+    if cancel_event and cancel_event.is_set():
+        log("Task canceled during photometry.")
+        return
 
     # Aperture and annulus sizes in pixels
     aperture_radius = 20

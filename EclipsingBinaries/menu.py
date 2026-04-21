@@ -4,7 +4,7 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 03/16/2026
+Last Updated: 04/21/2026
 """
 
 import json
@@ -289,7 +289,7 @@ class ProgramLauncher(TkinterDnD.Tk):
             ("AIJ Comparison Star Selector", self.show_aij_comparison_selector),
             ("Multi-Aperture Calculation", self.show_multi_aperture_photometry),
             ("BSUO or SARA/TESS Night Filters", self.dummy_action),
-            ("O-C Plotting", self.show_OC_plot),
+            ("O-C Plotting", self.show_oc_plot),
             ("Gaia Search", self.show_gaia_query),
             ("O'Connell Effect", self.show_oconnell_effect),
             ("Color Light Curve", self.show_color_light_curve),

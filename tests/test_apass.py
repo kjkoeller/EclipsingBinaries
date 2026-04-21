@@ -5,7 +5,7 @@ Author: Kyle Koeller
 Last Edited By: Kyle Koeller
 
 Created: 07/07/2021
-Last Updated: 04/20/2026
+Last Updated: 04/22/2026
 """
 
 import tempfile
@@ -226,8 +226,8 @@ class TestAngleDist(unittest.TestCase):
 
 class TestCreateLines(unittest.TestCase):
     def test_create_lines_no_angle_dist(self):
-        ra_list = ['20:00:000', '50:00:000']
-        dec_list = ['40:00:000', '50:00:000']
+        ra_list = ['20:00:00.000', '50:00:00.000']
+        dec_list = ['40:00:00.000', '50:00:00.000']
         mag_list = [12.000, 10.000]
         ra = '10'
         dec = '30'
@@ -239,15 +239,15 @@ class TestCreateLines(unittest.TestCase):
         self.assertEqual(expected, result)
 
     def test_create_lines_with_angle_dist(self):
-        ra_list = ['10:00:000', '20:00:000', '30:00:000']
-        dec_list = ['30:00:000', '40:00:000', '50:00:000']
+        ra_list = ['10:00:00.000', '20:00:00.000', '30:00:00.000']
+        dec_list = ['30:00:00.000', '40:00:00.000', '50:00:00.000']
         mag_list = [12.000, 10.000, 11.000]
         ra = '10'
         dec = '30'
         filt = 'V'
 
         result = apass.create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
-        expected = '10:00:000, 30:00:000, 1, 1, 12.000\n'
+        expected = '10:00:00.000, 30:00:00.000, 1, 1, 12.000\n'
         self.assertEqual(expected, result)
 
 

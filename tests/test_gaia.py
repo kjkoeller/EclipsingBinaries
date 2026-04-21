@@ -8,6 +8,8 @@ import pytest
 import math
 import os
 import tempfile
+import pandas as pd
+import numpy as np
 from unittest.mock import patch, MagicMock
 
 
@@ -174,26 +176,28 @@ def test_no_bp_rp_fallback_error():
 
 
 def test_no_bp_rp_fallback_is_fainter_than_g():
-    # T = G - 0.403 → T is 0.403 mag fainter (numerically smaller) than G
+    # T = G - 0.403 → T is numerically smaller than G
     G = 12.0
     T, _ = _tess_mag_no_bp_rp(G, 200.0)
     assert T < G
 
 
 # ===========================================================================
-# target_star — network mocked
+# target_star — network mocked via GaiaData.from_query
 # ===========================================================================
 def _make_mock_gaia_result():
-    """Build a minimal mock GaiaData object matching what target_star accesses."""
+    """
+    Build a minimal mock GaiaData object matching all fields accessed by
+    target_star, including distance_gspphot_upper (not distance_gspphot twice).
+    """
     import astropy.units as u
-    import numpy as np
 
     mock = MagicMock()
     mock.parallax = [1.0, 1.1, 1.2, 1.3] * u.mas
     mock.parallax_error = [0.01, 0.01, 0.01, 0.01] * u.mas
     mock.distance_gspphot_lower = [300.0, 310.0, 320.0, 330.0] * u.pc
     mock.distance_gspphot = [320.0, 330.0, 340.0, 350.0] * u.pc
-    mock.distance_gspphot_upper = [340.0, 350.0, 360.0, 370.0] * u.pc
+    mock.distance_gspphot_upper = [340.0, 350.0, 360.0, 370.0] * u.pc  # must differ from distance_gspphot
     mock.teff_gspphot_lower = [5500.0, 5600.0, 5700.0, 5800.0] * u.K
     mock.teff_gspphot = [5700.0, 5800.0, 5900.0, 6000.0] * u.K
     mock.teff_gspphot_upper = [5900.0, 6000.0, 6100.0, 6200.0] * u.K
@@ -250,7 +254,6 @@ def test_target_star_cancels_before_query():
 
 def test_target_star_output_has_expected_columns():
     from EclipsingBinaries.gaia import target_star
-    import pandas as pd
     cancel = MagicMock()
     cancel.is_set.return_value = False
 
@@ -264,12 +267,38 @@ def test_target_star_output_has_expected_columns():
                          index_col=0)
         expected_cols = [
             "Parallax(mas)", "Parallax_err(mas)",
-            "Distance(pc)", "T_eff(K)", "G_Mag",
-            "G_BP_Mag", "G_RP_Mag",
-            "Radial_velocity(km/s)", "Radial_velocity_err(km/s)"
+            "Distance_lower(pc)", "Distance(pc)", "Distance_higher(pc)",
+            "T_eff_lower(K)", "T_eff(K)", "T_eff_higher(K)",
+            "G_Mag", "G_BP_Mag", "G_RP_Mag",
+            "Radial_velocity(km/s)", "Radial_velocity_err(km/s)",
         ]
         for col in expected_cols:
             assert col in df.columns, f"Missing column: {col}"
+
+
+def test_target_star_distance_higher_differs_from_distance():
+    """
+    Regression test: Distance_higher(pc) must use distance_gspphot_upper,
+    not a duplicate of distance_gspphot.
+    """
+    from EclipsingBinaries.gaia import target_star
+    cancel = MagicMock()
+    cancel.is_set.return_value = False
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch("EclipsingBinaries.gaia.GaiaData.from_query",
+                   return_value=_make_mock_gaia_result()):
+            target_star("12:34:56.78", "45:00:00.00", tmpdir,
+                        write_callback=None, cancel_event=cancel)
+
+        df = pd.read_csv(os.path.join(tmpdir, "gaia_results.csv"), sep="\t",
+                         index_col=0)
+        # distance_gspphot=[320,330,340,350], distance_gspphot_upper=[340,350,360,370]
+        # If the bug is present both columns will be identical.
+        assert not df["Distance(pc)"].equals(df["Distance_higher(pc)"]), (
+            "Distance_higher(pc) is a duplicate of Distance(pc) — "
+            "gaia.py must use distance_gspphot_upper, not distance_gspphot"
+        )
 
 
 def test_target_star_logs_error_on_exception():
@@ -289,19 +318,29 @@ def test_target_star_logs_error_on_exception():
 
 
 # ===========================================================================
-# tess_mag — network mocked
+# tess_mag — network mocked via _query_tic_catalog
+#
+# tess_mag calls _query_tic_catalog → _query_single_tic_region → Vizier.
+# GaiaData is never touched by tess_mag, so patching GaiaData.from_query
+# has no effect and leaves real network calls in place. The correct boundary
+# to mock is _query_tic_catalog.
 # ===========================================================================
-def _make_mock_tess_gaia():
-    """Mock GaiaData for tess_mag with realistic flux/error ratios."""
-    import numpy as np
-    mock = MagicMock()
-    mock.phot_g_mean_mag.__getitem__ = lambda self, s: MagicMock(value=np.array([12.0, 12.1, 12.2, 12.3]))
-    mock.phot_g_mean_flux_over_error.__getitem__ = lambda self, s: np.array([200.0, 190.0, 180.0, 170.0])
-    mock.phot_bp_mean_mag.__getitem__ = lambda self, s: MagicMock(value=np.array([12.5, 12.6, 12.7, 12.8]))
-    mock.phot_bp_mean_flux_over_error.__getitem__ = lambda self, s: np.array([150.0, 140.0, 130.0, 120.0])
-    mock.phot_rp_mean_mag.__getitem__ = lambda self, s: MagicMock(value=np.array([11.7, 11.8, 11.9, 12.0]))
-    mock.phot_rp_mean_flux_over_error.__getitem__ = lambda self, s: np.array([180.0, 170.0, 160.0, 150.0])
-    return mock
+
+def _make_mock_tic_df(ra_deg=12.534, dec_deg=78.961, tmag=11.234, tmag_err=0.012):
+    """
+    Return a minimal TIC DataFrame as _query_tic_catalog would produce,
+    with coordinates close enough to the default test inputs to match
+    within the 3 arcsec tolerance used by _match_tic_magnitudes.
+
+    Default inputs to tess_mag are ra=[0.8356] hours, dec=[78.961] deg.
+    0.8356 hours * 15 = 12.534 degrees → ra_deg=12.534 matches exactly.
+    """
+    return pd.DataFrame({
+        "_RAJ2000": [ra_deg],
+        "_DEJ2000": [dec_deg],
+        "Tmag":    [tmag],
+        "e_Tmag":  [tmag_err],
+    })
 
 
 def test_tess_mag_returns_two_lists():
@@ -309,8 +348,8 @@ def test_tess_mag_returns_two_lists():
     cancel = MagicMock()
     cancel.is_set.return_value = False
 
-    with patch("EclipsingBinaries.gaia.GaiaData.from_query",
-               return_value=_make_mock_tess_gaia()):
+    with patch("EclipsingBinaries.gaia._query_tic_catalog",
+               return_value=_make_mock_tic_df()):
         result = tess_mag([0.8356], [78.961], None, cancel)
 
     assert result is not None
@@ -322,8 +361,14 @@ def test_tess_mag_lists_same_length():
     cancel = MagicMock()
     cancel.is_set.return_value = False
 
-    with patch("EclipsingBinaries.gaia.GaiaData.from_query",
-               return_value=_make_mock_tess_gaia()):
+    mock_df = pd.DataFrame({
+        "_RAJ2000": [12.534, 13.5],
+        "_DEJ2000": [78.961, 79.0],
+        "Tmag":    [11.234, 12.345],
+        "e_Tmag":  [0.012,  0.015],
+    })
+    with patch("EclipsingBinaries.gaia._query_tic_catalog",
+               return_value=mock_df):
         T_list, T_err_list = tess_mag([0.8356, 0.9], [78.961, 79.0], None, cancel)
 
     assert len(T_list) == len(T_err_list)
@@ -335,10 +380,10 @@ def test_tess_mag_cancels_before_loop():
     cancel.is_set.return_value = True
     messages = []
 
-    with patch("EclipsingBinaries.gaia.GaiaData.from_query") as mock_query:
+    with patch("EclipsingBinaries.gaia._query_tic_catalog") as mock_tic:
         result = tess_mag([0.8356], [78.961], messages.append, cancel)
 
-    mock_query.assert_not_called()
+    mock_tic.assert_not_called()
     assert result is None
     assert any("cancel" in m.lower() for m in messages)
 
@@ -349,11 +394,59 @@ def test_tess_mag_logs_completion():
     cancel.is_set.return_value = False
     messages = []
 
-    with patch("EclipsingBinaries.gaia.GaiaData.from_query",
-               return_value=_make_mock_tess_gaia()):
+    with patch("EclipsingBinaries.gaia._query_tic_catalog",
+               return_value=_make_mock_tic_df()):
         tess_mag([0.8356], [78.961], messages.append, cancel)
 
     assert any("Finished" in m for m in messages)
+
+
+def test_tess_mag_returns_fallback_for_no_match():
+    """Stars with no TIC match within 3 arcsec should get 99.999 for both values."""
+    from EclipsingBinaries.gaia import tess_mag
+    cancel = MagicMock()
+    cancel.is_set.return_value = False
+
+    # TIC entry placed far from the input coordinate
+    far_df = pd.DataFrame({
+        "_RAJ2000": [90.0],
+        "_DEJ2000": [0.0],
+        "Tmag":    [11.0],
+        "e_Tmag":  [0.01],
+    })
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=far_df):
+        T_list, T_err_list = tess_mag([0.8356], [78.961], None, cancel)
+
+    assert T_list[0] == 99.999
+    assert T_err_list[0] == 99.999
+
+
+def test_tess_mag_returns_fallback_for_empty_tic():
+    """Empty TIC result should produce 99.999 for every star."""
+    from EclipsingBinaries.gaia import tess_mag
+    cancel = MagicMock()
+    cancel.is_set.return_value = False
+
+    empty_df = pd.DataFrame(columns=["_RAJ2000", "_DEJ2000", "Tmag", "e_Tmag"])
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=empty_df):
+        T_list, T_err_list = tess_mag([0.8356], [78.961], None, cancel)
+
+    assert T_list == [99.999]
+    assert T_err_list == [99.999]
+
+
+def test_tess_mag_magnitude_precision():
+    """Returned Tmag values should be rounded to 3 decimal places."""
+    from EclipsingBinaries.gaia import tess_mag
+    cancel = MagicMock()
+    cancel.is_set.return_value = False
+
+    with patch("EclipsingBinaries.gaia._query_tic_catalog",
+               return_value=_make_mock_tic_df(tmag=11.23456, tmag_err=0.01234)):
+        T_list, T_err_list = tess_mag([0.8356], [78.961], None, cancel)
+
+    assert T_list[0] == pytest.approx(11.235, abs=1e-3)
+    assert T_err_list[0] == pytest.approx(0.012, abs=1e-3)
 
 
 def test_tess_mag_logs_error_on_exception():
@@ -362,7 +455,7 @@ def test_tess_mag_logs_error_on_exception():
     cancel.is_set.return_value = False
     messages = []
 
-    with patch("EclipsingBinaries.gaia.GaiaData.from_query",
+    with patch("EclipsingBinaries.gaia._query_tic_catalog",
                side_effect=RuntimeError("timeout")):
         with pytest.raises(RuntimeError):
             tess_mag([0.8356], [78.961], messages.append, cancel)

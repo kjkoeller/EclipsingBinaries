@@ -82,7 +82,7 @@ def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_ev
             "Parallax(mas)": g.parallax[:4],
             "Parallax_err(mas)": g.parallax_error[:4],
             "Distance_lower(pc)": g.distance_gspphot_lower[:4],
-            "Distance(pc)": g.distance_gspphot[:4],
+            "Distance(pc)": g.distance_gspphot_upper[:4],
             "Distance_higher(pc)": g.distance_gspphot[:4],
             "T_eff_lower(K)": g.teff_gspphot_lower[:4],
             "T_eff(K)": g.teff_gspphot[:4],

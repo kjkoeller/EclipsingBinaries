@@ -1,13 +1,12 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 04/21/2026
+Last Edited: 04/23/2026
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
 not overwrite the original images.
 """
-from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -47,7 +46,7 @@ class ReductionConfig:
     dark_bool: bool = True                      # whether dark frames exist
     location: str = "bsuo"                      # observing site key
     overwrite: bool = True                      # overwrite existing output files
-    overscan_region: str = "[2073:2115, :]"     # FITS section string
+    overscan_region: str = "[2073:2115, :]"     # FITS section string; set to "none" to skip
     trim_region: str = "[20:2060, 12:2057]"     # FITS section string
 
 
@@ -80,18 +79,22 @@ def write_image_only(ccd, path, overwrite=True):
     Write a CCDData object to disk as a plain single-extension FITS file.
 
     ccdproc normally writes mask and uncertainty arrays as additional FITS
-    extensions. This helper works on a deep copy so the live in-memory object
-    is never mutated — downstream operations that rely on uncertainty
-    propagation (e.g. subtract_bias) are unaffected.
+    extensions. This helper temporarily clears them on the object, writes,
+    then restores them — avoiding an expensive deep copy while keeping the
+    live in-memory object intact for downstream operations.
 
     :param ccd: CCDData object to write
     :param path: Destination path (str or Path)
     :param overwrite: Whether to overwrite an existing file
     """
-    out = deepcopy(ccd)
-    out.mask = None
-    out.uncertainty = None
-    out.write(str(path), overwrite=overwrite)
+    mask, uncertainty = ccd.mask, ccd.uncertainty
+    try:
+        ccd.mask = None
+        ccd.uncertainty = None
+        ccd.write(str(path), overwrite=overwrite)
+    finally:
+        ccd.mask = mask
+        ccd.uncertainty = uncertainty
 
 
 # ---------------------------------------------------------------------------
@@ -126,115 +129,148 @@ def run_reduction(
     def canceled():
         return cancel_event is not None and cancel_event.is_set()
 
+    if canceled():
+        log("Task canceled before starting.")
+        return
+
+    images_path = Path(path)
+    calibrated_data = Path(calibrated)
+
+    if not images_path.exists():
+        raise FileNotFoundError(f"Raw images path '{path}' does not exist.")
+    calibrated_data.mkdir(parents=True, exist_ok=True)
+
+    files = ccdp.ImageFileCollection(images_path)
+
+    # --- Bias ---
     try:
-        if canceled():
-            log("Task canceled before starting.")
-            return
-
-        images_path = Path(path)
-        calibrated_data = Path(calibrated)
-
-        if not images_path.exists():
-            raise FileNotFoundError(f"Raw images path '{path}' does not exist.")
-        calibrated_data.mkdir(parents=True, exist_ok=True)
-
-        files = ccdp.ImageFileCollection(images_path)
-
-        # --- Bias ---
         zero = bias(files, calibrated_data, cfg, log, cancel_event)
-        if zero is None:
-            log("Reduction aborted: bias stage did not complete.")
-            return
-
-        # --- Dark (optional) ---
-        master_dark = None
-        if cfg.dark_bool:
-            master_dark = dark(files, zero, calibrated_data, cfg, log, cancel_event)
-            if master_dark is None:
-                log("Reduction aborted: dark stage did not complete.")
-                return
-
-        # --- Flat ---
-        flat(files, zero, master_dark, calibrated_data, cfg, log, cancel_event)
-        if canceled():
-            log("Reduction aborted: flat stage did not complete.")
-            return
-
-        # --- Science ---
-        science_images(files, calibrated_data, zero, master_dark, cfg, log, cancel_event)
-        if canceled():
-            log("Reduction aborted: science stage did not complete.")
-            return
-
-        log("\nReduction process completed successfully.\n")
-
     except Exception as e:
-        log(f"An error occurred: {e}")
-        raise
+        raise RuntimeError("Bias stage failed.") from e
+    if zero is None:
+        log("Reduction aborted: bias stage did not complete.")
+        return
+
+    # --- Dark (optional) ---
+    master_dark = None
+    if cfg.dark_bool:
+        try:
+            master_dark = dark(files, zero, calibrated_data, cfg, log, cancel_event)
+        except Exception as e:
+            raise RuntimeError("Dark stage failed.") from e
+        if master_dark is None:
+            log("Reduction aborted: dark stage did not complete.")
+            return
+
+    # --- Flat ---
+    try:
+        flat(files, zero, master_dark, calibrated_data, cfg, log, cancel_event)
+    except Exception as e:
+        raise RuntimeError("Flat stage failed.") from e
+    if canceled():
+        log("Reduction aborted: flat stage did not complete.")
+        return
+
+    # --- Science ---
+    try:
+        science_images(files, calibrated_data, zero, master_dark, cfg, log, cancel_event)
+    except Exception as e:
+        raise RuntimeError("Science stage failed.") from e
+    if canceled():
+        log("Reduction aborted: science stage did not complete.")
+        return
+
+    log("\nReduction process completed successfully.\n")
 
 
 # ---------------------------------------------------------------------------
-# Reduction core
+# Preprocessing helper — shared by all four stage reducers
 # ---------------------------------------------------------------------------
 
-def reduce(ccd, cfg: ReductionConfig, num, zero=None, combined_dark=None, good_flat=None):
+def _preprocess(ccd, cfg: ReductionConfig):
     """
-    Apply overscan subtraction, trimming, gain correction, and the
-    stage-appropriate calibration step.
-
-    num codes:
-        0 — bias
-        1 — dark
-        2 — flat
-        3 — science
+    Apply overscan subtraction (if enabled), trimming, and gain correction.
+    This is the common first step for every frame type.
 
     :param ccd: Input CCDData image
     :param cfg: ReductionConfig
-    :param num: Processing stage (0–3)
-    :param zero: Master bias CCDData
-    :param combined_dark: Master dark CCDData
-    :param good_flat: Master flat CCDData for this filter
-    :return: Calibrated CCDData
+    :return: Preprocessed CCDData
     """
-    # --- Overscan + trim + gain ---
     if cfg.overscan_region.lower() != "none":
         ccd = ccdp.subtract_overscan(
             ccd, fits_section=cfg.overscan_region, median=True, overscan_axis=None
         )
-
     ccd = ccdp.trim_image(ccd, fits_section=cfg.trim_region)
     ccd = ccdp.gain_correct(ccd, gain=cfg.gain * u.electron / u.adu)
+    return ccd
 
-    # --- Stage-specific calibration ---
-    if num == 0:
-        # Bias: overscan/trim/gain only
-        return ccd
 
-    elif num == 1:
-        # Dark: subtract bias
-        return ccdp.subtract_bias(ccd, zero)
+# ---------------------------------------------------------------------------
+# Stage-specific reducers — each takes only the calibration frames it needs
+# ---------------------------------------------------------------------------
 
-    elif num == 2:
-        # Flat: subtract bias, optionally subtract dark
-        ccd = ccdp.subtract_bias(ccd, zero)
-        if cfg.dark_bool:
-            ccd = ccdp.subtract_dark(
-                ccd, combined_dark, exposure_time="exptime", exposure_unit=u.second, scale=True
-            )
-        return ccd
+def _reduce_bias(ccd, cfg: ReductionConfig):
+    """
+    Preprocess a single bias frame (overscan, trim, gain).
 
-    elif num == 3:
-        # Science: subtract bias, optionally subtract dark, flat-field correct
-        ccd = ccdp.subtract_bias(ccd, zero)
-        if cfg.dark_bool:
-            ccd = ccdp.subtract_dark(
-                ccd, combined_dark, exposure_time="exptime", exposure_unit=u.second, scale=True
-            )
-        ccd = ccdp.flat_correct(ccd=ccd, flat=good_flat, min_value=1.0)
-        return ccd
+    :param ccd: Raw bias CCDData
+    :param cfg: ReductionConfig
+    :return: Preprocessed CCDData
+    """
+    return _preprocess(ccd, cfg)
 
-    else:
-        raise ValueError(f"Unknown reduction stage: {num}")
+
+def _reduce_dark(ccd, cfg: ReductionConfig, zero):
+    """
+    Preprocess and bias-subtract a single dark frame.
+
+    :param ccd: Raw dark CCDData
+    :param cfg: ReductionConfig
+    :param zero: Master bias CCDData
+    :return: Bias-subtracted CCDData
+    """
+    ccd = _preprocess(ccd, cfg)
+    return ccdp.subtract_bias(ccd, zero)
+
+
+def _reduce_flat(ccd, cfg: ReductionConfig, zero, combined_dark):
+    """
+    Preprocess, bias-subtract, and optionally dark-subtract a single flat frame.
+
+    :param ccd: Raw flat CCDData
+    :param cfg: ReductionConfig
+    :param zero: Master bias CCDData
+    :param combined_dark: Master dark CCDData (ignored if cfg.dark_bool is False)
+    :return: Calibrated CCDData
+    """
+    ccd = _preprocess(ccd, cfg)
+    ccd = ccdp.subtract_bias(ccd, zero)
+    if cfg.dark_bool:
+        ccd = ccdp.subtract_dark(
+            ccd, combined_dark, exposure_time="exptime", exposure_unit=u.second, scale=True
+        )
+    return ccd
+
+
+def _reduce_science(ccd, cfg: ReductionConfig, zero, combined_dark, good_flat):
+    """
+    Fully calibrate a single science frame: preprocess, bias, dark, flat-field.
+
+    :param ccd: Raw science CCDData
+    :param cfg: ReductionConfig
+    :param zero: Master bias CCDData
+    :param combined_dark: Master dark CCDData (ignored if cfg.dark_bool is False)
+    :param good_flat: Master flat CCDData matched to this frame's filter
+    :return: Fully calibrated CCDData
+    """
+    ccd = _preprocess(ccd, cfg)
+    ccd = ccdp.subtract_bias(ccd, zero)
+    if cfg.dark_bool:
+        ccd = ccdp.subtract_dark(
+            ccd, combined_dark, exposure_time="exptime", exposure_unit=u.second, scale=True
+        )
+    ccd = ccdp.flat_correct(ccd=ccd, flat=good_flat, min_value=1.0)
+    return ccd
 
 
 # ---------------------------------------------------------------------------
@@ -246,29 +282,37 @@ def bias(files, calibrated_data, cfg: ReductionConfig, log, cancel_event):
     Overscan-correct, trim, and gain-correct each bias frame, then combine
     them into a master bias.
 
+    Tracks output paths internally to avoid an extra ImageFileCollection
+    directory scan before combining.
+
     :return: Combined master bias CCDData, or None if canceled
     """
     log("\nStarting bias calibration.")
     log(f"Overscan Region: {cfg.overscan_region}")
     log(f"Trim Region:     {cfg.trim_region}")
 
-    for ccd, file_name in files.ccds(imagetyp="BIAS", return_fname=True, ccd_kwargs={"unit": "adu"}):
+    # Count frames upfront for progress reporting
+    bias_files = files.files_filtered(imagetyp="BIAS")
+    n_total = len(bias_files)
+    log(f"Found {n_total} bias frame(s).")
+
+    calibrated_bias_paths = []
+    for n_done, (ccd, file_name) in enumerate(
+        files.ccds(imagetyp="BIAS", return_fname=True, ccd_kwargs={"unit": "adu"}), start=1
+    ):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return None
 
-        log(f"Processing bias image: {file_name}")
-        new_ccd = reduce(ccd, cfg, num=0)
+        log(f"Processing bias {n_done}/{n_total}: {file_name}")
+        new_ccd = _reduce_bias(ccd, cfg)
         output_path = calibrated_data / f"{file_name.split('.')[0]}.fits"
         write_image_only(new_ccd, output_path, overwrite=cfg.overwrite)
-        log(f"Saved calibrated bias: {output_path}")
+        calibrated_bias_paths.append(str(output_path))
 
-    log("\nCombining bias frames to create master bias.")
-    reduced_images = ccdp.ImageFileCollection(calibrated_data)
-    calibrated_biases = reduced_images.files_filtered(imagetyp="BIAS", include_path=True)
-
+    log(f"\nCombining {n_total} bias frame(s) into master bias.")
     combined_bias = ccdp.combine(
-        calibrated_biases,
+        calibrated_bias_paths,
         method="average",
         sigma_clip=True,
         sigma_clip_low_thresh=cfg.sigma_clip_low_thresh,
@@ -288,27 +332,34 @@ def dark(files, zero, calibrated_path, cfg: ReductionConfig, log, cancel_event):
     """
     Bias-subtract each dark frame, then combine them into a master dark.
 
+    Tracks output paths internally to avoid an extra ImageFileCollection
+    directory scan before combining.
+
     :return: Combined master dark CCDData, or None if canceled
     """
     log("\nStarting dark calibration.")
 
-    for ccd, file_name in files.ccds(imagetyp="DARK", return_fname=True, ccd_kwargs={"unit": "adu"}):
+    dark_files = files.files_filtered(imagetyp="DARK")
+    n_total = len(dark_files)
+    log(f"Found {n_total} dark frame(s).")
+
+    calibrated_dark_paths = []
+    for n_done, (ccd, file_name) in enumerate(
+        files.ccds(imagetyp="DARK", return_fname=True, ccd_kwargs={"unit": "adu"}), start=1
+    ):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return None
 
-        log(f"Processing dark image: {file_name}")
-        sub_ccd = reduce(ccd, cfg, num=1, zero=zero)
+        log(f"Processing dark {n_done}/{n_total}: {file_name}")
+        sub_ccd = _reduce_dark(ccd, cfg, zero)
         output_path = calibrated_path / f"{file_name.split('.')[0]}.fits"
         write_image_only(sub_ccd, output_path, overwrite=cfg.overwrite)
-        log(f"Saved calibrated dark: {output_path}")
+        calibrated_dark_paths.append(str(output_path))
 
-    log("\nCombining dark frames to create master dark.")
-    reduced_images = ccdp.ImageFileCollection(calibrated_path)
-    calibrated_darks = reduced_images.files_filtered(imagetyp="DARK", include_path=True)
-
+    log(f"\nCombining {n_total} dark frame(s) into master dark.")
     combined_dark = ccdp.combine(
-        calibrated_darks,
+        calibrated_dark_paths,
         method="average",
         sigma_clip=True,
         sigma_clip_low_thresh=cfg.sigma_clip_low_thresh,
@@ -328,49 +379,85 @@ def flat(files, zero, combined_dark, calibrated_path, cfg: ReductionConfig, log,
     """
     Bias- and dark-subtract each flat frame, then combine per filter into
     normalised master flats.
+
+    Delegates to _process_flats() and _combine_flats() to keep each job
+    focused and independently cancellable.
     """
     log("\nStarting flat calibration.")
 
-    for ccd, file_name in files.ccds(imagetyp="FLAT", return_fname=True, ccd_kwargs={"unit": "adu"}):
+    paths_by_filter = _process_flats(
+        files, zero, combined_dark, calibrated_path, cfg, log, cancel_event
+    )
+    if paths_by_filter is None:
+        return  # canceled during processing
+
+    _combine_flats(paths_by_filter, calibrated_path, cfg, log, cancel_event)
+
+
+def _process_flats(files, zero, combined_dark, calibrated_path, cfg, log, cancel_event):
+    """
+    Preprocess individual flat frames (overscan, bias, dark subtraction)
+    and group their output paths by filter.
+
+    :return: dict mapping filter name → list of calibrated flat paths,
+             or None if canceled
+    """
+    flat_files = files.files_filtered(imagetyp="FLAT")
+    n_total = len(flat_files)
+    log(f"Found {n_total} flat frame(s).")
+
+    paths_by_filter: dict[str, list[str]] = {}
+    for n_done, (ccd, file_name) in enumerate(
+        files.ccds(imagetyp="FLAT", return_fname=True, ccd_kwargs={"unit": "adu"}), start=1
+    ):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
-            return
+            return None
 
-        final_ccd = reduce(ccd, cfg, num=2, zero=zero, combined_dark=combined_dark)
+        filt = ccd.header["FILTER"]
+        log(f"Processing flat {n_done}/{n_total} [{filt}]: {file_name}")
+        final_ccd = _reduce_flat(ccd, cfg, zero, combined_dark)
         new_fname = f"{file_name.split('.')[0]}.fits"
         output_path = calibrated_path / new_fname
         write_image_only(final_ccd, output_path, overwrite=cfg.overwrite)
         add_header(calibrated_path, new_fname, "FLAT", None, None, None, cfg)
-        log(f"Finished overscan/bias/dark correction for {new_fname}")
+        paths_by_filter.setdefault(filt, []).append(str(output_path))
 
     log("\nFinished processing individual flat frames.")
+    return paths_by_filter
+
+
+def _combine_flats(paths_by_filter, calibrated_path, cfg, log, cancel_event):
+    """
+    Combine pre-processed flat frames per filter into normalised master flats.
+
+    :param paths_by_filter: dict mapping filter name → list of calibrated paths
+    """
     log("\nStarting flat combination by filter.")
+    n_filters = len(paths_by_filter)
 
-    ifc = ccdp.ImageFileCollection(calibrated_path)
-    flat_filters = set(h["FILTER"] for h in ifc.headers(imagetyp="FLAT"))
-
-    for filt in flat_filters:
+    for n_done, (filt, flat_paths) in enumerate(paths_by_filter.items(), start=1):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
-        to_combine = ifc.files_filtered(imagetyp="flat", filter=filt, include_path=True)
+        n_frames = len(flat_paths)
+        log(f"Combining filter {n_done}/{n_filters}: {filt} ({n_frames} frame(s))")
         combined_flats = ccdp.combine(
-            to_combine,
+            flat_paths,
             method="median",
             sigma_clip=True,
-            sigma_clip_low_thresh=cfg.sigma_clip_low_thresh,   # consistent with bias/dark combines
+            sigma_clip_low_thresh=cfg.sigma_clip_low_thresh,
             sigma_clip_high_thresh=cfg.sigma_clip_high_thresh,
             sigma_clip_func=np.ma.median,
             sigma_clip_dev_func=mad_std,
-            # rdnoise and gain are NOT valid ccdp.combine() parameters — removed
             mem_limit=cfg.mem_limit,
         )
         combined_flats.meta["combined"] = True
         flat_file_name = f"master_flat_{filt.replace('Empty/', '')}.fits"
         write_image_only(combined_flats, calibrated_path / flat_file_name, overwrite=cfg.overwrite)
         add_header(calibrated_path, flat_file_name, "FLAT", None, None, None, cfg)
-        log(f"Finished combining flat: {flat_file_name}")
+        log(f"Master flat created: {flat_file_name}")
 
     log("\nFinished creating master flats by filter.")
 
@@ -380,24 +467,32 @@ def science_images(files, calibrated_data, zero, combined_dark, cfg: ReductionCo
     Fully calibrate all science (LIGHT) frames: bias, dark, flat-field,
     and write BJD_TDB to the header.
     """
-    science_imagetyp = "LIGHT"
     flat_imagetyp = "FLAT"
+    science_imagetyp = "LIGHT"
 
+    # Build the master-flat lookup once — no repeated IFC scans
     ifc_reduced = ccdp.ImageFileCollection(calibrated_data)
     combined_flats = {
         ccd.header["filter"]: ccd
         for ccd in ifc_reduced.ccds(imagetyp=flat_imagetyp, combined=True)
     }
 
-    log("\nStarting reduction of science images.")
+    science_files = files.files_filtered(imagetyp=science_imagetyp)
+    n_total = len(science_files)
+    log(f"\nFound {n_total} science frame(s). Starting reduction.")
 
-    for light, file_name in files.ccds(imagetyp=science_imagetyp, return_fname=True, ccd_kwargs={"unit": "adu"}):
+    for n_done, (light, file_name) in enumerate(
+        files.ccds(imagetyp=science_imagetyp, return_fname=True, ccd_kwargs={"unit": "adu"}), start=1
+    ):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
-        good_flat = combined_flats[light.header["filter"]]
-        reduced = reduce(light, cfg, num=3, zero=zero, combined_dark=combined_dark, good_flat=good_flat)
+        filt = light.header["filter"]
+        log(f"Calibrating science {n_done}/{n_total} [{filt}]: {file_name}")
+
+        good_flat = combined_flats[filt]
+        reduced = _reduce_science(light, cfg, zero, combined_dark, good_flat)
 
         new_fname = f"{file_name.split('.')[0]}.fits"
         write_image_only(reduced, calibrated_data / new_fname, overwrite=cfg.overwrite)
@@ -406,8 +501,6 @@ def science_images(files, calibrated_data, zero, combined_dark, cfg: ReductionCo
         ra = light.header["RA"]
         dec = light.header["DEC"]
         add_header(calibrated_data, new_fname, science_imagetyp, hjd, ra, dec, cfg)
-
-        log(f"Finished calibration of {new_fname}")
 
     log("\nFinished calibrating all science images.")
 

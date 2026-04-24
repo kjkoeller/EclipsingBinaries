@@ -7,23 +7,33 @@ This program is meant to automatically do the data reduction of the raw images f
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
 not overwrite the original images.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+import json
+import shutil
 import warnings
 
+import astropy
 from astropy import wcs
 from astropy.stats import mad_std
 from astropy import units as u
 from astropy.io import fits
 from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation
+from astropy.nddata import CCDData
 
 import ccdproc as ccdp
 import numpy as np
 
 # Suppress FITS standard-compliance header warnings
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
+
+
+# Science exposure times more than this factor longer than the longest
+# dark produce noisy scaling — warn when exceeded.
+DARK_SCALING_WARN_RATIO = 10.0
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +46,8 @@ class ReductionConfig:
     All tunable parameters for a reduction run in one place.
     Pass a ReductionConfig instance into run_reduction() instead of relying
     on module-level globals.
+
+    Invalid values raise ValueError at construction time via __post_init__.
     """
     gain: float = 1.43                          # e-/ADU  (BSUO default)
     rdnoise: float = 10.83                      # e-      (BSUO default)
@@ -48,6 +60,27 @@ class ReductionConfig:
     overwrite: bool = True                      # overwrite existing output files
     overscan_region: str = "[2073:2115, :]"     # FITS section string; set to "none" to skip
     trim_region: str = "[20:2060, 12:2057]"     # FITS section string
+    reuse_masters: bool = False                 # skip master regeneration if fresh masters exist
+
+    def __post_init__(self):
+        if self.gain <= 0:
+            raise ValueError(f"gain must be positive, got {self.gain}")
+        if self.rdnoise < 0:
+            raise ValueError(f"rdnoise must be non-negative, got {self.rdnoise}")
+        if self.sigclip <= 0:
+            raise ValueError(f"sigclip must be positive, got {self.sigclip}")
+        if self.sigma_clip_high_thresh <= 0:
+            raise ValueError(
+                f"sigma_clip_high_thresh must be positive, got {self.sigma_clip_high_thresh}"
+            )
+        if self.sigma_clip_low_thresh is not None and self.sigma_clip_low_thresh <= 0:
+            raise ValueError(
+                f"sigma_clip_low_thresh must be positive or None, got {self.sigma_clip_low_thresh}"
+            )
+        if self.mem_limit <= 0:
+            raise ValueError(f"mem_limit must be positive, got {self.mem_limit}")
+        if not isinstance(self.location, str) or not self.location.strip():
+            raise ValueError(f"location must be a non-empty string, got {self.location!r}")
 
 
 def bsuo_config() -> ReductionConfig:
@@ -71,30 +104,332 @@ def lapalma_config() -> ReductionConfig:
 
 
 # ---------------------------------------------------------------------------
-# I/O helper — suppresses mask and uncertainty extensions
+# Filter & exposure utilities
+# ---------------------------------------------------------------------------
+
+def _normalize_filter(raw_filter) -> str:
+    """
+    Normalize a filter name for reliable matching between flats and science.
+
+    All FITS header lookups for the filter keyword consistently use the
+    uppercase form ``"FILTER"`` throughout this module. FITS headers are
+    formally case-insensitive, but using one form everywhere makes the
+    intent explicit and prevents confusion.
+
+    Handles:
+      - Leading/trailing whitespace
+      - Known filter-wheel prefixes like "Empty/" (common at BSUO)
+      - Case differences — result is uppercased
+
+    :param raw_filter: Raw FILTER header value
+    :return: Normalized filter string
+    :raises ValueError: If the filter is empty or not a string
+    """
+    if raw_filter is None:
+        raise ValueError("FILTER header value is missing.")
+    s = str(raw_filter).strip()
+    if not s:
+        raise ValueError("FILTER header value is empty.")
+    for prefix in ("Empty/", "empty/", "EMPTY/"):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+            break
+    return s.strip().upper()
+
+
+def _get_exposure_time(header) -> Optional[float]:
+    """
+    Extract EXPTIME from a FITS header, returning None if missing or invalid.
+
+    :param header: FITS header
+    :return: Exposure time in seconds, or None
+    """
+    exp = header.get("EXPTIME")
+    if exp is None:
+        return None
+    try:
+        exp_f = float(exp)
+    except (TypeError, ValueError):
+        return None
+    if exp_f <= 0 or not np.isfinite(exp_f):
+        return None
+    return exp_f
+
+
+def _max_dark_exposure(dark_paths) -> Optional[float]:
+    """
+    Find the maximum EXPTIME across a list of calibrated dark frames.
+
+    :param dark_paths: List of paths to calibrated darks
+    :return: Maximum exposure time in seconds, or None if none readable
+    """
+    max_exp = None
+    for dpath in dark_paths:
+        try:
+            with fits.open(dpath) as hdul:
+                exp = _get_exposure_time(hdul[0].header)
+                if exp is not None:
+                    if max_exp is None or exp > max_exp:
+                        max_exp = exp
+        except Exception:
+            continue
+    return max_exp
+
+
+# ---------------------------------------------------------------------------
+# Shape-consistency check
+# ---------------------------------------------------------------------------
+
+def _assert_shape_matches(ccd, reference_shape, context):
+    """
+    Verify that a CCDData array has the expected shape.
+
+    :param ccd: CCDData object to check
+    :param reference_shape: Expected (ny, nx) tuple
+    :param context: Human-readable description for error messages
+    :raises ValueError: If shapes differ
+    """
+    if ccd.data.shape != reference_shape:
+        raise ValueError(
+            f"Dimension mismatch in {context}: "
+            f"got {ccd.data.shape}, expected {reference_shape}. "
+            "Check that binning/windowing is consistent across all frames."
+        )
+
+
+# ---------------------------------------------------------------------------
+# I/O helpers
 # ---------------------------------------------------------------------------
 
 def write_image_only(ccd, path, overwrite=True):
     """
-    Write a CCDData object to disk as a plain single-extension FITS file.
+    Write a CCDData object to disk as a plain single-extension FITS file,
+    atomically.
 
-    ccdproc normally writes mask and uncertainty arrays as additional FITS
-    extensions. This helper temporarily clears them on the object, writes,
-    then restores them — avoiding an expensive deep copy while keeping the
-    live in-memory object intact for downstream operations.
+    The file is first written to a sibling ``<name>.fits.tmp``, then
+    atomically renamed into place. If the write or rename fails, the
+    destination is never left in a half-written state. Mask and uncertainty
+    arrays are stripped before writing and restored afterwards so the live
+    in-memory CCDData object is unmodified.
 
     :param ccd: CCDData object to write
     :param path: Destination path (str or Path)
     :param overwrite: Whether to overwrite an existing file
+    :raises IOError: If the destination is not present on disk after rename
     """
+    path_obj = Path(path)
+    tmp_path = path_obj.with_suffix(path_obj.suffix + ".tmp")
+    if tmp_path.exists():
+        tmp_path.unlink()
+
     mask, uncertainty = ccd.mask, ccd.uncertainty
     try:
         ccd.mask = None
         ccd.uncertainty = None
-        ccd.write(str(path), overwrite=overwrite)
+        try:
+            ccd.write(str(tmp_path), overwrite=True)
+            # Path.replace is atomic on POSIX and near-atomic on Windows
+            tmp_path.replace(path_obj)
+        except Exception:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except Exception:
+                    pass
+            raise
     finally:
         ccd.mask = mask
         ccd.uncertainty = uncertainty
+
+    if not path_obj.exists():
+        raise IOError(f"Failed to write FITS file: {path_obj}")
+
+
+def _prepare_intermediate_dir(calibrated_data: Path) -> Path:
+    """
+    Create (or clean) a dedicated subfolder for individual calibrated
+    bias/dark/flat frames so they don't pollute the main output folder
+    or get mixed up with master files from previous runs.
+
+    :param calibrated_data: Main output directory
+    :return: Path to the cleaned intermediate directory
+    """
+    intermediate = calibrated_data / "intermediate"
+    if intermediate.exists():
+        for f in intermediate.glob("*"):
+            if f.is_file():
+                f.unlink()
+    else:
+        intermediate.mkdir(parents=True)
+    return intermediate
+
+
+def _check_disk_space(raw_path: Path, output_path: Path, mem_limit: float, log):
+    """
+    Estimate disk space needed for the reduction and log/raise if low.
+
+    Rough estimate: calibrated output files are ~same size as raw inputs.
+    Allow ~2× raw data size for outputs and intermediates, plus mem_limit
+    for combine spillover.
+
+    :raises RuntimeError: If available space is less than the estimated need
+    """
+    total_raw = 0
+    for ext in ("*.fit", "*.fits", "*.fts", "*.FIT", "*.FITS", "*.FTS"):
+        total_raw += sum(f.stat().st_size for f in raw_path.glob(ext))
+
+    if total_raw == 0:
+        log("Disk space check: no FITS files found in raw path (skipping check).")
+        return
+
+    estimated_needed = int(total_raw * 2 + mem_limit)
+    available = shutil.disk_usage(output_path).free
+
+    log(
+        f"Disk space check: {available / 1e9:.2f} GB available, "
+        f"~{estimated_needed / 1e9:.2f} GB estimated."
+    )
+
+    if available < estimated_needed * 1.2:
+        if available < estimated_needed:
+            raise RuntimeError(
+                f"Insufficient disk space at {output_path}: "
+                f"need ~{estimated_needed / 1e9:.2f} GB, "
+                f"have {available / 1e9:.2f} GB."
+            )
+        log(
+            f"Warning: low disk space headroom "
+            f"({available / estimated_needed:.1f}× estimated need)."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Pre-flight checks and master reuse helpers
+# ---------------------------------------------------------------------------
+
+def _list_raw_fits(directory: Path) -> list[Path]:
+    """
+    List all FITS-like files in a directory (any extension case).
+
+    :param directory: Directory to scan
+    :return: Sorted list of FITS-like paths
+    """
+    extensions = ("*.fit", "*.fits", "*.fts", "*.FIT", "*.FITS", "*.FTS")
+    result: list[Path] = []
+    for ext in extensions:
+        result.extend(directory.glob(ext))
+    return sorted(set(result))
+
+
+def _preflight_fits_check(image_paths, log) -> tuple[list[Path], list[Path]]:
+    """
+    Open each FITS file briefly to verify it can be read.
+
+    Catches truncated files, permission issues, and other low-level
+    problems upfront so the user sees a clean list before any processing
+    begins.
+
+    :param image_paths: Iterable of paths to check
+    :param log: Logging callable
+    :return: (readable_paths, unreadable_paths)
+    """
+    readable: list[Path] = []
+    unreadable: list[Path] = []
+
+    for path in image_paths:
+        path_obj = Path(path)
+        try:
+            with fits.open(path_obj, mode="readonly") as hdul:
+                hdul.verify("silentfix+warn")
+                _ = hdul[0].header  # force header read
+            readable.append(path_obj)
+        except Exception as e:
+            log(f"Warning: unreadable FITS file {path_obj.name}: {e}")
+            unreadable.append(path_obj)
+
+    if unreadable:
+        log(
+            f"Pre-flight check: {len(readable)} readable, "
+            f"{len(unreadable)} unreadable FITS file(s) will be skipped."
+        )
+    else:
+        log(f"Pre-flight check: all {len(readable)} FITS file(s) readable.")
+
+    return readable, unreadable
+
+
+def _master_is_fresh(master_path: Path, raw_paths) -> bool:
+    """
+    Determine whether an existing master calibration file can be reused.
+
+    A master is considered fresh when it exists and its mtime is at least
+    as recent as the newest raw calibration frame. Any raw frame modified
+    after the master implies the master is stale.
+
+    :param master_path: Path to the master file (e.g. zero.fits)
+    :param raw_paths: Iterable of raw calibration file paths
+    :return: True if master is fresh and usable
+    """
+    if not master_path.exists():
+        return False
+
+    master_mtime = master_path.stat().st_mtime
+    for raw_path in raw_paths:
+        raw_path_obj = Path(raw_path)
+        if not raw_path_obj.exists():
+            continue
+        if raw_path_obj.stat().st_mtime > master_mtime:
+            return False
+    return True
+
+
+def _load_master(master_path: Path, unit: str = "electron") -> CCDData:
+    """
+    Load a master calibration frame from disk.
+
+    Master bias and master dark are gain-corrected in our pipeline, so the
+    default unit is electron. Callers can override for special cases.
+
+    :param master_path: Path to the master FITS file
+    :param unit: Unit string for CCDData construction
+    :return: CCDData object
+    """
+    return CCDData.read(str(master_path), unit=unit)
+
+
+def _write_config_snapshot(cfg, output_dir: Path, raw_path: Path, log):
+    """
+    Write a JSON snapshot of the run's ReductionConfig and environment to
+    ``reduction_config.json`` in the output folder.
+
+    This captures exactly which gain, overscan region, thresholds, etc.
+    produced the calibrated frames, along with library versions for
+    reproducibility.
+
+    :param cfg: ReductionConfig used for this run
+    :param output_dir: Output directory to write the snapshot into
+    :param raw_path: Input raw-images path (recorded for provenance)
+    :param log: Logging callable
+    """
+    snapshot = {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "raw_path": str(raw_path),
+        "output_path": str(output_dir),
+        "versions": {
+            "astropy": astropy.__version__,
+            "ccdproc": ccdp.__version__,
+            "numpy": np.__version__,
+        },
+        "config": asdict(cfg),
+    }
+    snapshot_path = output_dir / "reduction_config.json"
+    try:
+        with open(snapshot_path, "w") as f:
+            json.dump(snapshot, f, indent=2, sort_keys=True, default=str)
+        log(f"Config snapshot written: {snapshot_path}")
+    except Exception as e:
+        # Non-fatal — snapshot is for reproducibility, not correctness
+        log(f"Warning: failed to write config snapshot: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -138,24 +473,47 @@ def run_reduction(
 
     if not images_path.exists():
         raise FileNotFoundError(f"Raw images path '{path}' does not exist.")
+    if not images_path.is_dir():
+        raise NotADirectoryError(f"Raw images path '{path}' is not a directory.")
     calibrated_data.mkdir(parents=True, exist_ok=True)
+
+    # Clean intermediate subfolder to avoid stale-frame contamination
+    intermediate_dir = _prepare_intermediate_dir(calibrated_data)
+    log(f"Intermediate frames will be written to: {intermediate_dir}")
+
+    # Config snapshot for reproducibility
+    _write_config_snapshot(cfg, calibrated_data, images_path, log)
+
+    # Pre-flight disk space check
+    _check_disk_space(images_path, calibrated_data, cfg.mem_limit, log)
+
+    # Pre-flight FITS readability check
+    all_raw = _list_raw_fits(images_path)
+    _preflight_fits_check(all_raw, log)
 
     files = ccdp.ImageFileCollection(images_path)
 
     # --- Bias ---
     try:
-        zero = bias(files, calibrated_data, cfg, log, cancel_event)
+        zero = bias(files, calibrated_data, intermediate_dir, cfg, log, cancel_event)
     except Exception as e:
         raise RuntimeError("Bias stage failed.") from e
     if zero is None:
         log("Reduction aborted: bias stage did not complete.")
         return
 
+    reference_shape = zero.data.shape
+    log(f"Reference frame shape set from master bias: {reference_shape}")
+
     # --- Dark (optional) ---
     master_dark = None
+    max_dark_exp = None
     if cfg.dark_bool:
         try:
-            master_dark = dark(files, zero, calibrated_data, cfg, log, cancel_event)
+            master_dark, max_dark_exp = dark(
+                files, zero, calibrated_data, intermediate_dir,
+                cfg, log, cancel_event, reference_shape,
+            )
         except Exception as e:
             raise RuntimeError("Dark stage failed.") from e
         if master_dark is None:
@@ -164,7 +522,10 @@ def run_reduction(
 
     # --- Flat ---
     try:
-        flat(files, zero, master_dark, calibrated_data, cfg, log, cancel_event)
+        flat(
+            files, zero, master_dark, calibrated_data, intermediate_dir,
+            cfg, log, cancel_event, reference_shape,
+        )
     except Exception as e:
         raise RuntimeError("Flat stage failed.") from e
     if canceled():
@@ -173,7 +534,10 @@ def run_reduction(
 
     # --- Science ---
     try:
-        science_images(files, calibrated_data, zero, master_dark, cfg, log, cancel_event)
+        science_images(
+            files, calibrated_data, zero, master_dark,
+            cfg, log, cancel_event, reference_shape, max_dark_exp,
+        )
     except Exception as e:
         raise RuntimeError("Science stage failed.") from e
     if canceled():
@@ -210,39 +574,18 @@ def _preprocess(ccd, cfg: ReductionConfig):
 # ---------------------------------------------------------------------------
 
 def _reduce_bias(ccd, cfg: ReductionConfig):
-    """
-    Preprocess a single bias frame (overscan, trim, gain).
-
-    :param ccd: Raw bias CCDData
-    :param cfg: ReductionConfig
-    :return: Preprocessed CCDData
-    """
+    """Preprocess a single bias frame (overscan, trim, gain)."""
     return _preprocess(ccd, cfg)
 
 
 def _reduce_dark(ccd, cfg: ReductionConfig, zero):
-    """
-    Preprocess and bias-subtract a single dark frame.
-
-    :param ccd: Raw dark CCDData
-    :param cfg: ReductionConfig
-    :param zero: Master bias CCDData
-    :return: Bias-subtracted CCDData
-    """
+    """Preprocess and bias-subtract a single dark frame."""
     ccd = _preprocess(ccd, cfg)
     return ccdp.subtract_bias(ccd, zero)
 
 
 def _reduce_flat(ccd, cfg: ReductionConfig, zero, combined_dark):
-    """
-    Preprocess, bias-subtract, and optionally dark-subtract a single flat frame.
-
-    :param ccd: Raw flat CCDData
-    :param cfg: ReductionConfig
-    :param zero: Master bias CCDData
-    :param combined_dark: Master dark CCDData (ignored if cfg.dark_bool is False)
-    :return: Calibrated CCDData
-    """
+    """Preprocess, bias-subtract, and optionally dark-subtract a single flat frame."""
     ccd = _preprocess(ccd, cfg)
     ccd = ccdp.subtract_bias(ccd, zero)
     if cfg.dark_bool:
@@ -253,16 +596,7 @@ def _reduce_flat(ccd, cfg: ReductionConfig, zero, combined_dark):
 
 
 def _reduce_science(ccd, cfg: ReductionConfig, zero, combined_dark, good_flat):
-    """
-    Fully calibrate a single science frame: preprocess, bias, dark, flat-field.
-
-    :param ccd: Raw science CCDData
-    :param cfg: ReductionConfig
-    :param zero: Master bias CCDData
-    :param combined_dark: Master dark CCDData (ignored if cfg.dark_bool is False)
-    :param good_flat: Master flat CCDData matched to this frame's filter
-    :return: Fully calibrated CCDData
-    """
+    """Fully calibrate a single science frame: preprocess, bias, dark, flat-field."""
     ccd = _preprocess(ccd, cfg)
     ccd = ccdp.subtract_bias(ccd, zero)
     if cfg.dark_bool:
@@ -277,40 +611,75 @@ def _reduce_science(ccd, cfg: ReductionConfig, zero, combined_dark, good_flat):
 # Pipeline stages
 # ---------------------------------------------------------------------------
 
-def bias(files, calibrated_data, cfg: ReductionConfig, log, cancel_event):
+def bias(files, calibrated_data, intermediate_dir, cfg: ReductionConfig, log, cancel_event):
     """
     Overscan-correct, trim, and gain-correct each bias frame, then combine
     them into a master bias.
 
-    Tracks output paths internally to avoid an extra ImageFileCollection
-    directory scan before combining.
+    If ``cfg.reuse_masters`` is True and ``zero.fits`` already exists and is
+    fresher than every raw bias frame, the existing master is loaded and
+    returned — skipping regeneration entirely.
 
     :return: Combined master bias CCDData, or None if canceled
+    :raises ValueError: If no bias frames are found
     """
     log("\nStarting bias calibration.")
     log(f"Overscan Region: {cfg.overscan_region}")
     log(f"Trim Region:     {cfg.trim_region}")
 
-    # Count frames upfront for progress reporting
-    bias_files = files.files_filtered(imagetyp="BIAS")
-    n_total = len(bias_files)
+    bias_paths = files.files_filtered(imagetyp="BIAS", include_path=True)
+    n_total = len(bias_paths)
+
+    if n_total == 0:
+        raise ValueError(
+            f"No BIAS frames found in '{files.location}'. "
+            "Check that IMAGETYP headers are set to 'BIAS'."
+        )
     log(f"Found {n_total} bias frame(s).")
 
+    # Fast path: reuse existing master bias if fresh
+    master_bias_path = calibrated_data / "zero.fits"
+    if cfg.reuse_masters and _master_is_fresh(master_bias_path, bias_paths):
+        log(f"Reusing existing master bias: {master_bias_path}")
+        return _load_master(master_bias_path)
+
     calibrated_bias_paths = []
-    for n_done, (ccd, file_name) in enumerate(
-        files.ccds(imagetyp="BIAS", return_fname=True, ccd_kwargs={"unit": "adu"}), start=1
-    ):
+    n_failed = 0
+    reference_shape = None
+    for n_done, bias_path in enumerate(bias_paths, start=1):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return None
 
+        file_name = Path(bias_path).name
         log(f"Processing bias {n_done}/{n_total}: {file_name}")
-        new_ccd = _reduce_bias(ccd, cfg)
-        output_path = calibrated_data / f"{file_name.split('.')[0]}.fits"
-        write_image_only(new_ccd, output_path, overwrite=cfg.overwrite)
-        calibrated_bias_paths.append(str(output_path))
+        try:
+            ccd = CCDData.read(bias_path, unit="adu")
+            new_ccd = _reduce_bias(ccd, cfg)
 
-    log(f"\nCombining {n_total} bias frame(s) into master bias.")
+            # First successfully reduced bias sets the reference shape
+            if reference_shape is None:
+                reference_shape = new_ccd.data.shape
+                log(f"Reference shape established from first bias: {reference_shape}")
+            else:
+                _assert_shape_matches(new_ccd, reference_shape, f"bias frame {file_name}")
+
+            output_path = intermediate_dir / f"{file_name.split('.')[0]}.fits"
+            write_image_only(new_ccd, output_path, overwrite=cfg.overwrite)
+            calibrated_bias_paths.append(str(output_path))
+        except Exception as e:
+            n_failed += 1
+            log(f"Warning: failed to process {file_name}: {e}. Skipping.")
+            continue
+
+    if not calibrated_bias_paths:
+        raise RuntimeError(
+            f"All {n_total} bias frames failed to process. Cannot create master bias."
+        )
+    if n_failed:
+        log(f"Warning: {n_failed}/{n_total} bias frame(s) failed to process.")
+
+    log(f"\nCombining {len(calibrated_bias_paths)} bias frame(s) into master bias.")
     combined_bias = ccdp.combine(
         calibrated_bias_paths,
         method="average",
@@ -321,43 +690,81 @@ def bias(files, calibrated_data, cfg: ReductionConfig, log, cancel_event):
         mem_limit=cfg.mem_limit,
     )
     combined_bias.meta["combined"] = True
-    combined_bias_path = calibrated_data / "zero.fits"
-    write_image_only(combined_bias, combined_bias_path, overwrite=cfg.overwrite)
-    log(f"Master bias created: {combined_bias_path}")
+    write_image_only(combined_bias, master_bias_path, overwrite=cfg.overwrite)
+    log(f"Master bias created: {master_bias_path}")
 
     return combined_bias
 
 
-def dark(files, zero, calibrated_path, cfg: ReductionConfig, log, cancel_event):
+def dark(files, zero, calibrated_data, intermediate_dir, cfg: ReductionConfig,
+         log, cancel_event, reference_shape):
     """
     Bias-subtract each dark frame, then combine them into a master dark.
+    Every frame is checked against reference_shape before writing.
 
-    Tracks output paths internally to avoid an extra ImageFileCollection
-    directory scan before combining.
+    If ``cfg.reuse_masters`` is True and ``master_dark.fits`` already exists
+    and is fresher than every raw dark frame, the existing master is loaded
+    and returned — skipping regeneration entirely.
 
-    :return: Combined master dark CCDData, or None if canceled
+    :return: (Combined master dark CCDData, max dark EXPTIME in seconds)
+             or (None, None) if canceled
+    :raises ValueError: If no dark frames are found
     """
     log("\nStarting dark calibration.")
 
-    dark_files = files.files_filtered(imagetyp="DARK")
-    n_total = len(dark_files)
+    dark_paths = files.files_filtered(imagetyp="DARK", include_path=True)
+    n_total = len(dark_paths)
+
+    if n_total == 0:
+        raise ValueError(
+            f"No DARK frames found in '{files.location}', but cfg.dark_bool=True. "
+            "Either add dark frames or set dark_bool=False."
+        )
     log(f"Found {n_total} dark frame(s).")
 
+    # Fast path: reuse existing master dark if fresh. Also scan raw darks
+    # for max EXPTIME so the later science-scaling warning still works.
+    master_dark_path = calibrated_data / "master_dark.fits"
+    if cfg.reuse_masters and _master_is_fresh(master_dark_path, dark_paths):
+        log(f"Reusing existing master dark: {master_dark_path}")
+        max_dark_exp = _max_dark_exposure(dark_paths)
+        if max_dark_exp is not None:
+            log(f"Longest dark EXPTIME (from raw headers): {max_dark_exp:.1f} s")
+        return _load_master(master_dark_path), max_dark_exp
+
     calibrated_dark_paths = []
-    for n_done, (ccd, file_name) in enumerate(
-        files.ccds(imagetyp="DARK", return_fname=True, ccd_kwargs={"unit": "adu"}), start=1
-    ):
+    n_failed = 0
+    for n_done, dark_path in enumerate(dark_paths, start=1):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
-            return None
+            return None, None
 
+        file_name = Path(dark_path).name
         log(f"Processing dark {n_done}/{n_total}: {file_name}")
-        sub_ccd = _reduce_dark(ccd, cfg, zero)
-        output_path = calibrated_path / f"{file_name.split('.')[0]}.fits"
-        write_image_only(sub_ccd, output_path, overwrite=cfg.overwrite)
-        calibrated_dark_paths.append(str(output_path))
+        try:
+            ccd = CCDData.read(dark_path, unit="adu")
+            if _get_exposure_time(ccd.header) is None:
+                raise ValueError("missing or invalid EXPTIME")
 
-    log(f"\nCombining {n_total} dark frame(s) into master dark.")
+            sub_ccd = _reduce_dark(ccd, cfg, zero)
+            _assert_shape_matches(sub_ccd, reference_shape, f"dark frame {file_name}")
+
+            output_path = intermediate_dir / f"{file_name.split('.')[0]}.fits"
+            write_image_only(sub_ccd, output_path, overwrite=cfg.overwrite)
+            calibrated_dark_paths.append(str(output_path))
+        except Exception as e:
+            n_failed += 1
+            log(f"Warning: failed to process {file_name}: {e}. Skipping.")
+            continue
+
+    if not calibrated_dark_paths:
+        raise RuntimeError(
+            f"All {n_total} dark frames failed to process. Cannot create master dark."
+        )
+    if n_failed:
+        log(f"Warning: {n_failed}/{n_total} dark frame(s) failed to process.")
+
+    log(f"\nCombining {len(calibrated_dark_paths)} dark frame(s) into master dark.")
     combined_dark = ccdp.combine(
         calibrated_dark_paths,
         method="average",
@@ -368,70 +775,160 @@ def dark(files, zero, calibrated_path, cfg: ReductionConfig, log, cancel_event):
         mem_limit=cfg.mem_limit,
     )
     combined_dark.meta["combined"] = True
-    combined_dark_path = calibrated_path / "master_dark.fits"
-    write_image_only(combined_dark, combined_dark_path, overwrite=cfg.overwrite)
-    log(f"Master dark created: {combined_dark_path}")
+    write_image_only(combined_dark, master_dark_path, overwrite=cfg.overwrite)
+    log(f"Master dark created: {master_dark_path}")
 
-    return combined_dark
+    # Track longest dark exposure for later science-exposure scaling check
+    max_dark_exp = _max_dark_exposure(calibrated_dark_paths)
+    if max_dark_exp is not None:
+        log(f"Longest dark EXPTIME: {max_dark_exp:.1f} s")
+
+    return combined_dark, max_dark_exp
 
 
-def flat(files, zero, combined_dark, calibrated_path, cfg: ReductionConfig, log, cancel_event):
+def flat(files, zero, combined_dark, calibrated_data, intermediate_dir,
+         cfg: ReductionConfig, log, cancel_event, reference_shape):
     """
     Bias- and dark-subtract each flat frame, then combine per filter into
-    normalised master flats.
+    normalised master flats. Every frame is checked against reference_shape.
 
-    Delegates to _process_flats() and _combine_flats() to keep each job
-    focused and independently cancellable.
+    If ``cfg.reuse_masters`` is True, existing master flats are reused when
+    (a) every distinct filter present in the raw flats has a corresponding
+    ``master_flat_<FILT>.fits``, and (b) every such master is fresher than
+    every raw flat frame. If any master is missing or stale, all flats are
+    regenerated (partial reuse is not supported to avoid stale/fresh mixes).
     """
     log("\nStarting flat calibration.")
 
+    # Attempt to reuse existing master flats before processing anything
+    if cfg.reuse_masters:
+        raw_flat_paths = files.files_filtered(imagetyp="FLAT", include_path=True)
+        if raw_flat_paths and _can_reuse_master_flats(
+            raw_flat_paths, calibrated_data, log
+        ):
+            log("Reusing existing master flats.")
+            return
+
     paths_by_filter = _process_flats(
-        files, zero, combined_dark, calibrated_path, cfg, log, cancel_event
+        files, zero, combined_dark, intermediate_dir,
+        cfg, log, cancel_event, reference_shape,
     )
     if paths_by_filter is None:
-        return  # canceled during processing
+        return  # canceled
+    if not paths_by_filter:
+        raise ValueError(
+            "No flat frames were successfully processed. Cannot create master flats."
+        )
 
-    _combine_flats(paths_by_filter, calibrated_path, cfg, log, cancel_event)
+    _combine_flats(paths_by_filter, calibrated_data, cfg, log, cancel_event)
 
 
-def _process_flats(files, zero, combined_dark, calibrated_path, cfg, log, cancel_event):
+def _can_reuse_master_flats(raw_flat_paths, calibrated_data, log) -> bool:
     """
-    Preprocess individual flat frames (overscan, bias, dark subtraction)
-    and group their output paths by filter.
+    Check whether every filter present in raw flats has a fresh master.
 
-    :return: dict mapping filter name → list of calibrated flat paths,
+    Returns True only if a complete, up-to-date set of master flats exists
+    covering every filter found in the raw flats. On any missing or stale
+    master, returns False so the caller regenerates the whole set.
+
+    :param raw_flat_paths: List of raw flat file paths
+    :param calibrated_data: Output directory containing master flats
+    :param log: Logging callable
+    :return: True if all master flats can be reused
+    """
+    # Determine the set of distinct normalized filters in the raw flats
+    filters_needed: set[str] = set()
+    for raw_path in raw_flat_paths:
+        try:
+            with fits.open(raw_path) as hdul:
+                filt = _normalize_filter(hdul[0].header.get("FILTER"))
+                filters_needed.add(filt)
+        except Exception:
+            # A single unreadable raw flat forces regeneration
+            return False
+
+    # Every filter must have a fresh master
+    for filt in filters_needed:
+        master_path = calibrated_data / f"master_flat_{filt}.fits"
+        if not _master_is_fresh(master_path, raw_flat_paths):
+            log(
+                f"Master flat for filter '{filt}' is missing or stale "
+                f"(expected {master_path.name}). Regenerating all flats."
+            )
+            return False
+
+    log(f"Found fresh master flats for filters: {sorted(filters_needed)}")
+    return True
+
+
+def _process_flats(files, zero, combined_dark, intermediate_dir,
+                   cfg, log, cancel_event, reference_shape):
+    """
+    Preprocess individual flat frames and group their output paths by
+    normalized filter name.
+
+    :return: dict mapping normalized filter name → list of calibrated flat paths,
              or None if canceled
+    :raises ValueError: If no flat frames are found in the input directory
     """
-    flat_files = files.files_filtered(imagetyp="FLAT")
-    n_total = len(flat_files)
+    flat_paths = files.files_filtered(imagetyp="FLAT", include_path=True)
+    n_total = len(flat_paths)
+
+    if n_total == 0:
+        raise ValueError(
+            f"No FLAT frames found in '{files.location}'. "
+            "Check that IMAGETYP headers are set to 'FLAT'."
+        )
     log(f"Found {n_total} flat frame(s).")
 
     paths_by_filter: dict[str, list[str]] = {}
-    for n_done, (ccd, file_name) in enumerate(
-        files.ccds(imagetyp="FLAT", return_fname=True, ccd_kwargs={"unit": "adu"}), start=1
-    ):
+    n_failed = 0
+    for n_done, flat_path in enumerate(flat_paths, start=1):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return None
 
-        filt = ccd.header["FILTER"]
+        file_name = Path(flat_path).name
+        try:
+            ccd = CCDData.read(flat_path, unit="adu")
+        except Exception as e:
+            n_failed += 1
+            log(f"Warning: failed to read {file_name}: {e}. Skipping.")
+            continue
+
+        try:
+            filt = _normalize_filter(ccd.header.get("FILTER"))
+        except ValueError as e:
+            n_failed += 1
+            log(f"Warning: {e} in {file_name}. Skipping.")
+            continue
+
         log(f"Processing flat {n_done}/{n_total} [{filt}]: {file_name}")
-        final_ccd = _reduce_flat(ccd, cfg, zero, combined_dark)
-        new_fname = f"{file_name.split('.')[0]}.fits"
-        output_path = calibrated_path / new_fname
-        write_image_only(final_ccd, output_path, overwrite=cfg.overwrite)
-        add_header(calibrated_path, new_fname, "FLAT", None, None, None, cfg)
+        try:
+            final_ccd = _reduce_flat(ccd, cfg, zero, combined_dark)
+            _assert_shape_matches(final_ccd, reference_shape, f"flat frame {file_name}")
+
+            new_fname = f"{file_name.split('.')[0]}.fits"
+            output_path = intermediate_dir / new_fname
+            write_image_only(final_ccd, output_path, overwrite=cfg.overwrite)
+            add_header(intermediate_dir, new_fname, "FLAT", None, None, None, cfg)
+        except Exception as e:
+            n_failed += 1
+            log(f"Warning: flat calibration failed for {file_name}: {e}. Skipping.")
+            continue
+
         paths_by_filter.setdefault(filt, []).append(str(output_path))
 
+    if n_failed:
+        log(f"Warning: {n_failed}/{n_total} flat frame(s) failed to process.")
     log("\nFinished processing individual flat frames.")
     return paths_by_filter
 
 
-def _combine_flats(paths_by_filter, calibrated_path, cfg, log, cancel_event):
+def _combine_flats(paths_by_filter, calibrated_data, cfg, log, cancel_event):
     """
-    Combine pre-processed flat frames per filter into normalised master flats.
-
-    :param paths_by_filter: dict mapping filter name → list of calibrated paths
+    Combine pre-processed flat frames per normalized filter into master flats.
+    Warns when a filter has fewer than 3 frames.
     """
     log("\nStarting flat combination by filter.")
     n_filters = len(paths_by_filter)
@@ -443,6 +940,13 @@ def _combine_flats(paths_by_filter, calibrated_path, cfg, log, cancel_event):
 
         n_frames = len(flat_paths)
         log(f"Combining filter {n_done}/{n_filters}: {filt} ({n_frames} frame(s))")
+
+        if n_frames < 3:
+            log(
+                f"Warning: only {n_frames} flat frame(s) for filter '{filt}'. "
+                "Sigma clipping may be ineffective."
+            )
+
         combined_flats = ccdp.combine(
             flat_paths,
             method="median",
@@ -454,55 +958,164 @@ def _combine_flats(paths_by_filter, calibrated_path, cfg, log, cancel_event):
             mem_limit=cfg.mem_limit,
         )
         combined_flats.meta["combined"] = True
-        flat_file_name = f"master_flat_{filt.replace('Empty/', '')}.fits"
-        write_image_only(combined_flats, calibrated_path / flat_file_name, overwrite=cfg.overwrite)
-        add_header(calibrated_path, flat_file_name, "FLAT", None, None, None, cfg)
+        flat_file_name = f"master_flat_{filt}.fits"
+        # Store the normalized name in the header too, so science lookup matches
+        combined_flats.meta["FILTER"] = filt
+        write_image_only(combined_flats, calibrated_data / flat_file_name, overwrite=cfg.overwrite)
+        add_header(calibrated_data, flat_file_name, "FLAT", None, None, None, cfg)
         log(f"Master flat created: {flat_file_name}")
 
     log("\nFinished creating master flats by filter.")
 
 
-def science_images(files, calibrated_data, zero, combined_dark, cfg: ReductionConfig, log, cancel_event):
+def science_images(files, calibrated_data, zero, combined_dark,
+                   cfg: ReductionConfig, log, cancel_event,
+                   reference_shape, max_dark_exp):
     """
     Fully calibrate all science (LIGHT) frames: bias, dark, flat-field,
-    and write BJD_TDB to the header.
+    and write BJD_TDB to the header when coordinates are present.
+
+    Per-frame errors (missing header keys, missing master flat for the
+    filter, read failures, dimension mismatches) are logged as warnings
+    and the frame is skipped — they do not abort the entire stage.
     """
     flat_imagetyp = "FLAT"
     science_imagetyp = "LIGHT"
 
-    # Build the master-flat lookup once — no repeated IFC scans
+    # Build master-flat lookup once, keyed on the normalized FILTER header
     ifc_reduced = ccdp.ImageFileCollection(calibrated_data)
-    combined_flats = {
-        ccd.header["filter"]: ccd
-        for ccd in ifc_reduced.ccds(imagetyp=flat_imagetyp, combined=True)
-    }
+    combined_flats: dict[str, CCDData] = {}
+    for ccd in ifc_reduced.ccds(imagetyp=flat_imagetyp, combined=True):
+        raw_filt = ccd.header.get("FILTER")
+        try:
+            filt_key = _normalize_filter(raw_filt)
+        except ValueError:
+            log(f"Warning: master flat has invalid FILTER={raw_filt!r}. Skipping.")
+            continue
+        combined_flats[filt_key] = ccd
 
-    science_files = files.files_filtered(imagetyp=science_imagetyp)
-    n_total = len(science_files)
+    if not combined_flats:
+        raise RuntimeError(
+            f"No master flats found in '{calibrated_data}'. "
+            "Science reduction cannot proceed."
+        )
+    log(f"Loaded master flats for filter(s): {sorted(combined_flats.keys())}")
+
+    science_paths = files.files_filtered(imagetyp=science_imagetyp, include_path=True)
+    n_total = len(science_paths)
+
+    if n_total == 0:
+        raise ValueError(
+            f"No LIGHT frames found in '{files.location}'. "
+            "Check that IMAGETYP headers are set to 'LIGHT'."
+        )
     log(f"\nFound {n_total} science frame(s). Starting reduction.")
 
-    for n_done, (light, file_name) in enumerate(
-        files.ccds(imagetyp=science_imagetyp, return_fname=True, ccd_kwargs={"unit": "adu"}), start=1
-    ):
+    n_succeeded = 0
+    n_failed = 0
+    warned_long_exp = False
+
+    for n_done, light_path in enumerate(science_paths, start=1):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
-        filt = light.header["filter"]
+        file_name = Path(light_path).name
+
+        # Read
+        try:
+            light = CCDData.read(light_path, unit="adu")
+        except Exception as e:
+            n_failed += 1
+            log(f"Warning: failed to read {file_name}: {e}. Skipping.")
+            continue
+
+        # EXPTIME validation (needed for dark scaling)
+        if cfg.dark_bool:
+            exp = _get_exposure_time(light.header)
+            if exp is None:
+                n_failed += 1
+                log(
+                    f"Warning: missing or invalid EXPTIME in {file_name} "
+                    "and dark scaling requires it. Skipping."
+                )
+                continue
+            if (max_dark_exp is not None and not warned_long_exp
+                    and exp > max_dark_exp * DARK_SCALING_WARN_RATIO):
+                log(
+                    f"Warning: science EXPTIME={exp:.1f}s is more than "
+                    f"{DARK_SCALING_WARN_RATIO:.0f}× the longest dark "
+                    f"({max_dark_exp:.1f}s). Dark scaling may amplify noise. "
+                    "Consider collecting longer darks. (This warning will not repeat.)"
+                )
+                warned_long_exp = True
+
+        # Filter
+        raw_filt = light.header.get("FILTER")
+        try:
+            filt = _normalize_filter(raw_filt)
+        except ValueError as e:
+            n_failed += 1
+            log(f"Warning: {e} in {file_name}. Skipping.")
+            continue
+
+        # Matching master flat
+        if filt not in combined_flats:
+            n_failed += 1
+            log(
+                f"Warning: no master flat for filter '{filt}' "
+                f"(needed by {file_name}, available: {sorted(combined_flats.keys())}). "
+                "Skipping."
+            )
+            continue
+
         log(f"Calibrating science {n_done}/{n_total} [{filt}]: {file_name}")
 
-        good_flat = combined_flats[filt]
-        reduced = _reduce_science(light, cfg, zero, combined_dark, good_flat)
+        # Calibrate
+        try:
+            reduced = _reduce_science(light, cfg, zero, combined_dark, combined_flats[filt])
+            _assert_shape_matches(reduced, reference_shape, f"science frame {file_name}")
+        except Exception as e:
+            n_failed += 1
+            log(f"Warning: calibration failed for {file_name}: {e}. Skipping.")
+            continue
 
         new_fname = f"{file_name.split('.')[0]}.fits"
-        write_image_only(reduced, calibrated_data / new_fname, overwrite=cfg.overwrite)
+        try:
+            write_image_only(reduced, calibrated_data / new_fname, overwrite=cfg.overwrite)
+        except Exception as e:
+            n_failed += 1
+            log(f"Warning: failed to write {new_fname}: {e}. Skipping.")
+            continue
 
-        hjd = light.header["JD-HELIO"]
-        ra = light.header["RA"]
-        dec = light.header["DEC"]
-        add_header(calibrated_data, new_fname, science_imagetyp, hjd, ra, dec, cfg)
+        # Header + BJD_TDB (guarded against missing coords/time)
+        hjd = light.header.get("JD-HELIO")
+        ra = light.header.get("RA")
+        dec = light.header.get("DEC")
+        if hjd is None or ra is None or dec is None:
+            log(
+                f"Warning: missing JD-HELIO/RA/DEC in {file_name}. "
+                "Writing calibrated image without BJD_TDB."
+            )
+            add_header(calibrated_data, new_fname, science_imagetyp, None, None, None, cfg)
+        else:
+            try:
+                add_header(calibrated_data, new_fname, science_imagetyp, hjd, ra, dec, cfg)
+            except Exception as e:
+                log(
+                    f"Warning: BJD_TDB calculation failed for {file_name}: {e}. "
+                    "Writing calibrated image without BJD_TDB."
+                )
+                add_header(calibrated_data, new_fname, science_imagetyp, None, None, None, cfg)
 
-    log("\nFinished calibrating all science images.")
+        n_succeeded += 1
+
+    log(f"\nScience reduction summary: {n_succeeded} succeeded, {n_failed} skipped.")
+    if n_succeeded == 0:
+        raise RuntimeError(
+            f"All {n_total} science frames were skipped. "
+            "Check header keywords and master flat filters."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -513,7 +1126,9 @@ def add_header(pathway, fname, imagetyp, hjd, ra, dec, cfg: ReductionConfig):
     """
     Write reduction metadata into a FITS header.
 
-    For LIGHT frames the HJD is converted to BJD_TDB and stored as well.
+    For LIGHT frames with all of hjd/ra/dec present, the HJD is converted
+    to BJD_TDB and stored. If any of hjd/ra/dec is None, BJD_TDB is
+    silently skipped — the caller is responsible for logging.
 
     :param pathway: Directory containing the file
     :param fname: File name
@@ -532,7 +1147,7 @@ def add_header(pathway, fname, imagetyp, hjd, ra, dec, cfg: ReductionConfig):
     fits.setval(image_name, "BIASSEC",  value=cfg.overscan_region, comment="Overscan section")
     fits.setval(image_name, "EPOCH",    value="J2000.0")
 
-    if imagetyp == "LIGHT":
+    if imagetyp == "LIGHT" and hjd is not None and ra is not None and dec is not None:
         bjd = BJD_TDB(hjd, cfg.location, ra, dec)
         fits.setval(image_name, "BJD_TDB", value=bjd.value,
                     comment="Bary. Julian Date, Bary. Dynamical Time")

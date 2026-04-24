@@ -7,10 +7,10 @@ This program is meant to automatically do the data reduction of the raw images f
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
 not overwrite the original images.
 """
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 import json
 import shutil
 import warnings
@@ -41,6 +41,84 @@ DARK_SCALING_WARN_RATIO = 10.0
 # ---------------------------------------------------------------------------
 
 @dataclass
+class HeaderConfig:
+    """
+    FITS header conventions that vary between observatories and capture
+    software. Everything the pipeline reads from or writes to a FITS header
+    is driven by this object, so new setups can be supported without code
+    changes.
+
+    Invalid values raise ValueError at construction time via __post_init__.
+    """
+    # --- IMAGETYP values (what this pipeline expects to find in raw frames)
+    # Some capture software writes 'Bias Frame' / 'Light Frame' / 'zero' /
+    # 'object' etc. — override these to match your data.
+    imagetyp_bias: str = "BIAS"
+    imagetyp_dark: str = "DARK"
+    imagetyp_flat: str = "FLAT"
+    imagetyp_light: str = "LIGHT"
+
+    # --- Filter normalization
+    # Prefixes stripped from raw FILTER values before uppercasing. Matching
+    # is case-insensitive. Example: BSUO writes 'Empty/V' for filter-wheel
+    # slot V, so 'Empty/' belongs here.
+    filter_prefix_strip: Tuple[str, ...] = ("Empty/",)
+
+    # --- Time / coord header key priority lists (first present wins)
+    time_header_keys: Tuple[str, ...] = ("JD-HELIO", "HJD_UTC", "HJD-UTC", "HJD")
+    ra_header_keys: Tuple[str, ...] = ("RA", "OBJCTRA", "OBJCT RA", "RA-OBJ")
+    dec_header_keys: Tuple[str, ...] = ("DEC", "OBJCTDEC", "OBJCT DEC", "DEC-OBJ")
+
+    # --- Simple keywords the pipeline reads from raw frames
+    filter_key: str = "FILTER"
+    exptime_key: str = "EXPTIME"
+
+    # --- Keywords the pipeline writes to output frames
+    gain_key: str = "GAIN"
+    rdnoise_key: str = "RDNOISE"
+    observatory_key: str = "OBSERVAT"
+    imagetyp_key: str = "IMAGETYP"
+    datasec_key: str = "DATASEC"
+    biassec_key: str = "BIASSEC"
+    epoch_key: str = "EPOCH"
+    bjd_tdb_key: str = "BJD_TDB"
+
+    # --- Epoch value written to output headers
+    epoch_value: str = "J2000.0"
+
+    def __post_init__(self):
+        # Required non-empty strings
+        required = {
+            "imagetyp_bias": self.imagetyp_bias,
+            "imagetyp_dark": self.imagetyp_dark,
+            "imagetyp_flat": self.imagetyp_flat,
+            "imagetyp_light": self.imagetyp_light,
+            "filter_key": self.filter_key,
+            "exptime_key": self.exptime_key,
+            "gain_key": self.gain_key,
+            "rdnoise_key": self.rdnoise_key,
+            "observatory_key": self.observatory_key,
+            "imagetyp_key": self.imagetyp_key,
+            "datasec_key": self.datasec_key,
+            "biassec_key": self.biassec_key,
+            "epoch_key": self.epoch_key,
+            "bjd_tdb_key": self.bjd_tdb_key,
+            "epoch_value": self.epoch_value,
+        }
+        for name, value in required.items():
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"HeaderConfig.{name} must be a non-empty string, got {value!r}")
+
+        # Tuples must contain at least one non-empty string
+        for name in ("time_header_keys", "ra_header_keys", "dec_header_keys"):
+            value = getattr(self, name)
+            if not value or not all(isinstance(k, str) and k.strip() for k in value):
+                raise ValueError(
+                    f"HeaderConfig.{name} must be a non-empty sequence of strings, got {value!r}"
+                )
+
+
+@dataclass
 class ReductionConfig:
     """
     All tunable parameters for a reduction run in one place.
@@ -56,11 +134,25 @@ class ReductionConfig:
     sigma_clip_high_thresh: int = 3             # upper sigma for combine
     mem_limit: float = 1600e6                   # bytes (~1.6 GB)
     dark_bool: bool = True                      # whether dark frames exist
+    flat_bool: bool = True                      # whether flat frames exist
     location: str = "bsuo"                      # observing site key
     overwrite: bool = True                      # overwrite existing output files
     overscan_region: str = "[2073:2115, :]"     # FITS section string; set to "none" to skip
     trim_region: str = "[20:2060, 12:2057]"     # FITS section string
     reuse_masters: bool = False                 # skip master regeneration if fresh masters exist
+    science_only: bool = False                  # load masters from disk, skip bias/dark/flat stages entirely
+    # Master filename customisation — default values match what this pipeline
+    # generates, but can be overridden to point at existing masters with
+    # different names (e.g. Dark.fits or FLAT{filter}.fits). The flat pattern
+    # must contain exactly one {filter} placeholder.
+    master_bias_name: str = "zero.fits"
+    master_dark_name: str = "master_dark.fits"
+    master_flat_pattern: str = "master_flat_{filter}.fits"
+
+    # FITS header conventions — IMAGETYP values, keyword names, filter
+    # prefix stripping, and time/coord alias lists. Defaults follow the
+    # FITS standard / BSUO conventions; override to support other setups.
+    headers: HeaderConfig = field(default_factory=HeaderConfig)
 
     def __post_init__(self):
         if self.gain <= 0:
@@ -81,6 +173,11 @@ class ReductionConfig:
             raise ValueError(f"mem_limit must be positive, got {self.mem_limit}")
         if not isinstance(self.location, str) or not self.location.strip():
             raise ValueError(f"location must be a non-empty string, got {self.location!r}")
+        if "{filter}" not in self.master_flat_pattern:
+            raise ValueError(
+                f"master_flat_pattern must contain '{{filter}}' placeholder, "
+                f"got {self.master_flat_pattern!r}"
+            )
 
 
 def bsuo_config() -> ReductionConfig:
@@ -107,44 +204,72 @@ def lapalma_config() -> ReductionConfig:
 # Filter & exposure utilities
 # ---------------------------------------------------------------------------
 
-def _normalize_filter(raw_filter) -> str:
+def _normalize_filter(raw_filter, prefixes=("Empty/",)) -> str:
     """
     Normalize a filter name for reliable matching between flats and science.
 
-    All FITS header lookups for the filter keyword consistently use the
-    uppercase form ``"FILTER"`` throughout this module. FITS headers are
-    formally case-insensitive, but using one form everywhere makes the
-    intent explicit and prevents confusion.
-
     Handles:
       - Leading/trailing whitespace
-      - Known filter-wheel prefixes like "Empty/" (common at BSUO)
+      - Filter-wheel prefixes (case-insensitive) such as ``"Empty/"``
       - Case differences — result is uppercased
 
-    :param raw_filter: Raw FILTER header value
+    :param raw_filter: Raw filter header value
+    :param prefixes: Iterable of prefixes to strip (case-insensitive)
     :return: Normalized filter string
     :raises ValueError: If the filter is empty or not a string
     """
     if raw_filter is None:
-        raise ValueError("FILTER header value is missing.")
+        raise ValueError("Filter header value is missing.")
     s = str(raw_filter).strip()
     if not s:
-        raise ValueError("FILTER header value is empty.")
-    for prefix in ("Empty/", "empty/", "EMPTY/"):
-        if s.startswith(prefix):
+        raise ValueError("Filter header value is empty.")
+    s_lower = s.lower()
+    for prefix in prefixes:
+        if prefix and s_lower.startswith(prefix.lower()):
             s = s[len(prefix):]
             break
     return s.strip().upper()
 
 
-def _get_exposure_time(header) -> Optional[float]:
+def _header_get_any(header, *keys) -> Optional[object]:
     """
-    Extract EXPTIME from a FITS header, returning None if missing or invalid.
+    Look up the first present keyword from a prioritized list.
+
+    FITS headers from different capture software use different keywords for
+    the same conceptual value (e.g. BSUO writes heliocentric time as
+    ``HJD_UTC`` rather than the FITS-convention ``JD-HELIO``, and target
+    coordinates as ``OBJCTRA`` / ``OBJCT DEC``). This helper returns the
+    first matching non-empty value so callers can accept any of them.
 
     :param header: FITS header
+    :param keys: Header keyword aliases, in priority order
+    :return: The value of the first present keyword, or None if none match
+    """
+    for key in keys:
+        try:
+            value = header.get(key)
+        except Exception:
+            # Some header implementations raise on invalid keys rather than
+            # returning None — treat that as "not present" and move on.
+            continue
+        if value is None:
+            continue
+        # Treat empty / whitespace-only strings as missing too
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return None
+
+
+def _get_exposure_time(header, key="EXPTIME") -> Optional[float]:
+    """
+    Extract exposure time from a FITS header, returning None if missing or invalid.
+
+    :param header: FITS header
+    :param key: Header keyword to read (defaults to the FITS standard EXPTIME)
     :return: Exposure time in seconds, or None
     """
-    exp = header.get("EXPTIME")
+    exp = header.get(key)
     if exp is None:
         return None
     try:
@@ -156,18 +281,19 @@ def _get_exposure_time(header) -> Optional[float]:
     return exp_f
 
 
-def _max_dark_exposure(dark_paths) -> Optional[float]:
+def _max_dark_exposure(dark_paths, exptime_key="EXPTIME") -> Optional[float]:
     """
-    Find the maximum EXPTIME across a list of calibrated dark frames.
+    Find the maximum exposure time across a list of calibrated dark frames.
 
     :param dark_paths: List of paths to calibrated darks
+    :param exptime_key: Header keyword holding exposure time
     :return: Maximum exposure time in seconds, or None if none readable
     """
     max_exp = None
     for dpath in dark_paths:
         try:
             with fits.open(dpath) as hdul:
-                exp = _get_exposure_time(hdul[0].header)
+                exp = _get_exposure_time(hdul[0].header, key=exptime_key)
                 if exp is not None:
                     if max_exp is None or exp > max_exp:
                         max_exp = exp
@@ -218,7 +344,10 @@ def write_image_only(ccd, path, overwrite=True):
     :raises IOError: If the destination is not present on disk after rename
     """
     path_obj = Path(path)
-    tmp_path = path_obj.with_suffix(path_obj.suffix + ".tmp")
+    # Keep the .fits extension on the temp name (rather than .fits.tmp) so
+    # astropy's format auto-detection recognises it. Insert ".tmp" before the
+    # extension: foo.fits -> foo.tmp.fits
+    tmp_path = path_obj.with_name(path_obj.stem + ".tmp" + path_obj.suffix)
     if tmp_path.exists():
         tmp_path.unlink()
 
@@ -227,7 +356,7 @@ def write_image_only(ccd, path, overwrite=True):
         ccd.mask = None
         ccd.uncertainty = None
         try:
-            ccd.write(str(tmp_path), overwrite=True)
+            ccd.write(str(tmp_path), overwrite=True, format="fits")
             # Path.replace is atomic on POSIX and near-atomic on Windows
             tmp_path.replace(path_obj)
         except Exception:
@@ -394,7 +523,43 @@ def _load_master(master_path: Path, unit: str = "electron") -> CCDData:
     :param unit: Unit string for CCDData construction
     :return: CCDData object
     """
-    return CCDData.read(str(master_path), unit=unit)
+    return CCDData.read(str(master_path), unit=unit, format="fits")
+
+
+def _discover_master_flats(calibrated_data: Path, cfg) -> dict:
+    """
+    Discover all master flats in ``calibrated_data`` matching the filename
+    pattern, keyed by normalized filter name.
+
+    The pattern's {filter} placeholder becomes a glob wildcard: e.g.
+    ``master_flat_{filter}.fits`` matches ``master_flat_B.fits``,
+    ``master_flat_V.fits``, etc. The filter portion of the matched filename
+    is extracted and normalized.
+
+    :param calibrated_data: Directory to scan
+    :param cfg: ReductionConfig (provides master_flat_pattern)
+    :return: dict mapping normalized filter name -> master flat Path
+    """
+    pattern = cfg.master_flat_pattern
+    # Split pattern into prefix + suffix around {filter}
+    prefix, suffix = pattern.split("{filter}", 1)
+    glob_pattern = f"{prefix}*{suffix}"
+
+    found: dict = {}
+    for master_path in calibrated_data.glob(glob_pattern):
+        name = master_path.name
+        if not (name.startswith(prefix) and name.endswith(suffix)):
+            continue
+        # Extract the {filter} portion
+        raw_filt = name[len(prefix):len(name) - len(suffix)] if suffix else name[len(prefix):]
+        if not raw_filt:
+            continue
+        try:
+            filt = _normalize_filter(raw_filt)
+        except ValueError:
+            continue
+        found[filt] = master_path
+    return found
 
 
 def _write_config_snapshot(cfg, output_dir: Path, raw_path: Path, log):
@@ -493,6 +658,30 @@ def run_reduction(
 
     files = ccdp.ImageFileCollection(images_path)
 
+    # --- Science-only mode: load masters from disk, skip calibration stages ---
+    if cfg.science_only:
+        log("\nScience-only mode: skipping bias/dark/flat calibration stages.")
+        try:
+            zero, master_dark, max_dark_exp, reference_shape = _load_masters_from_disk(
+                calibrated_data, cfg, log
+            )
+        except Exception as e:
+            raise RuntimeError("Failed to load existing master frames.") from e
+
+        try:
+            science_images(
+                files, calibrated_data, zero, master_dark,
+                cfg, log, cancel_event, reference_shape, max_dark_exp,
+            )
+        except Exception as e:
+            raise RuntimeError("Science stage failed.") from e
+        if canceled():
+            log("Reduction aborted: science stage did not complete.")
+            return
+
+        log("\nReduction process completed successfully.\n")
+        return
+
     # --- Bias ---
     try:
         zero = bias(files, calibrated_data, intermediate_dir, cfg, log, cancel_event)
@@ -545,6 +734,60 @@ def run_reduction(
         return
 
     log("\nReduction process completed successfully.\n")
+
+
+def _load_masters_from_disk(calibrated_data: Path, cfg: ReductionConfig, log):
+    """
+    Load master bias, master dark (if cfg.dark_bool), and discover master
+    flats for science-only mode.
+
+    :return: (zero, master_dark, max_dark_exp, reference_shape)
+    :raises FileNotFoundError: If any required master is missing
+    """
+    # Master bias
+    bias_path = calibrated_data / cfg.master_bias_name
+    if not bias_path.exists():
+        raise FileNotFoundError(
+            f"Master bias not found at '{bias_path}'. "
+            f"Set cfg.master_bias_name or place the file there."
+        )
+    zero = _load_master(bias_path)
+    reference_shape = zero.data.shape
+    log(f"Loaded master bias from {bias_path} (shape={reference_shape})")
+
+    # Master dark (optional)
+    master_dark = None
+    max_dark_exp = None
+    if cfg.dark_bool:
+        dark_path = calibrated_data / cfg.master_dark_name
+        if not dark_path.exists():
+            raise FileNotFoundError(
+                f"Master dark not found at '{dark_path}'. "
+                f"Set cfg.master_dark_name, cfg.dark_bool=False, or place the file there."
+            )
+        master_dark = _load_master(dark_path)
+        if master_dark.data.shape != reference_shape:
+            raise ValueError(
+                f"Master dark shape {master_dark.data.shape} does not match "
+                f"master bias shape {reference_shape}."
+            )
+        max_dark_exp = _get_exposure_time(master_dark.header)
+        log(
+            f"Loaded master dark from {dark_path}"
+            + (f" (EXPTIME={max_dark_exp:.1f}s)" if max_dark_exp else "")
+        )
+
+    # Master flats are discovered in science_images via _discover_master_flats —
+    # we don't need to load them here. Just verify at least one exists.
+    discovered = _discover_master_flats(calibrated_data, cfg)
+    if not discovered:
+        raise FileNotFoundError(
+            f"No master flats matching pattern '{cfg.master_flat_pattern}' "
+            f"found in '{calibrated_data}'."
+        )
+    log(f"Discovered master flats for filters: {sorted(discovered.keys())}")
+
+    return zero, master_dark, max_dark_exp, reference_shape
 
 
 # ---------------------------------------------------------------------------
@@ -627,7 +870,7 @@ def bias(files, calibrated_data, intermediate_dir, cfg: ReductionConfig, log, ca
     log(f"Overscan Region: {cfg.overscan_region}")
     log(f"Trim Region:     {cfg.trim_region}")
 
-    bias_paths = files.files_filtered(imagetyp="BIAS", include_path=True)
+    bias_paths = files.files_filtered(imagetyp=cfg.headers.imagetyp_bias, include_path=True)
     n_total = len(bias_paths)
 
     if n_total == 0:
@@ -638,7 +881,7 @@ def bias(files, calibrated_data, intermediate_dir, cfg: ReductionConfig, log, ca
     log(f"Found {n_total} bias frame(s).")
 
     # Fast path: reuse existing master bias if fresh
-    master_bias_path = calibrated_data / "zero.fits"
+    master_bias_path = calibrated_data / cfg.master_bias_name
     if cfg.reuse_masters and _master_is_fresh(master_bias_path, bias_paths):
         log(f"Reusing existing master bias: {master_bias_path}")
         return _load_master(master_bias_path)
@@ -654,7 +897,7 @@ def bias(files, calibrated_data, intermediate_dir, cfg: ReductionConfig, log, ca
         file_name = Path(bias_path).name
         log(f"Processing bias {n_done}/{n_total}: {file_name}")
         try:
-            ccd = CCDData.read(bias_path, unit="adu")
+            ccd = CCDData.read(bias_path, unit="adu", format="fits")
             new_ccd = _reduce_bias(ccd, cfg)
 
             # First successfully reduced bias sets the reference shape
@@ -712,7 +955,7 @@ def dark(files, zero, calibrated_data, intermediate_dir, cfg: ReductionConfig,
     """
     log("\nStarting dark calibration.")
 
-    dark_paths = files.files_filtered(imagetyp="DARK", include_path=True)
+    dark_paths = files.files_filtered(imagetyp=cfg.headers.imagetyp_dark, include_path=True)
     n_total = len(dark_paths)
 
     if n_total == 0:
@@ -724,7 +967,7 @@ def dark(files, zero, calibrated_data, intermediate_dir, cfg: ReductionConfig,
 
     # Fast path: reuse existing master dark if fresh. Also scan raw darks
     # for max EXPTIME so the later science-scaling warning still works.
-    master_dark_path = calibrated_data / "master_dark.fits"
+    master_dark_path = calibrated_data / cfg.master_dark_name
     if cfg.reuse_masters and _master_is_fresh(master_dark_path, dark_paths):
         log(f"Reusing existing master dark: {master_dark_path}")
         max_dark_exp = _max_dark_exposure(dark_paths)
@@ -742,7 +985,7 @@ def dark(files, zero, calibrated_data, intermediate_dir, cfg: ReductionConfig,
         file_name = Path(dark_path).name
         log(f"Processing dark {n_done}/{n_total}: {file_name}")
         try:
-            ccd = CCDData.read(dark_path, unit="adu")
+            ccd = CCDData.read(dark_path, unit="adu", format="fits")
             if _get_exposure_time(ccd.header) is None:
                 raise ValueError("missing or invalid EXPTIME")
 
@@ -802,9 +1045,9 @@ def flat(files, zero, combined_dark, calibrated_data, intermediate_dir,
 
     # Attempt to reuse existing master flats before processing anything
     if cfg.reuse_masters:
-        raw_flat_paths = files.files_filtered(imagetyp="FLAT", include_path=True)
+        raw_flat_paths = files.files_filtered(imagetyp=cfg.headers.imagetyp_flat, include_path=True)
         if raw_flat_paths and _can_reuse_master_flats(
-            raw_flat_paths, calibrated_data, log
+            raw_flat_paths, calibrated_data, cfg, log
         ):
             log("Reusing existing master flats.")
             return
@@ -823,7 +1066,7 @@ def flat(files, zero, combined_dark, calibrated_data, intermediate_dir,
     _combine_flats(paths_by_filter, calibrated_data, cfg, log, cancel_event)
 
 
-def _can_reuse_master_flats(raw_flat_paths, calibrated_data, log) -> bool:
+def _can_reuse_master_flats(raw_flat_paths, calibrated_data, cfg, log) -> bool:
     """
     Check whether every filter present in raw flats has a fresh master.
 
@@ -833,6 +1076,7 @@ def _can_reuse_master_flats(raw_flat_paths, calibrated_data, log) -> bool:
 
     :param raw_flat_paths: List of raw flat file paths
     :param calibrated_data: Output directory containing master flats
+    :param cfg: ReductionConfig (for master_flat_pattern)
     :param log: Logging callable
     :return: True if all master flats can be reused
     """
@@ -849,7 +1093,7 @@ def _can_reuse_master_flats(raw_flat_paths, calibrated_data, log) -> bool:
 
     # Every filter must have a fresh master
     for filt in filters_needed:
-        master_path = calibrated_data / f"master_flat_{filt}.fits"
+        master_path = calibrated_data / cfg.master_flat_pattern.format(filter=filt)
         if not _master_is_fresh(master_path, raw_flat_paths):
             log(
                 f"Master flat for filter '{filt}' is missing or stale "
@@ -871,7 +1115,7 @@ def _process_flats(files, zero, combined_dark, intermediate_dir,
              or None if canceled
     :raises ValueError: If no flat frames are found in the input directory
     """
-    flat_paths = files.files_filtered(imagetyp="FLAT", include_path=True)
+    flat_paths = files.files_filtered(imagetyp=cfg.headers.imagetyp_flat, include_path=True)
     n_total = len(flat_paths)
 
     if n_total == 0:
@@ -890,7 +1134,7 @@ def _process_flats(files, zero, combined_dark, intermediate_dir,
 
         file_name = Path(flat_path).name
         try:
-            ccd = CCDData.read(flat_path, unit="adu")
+            ccd = CCDData.read(flat_path, unit="adu", format="fits")
         except Exception as e:
             n_failed += 1
             log(f"Warning: failed to read {file_name}: {e}. Skipping.")
@@ -958,7 +1202,7 @@ def _combine_flats(paths_by_filter, calibrated_data, cfg, log, cancel_event):
             mem_limit=cfg.mem_limit,
         )
         combined_flats.meta["combined"] = True
-        flat_file_name = f"master_flat_{filt}.fits"
+        flat_file_name = cfg.master_flat_pattern.format(filter=filt)
         # Store the normalized name in the header too, so science lookup matches
         combined_flats.meta["FILTER"] = filt
         write_image_only(combined_flats, calibrated_data / flat_file_name, overwrite=cfg.overwrite)
@@ -979,24 +1223,25 @@ def science_images(files, calibrated_data, zero, combined_dark,
     filter, read failures, dimension mismatches) are logged as warnings
     and the frame is skipped — they do not abort the entire stage.
     """
-    flat_imagetyp = "FLAT"
-    science_imagetyp = "LIGHT"
+    science_imagetyp = cfg.headers.imagetyp_light
 
-    # Build master-flat lookup once, keyed on the normalized FILTER header
-    ifc_reduced = ccdp.ImageFileCollection(calibrated_data)
+    # Build master-flat lookup by filename pattern rather than by IMAGETYP
+    # header. This works for both pipeline-generated masters (which have
+    # IMAGETYP=<flat> written by add_header) AND externally-produced masters
+    # that may not have the same header conventions.
+    flat_paths_by_filter = _discover_master_flats(calibrated_data, cfg)
     combined_flats: dict[str, CCDData] = {}
-    for ccd in ifc_reduced.ccds(imagetyp=flat_imagetyp, combined=True):
-        raw_filt = ccd.header.get("FILTER")
+    for filt_key, master_path in flat_paths_by_filter.items():
         try:
-            filt_key = _normalize_filter(raw_filt)
-        except ValueError:
-            log(f"Warning: master flat has invalid FILTER={raw_filt!r}. Skipping.")
+            combined_flats[filt_key] = _load_master(master_path)
+        except Exception as e:
+            log(f"Warning: failed to load master flat {master_path.name}: {e}. Skipping.")
             continue
-        combined_flats[filt_key] = ccd
 
     if not combined_flats:
         raise RuntimeError(
-            f"No master flats found in '{calibrated_data}'. "
+            f"No master flats found in '{calibrated_data}' "
+            f"(pattern '{cfg.master_flat_pattern}'). "
             "Science reduction cannot proceed."
         )
     log(f"Loaded master flats for filter(s): {sorted(combined_flats.keys())}")
@@ -1006,8 +1251,8 @@ def science_images(files, calibrated_data, zero, combined_dark,
 
     if n_total == 0:
         raise ValueError(
-            f"No LIGHT frames found in '{files.location}'. "
-            "Check that IMAGETYP headers are set to 'LIGHT'."
+            f"No {science_imagetyp!r} frames found in '{files.location}'. "
+            f"Check that IMAGETYP headers match cfg.headers.imagetyp_light."
         )
     log(f"\nFound {n_total} science frame(s). Starting reduction.")
 
@@ -1024,7 +1269,7 @@ def science_images(files, calibrated_data, zero, combined_dark,
 
         # Read
         try:
-            light = CCDData.read(light_path, unit="adu")
+            light = CCDData.read(light_path, unit="adu", format="fits")
         except Exception as e:
             n_failed += 1
             log(f"Warning: failed to read {file_name}: {e}. Skipping.")
@@ -1088,13 +1333,21 @@ def science_images(files, calibrated_data, zero, combined_dark,
             log(f"Warning: failed to write {new_fname}: {e}. Skipping.")
             continue
 
-        # Header + BJD_TDB (guarded against missing coords/time)
-        hjd = light.header.get("JD-HELIO")
-        ra = light.header.get("RA")
-        dec = light.header.get("DEC")
+        # Header + BJD_TDB (guarded against missing coords/time).
+        # Different capture software writes these under different keys —
+        # e.g. BSUO frames commonly use HJD_UTC and OBJCTRA / OBJCT DEC
+        # instead of the FITS-convention JD-HELIO / RA / DEC.
+        hjd = _header_get_any(light.header, "JD-HELIO", "HJD_UTC", "HJD-UTC", "HJD")
+        ra = _header_get_any(light.header, "RA", "OBJCTRA", "OBJCT RA", "RA-OBJ")
+        dec = _header_get_any(light.header, "DEC", "OBJCTDEC", "OBJCT DEC", "DEC-OBJ")
         if hjd is None or ra is None or dec is None:
+            missing = [
+                name for name, val in
+                (("HJD", hjd), ("RA", ra), ("DEC", dec))
+                if val is None
+            ]
             log(
-                f"Warning: missing JD-HELIO/RA/DEC in {file_name}. "
+                f"Warning: missing {'/'.join(missing)} in {file_name}. "
                 "Writing calibrated image without BJD_TDB."
             )
             add_header(calibrated_data, new_fname, science_imagetyp, None, None, None, cfg)

@@ -27,6 +27,11 @@ from astropy.nddata import CCDData
 import ccdproc as ccdp
 import numpy as np
 
+from .headerCorrect import (
+    HeaderCorrectionOptions,
+    correct_headers as _correct_headers,
+)
+
 # Suppress FITS standard-compliance header warnings
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
@@ -69,6 +74,12 @@ class HeaderConfig:
     ra_header_keys: Tuple[str, ...] = ("RA", "OBJCTRA", "OBJCT RA", "RA-OBJ")
     dec_header_keys: Tuple[str, ...] = ("DEC", "OBJCTDEC", "OBJCT DEC", "DEC-OBJ")
 
+    # --- DATE-OBS alias priority list (start of exposure timestamp)
+    dateobs_header_keys: Tuple[str, ...] = ("DATE-OBS", "DATE_OBS", "DATEOBS")
+
+    # --- Exposure-time alias priority list (header-correction stage)
+    exptime_header_keys: Tuple[str, ...] = ("EXPTIME", "EXP_TIME", "EXPOSURE")
+
     # --- Simple keywords the pipeline reads from raw frames
     filter_key: str = "FILTER"
     exptime_key: str = "EXPTIME"
@@ -81,14 +92,48 @@ class HeaderConfig:
     datasec_key: str = "DATASEC"
     biassec_key: str = "BIASSEC"
     epoch_key: str = "EPOCH"
+    equinox_key: str = "EQUINOX"
     bjd_tdb_key: str = "BJD_TDB"
 
-    # --- Epoch value written to output headers
-    epoch_value: str = "J2000.0"
+    # --- Keywords written by the header-correction stage
+    ra_key: str = "RA"
+    dec_key: str = "DEC"
+    ra_orig_key: str = "RA_ORIG"
+    dec_orig_key: str = "DEC_ORIG"
+    filter_orig_key: str = "FILT_ORG"
+    jd_start_key: str = "JD_START"
+    jd_mid_key: str = "JD_MID"
+    jd_end_key: str = "JD_END"
+    jd_key: str = "JD"
+    jd_orig_key: str = "JD_ORIG"
+    hjd_key: str = "HJD"
+    hjd_utc_key: str = "HJD_UTC"
+    hjd_orig_key: str = "HJD_ORIG"
+    bjd_utc_key: str = "BJD_UTC"
+    bjd_orig_key: str = "BJD_ORIG"
+    sidereal_key: str = "SIDEREAL"
+    sidereal_orig_key: str = "ST_ORIG"
+    mean_sidereal_key: str = "MEAN_ST"
+    apparent_sidereal_key: str = "APP_ST"
+    sidereal_short_key: str = "ST"
+    secz_key: str = "SECZ"
+    secz_orig_key: str = "SECZ_ORG"
+    eairmass_key: str = "EAIRMASS"
+
+    # --- Epoch / equinox values written when those headers are missing
+    epoch_value: float = 2000.0
+    equinox_value: str = "J2000.0"
+
+    # --- Internal metadata flag written on combined master frames
+    # (used by ccdproc's ImageFileCollection to distinguish master files
+    # from individual calibrated frames when combined=True is queried)
+    combined_flag_key: str = "combined"
 
     def __post_init__(self):
-        # Required non-empty strings
-        required = {
+        # Required non-empty string fields (every keyword name and the
+        # equinox text). Note that epoch_value is a float so it's validated
+        # separately below.
+        required_strings = {
             "imagetyp_bias": self.imagetyp_bias,
             "imagetyp_dark": self.imagetyp_dark,
             "imagetyp_flat": self.imagetyp_flat,
@@ -102,20 +147,183 @@ class HeaderConfig:
             "datasec_key": self.datasec_key,
             "biassec_key": self.biassec_key,
             "epoch_key": self.epoch_key,
+            "equinox_key": self.equinox_key,
             "bjd_tdb_key": self.bjd_tdb_key,
-            "epoch_value": self.epoch_value,
+            "ra_key": self.ra_key,
+            "dec_key": self.dec_key,
+            "ra_orig_key": self.ra_orig_key,
+            "dec_orig_key": self.dec_orig_key,
+            "filter_orig_key": self.filter_orig_key,
+            "jd_start_key": self.jd_start_key,
+            "jd_mid_key": self.jd_mid_key,
+            "jd_end_key": self.jd_end_key,
+            "jd_key": self.jd_key,
+            "jd_orig_key": self.jd_orig_key,
+            "hjd_key": self.hjd_key,
+            "hjd_utc_key": self.hjd_utc_key,
+            "hjd_orig_key": self.hjd_orig_key,
+            "bjd_utc_key": self.bjd_utc_key,
+            "bjd_orig_key": self.bjd_orig_key,
+            "sidereal_key": self.sidereal_key,
+            "sidereal_orig_key": self.sidereal_orig_key,
+            "mean_sidereal_key": self.mean_sidereal_key,
+            "apparent_sidereal_key": self.apparent_sidereal_key,
+            "sidereal_short_key": self.sidereal_short_key,
+            "secz_key": self.secz_key,
+            "secz_orig_key": self.secz_orig_key,
+            "eairmass_key": self.eairmass_key,
+            "equinox_value": self.equinox_value,
+            "combined_flag_key": self.combined_flag_key,
         }
-        for name, value in required.items():
+        for name, value in required_strings.items():
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"HeaderConfig.{name} must be a non-empty string, got {value!r}")
 
+        # epoch_value is a numeric Julian-year value (e.g. 2000.0)
+        if not isinstance(self.epoch_value, (int, float)) or isinstance(self.epoch_value, bool):
+            raise ValueError(
+                f"HeaderConfig.epoch_value must be a number, got {self.epoch_value!r}"
+            )
+
         # Tuples must contain at least one non-empty string
-        for name in ("time_header_keys", "ra_header_keys", "dec_header_keys"):
+        tuple_fields = (
+            "time_header_keys", "ra_header_keys", "dec_header_keys",
+            "dateobs_header_keys", "exptime_header_keys",
+        )
+        for name in tuple_fields:
             value = getattr(self, name)
             if not value or not all(isinstance(k, str) and k.strip() for k in value):
                 raise ValueError(
                     f"HeaderConfig.{name} must be a non-empty sequence of strings, got {value!r}"
                 )
+
+        # filter_prefix_strip can be empty (no prefixes to strip), but if
+        # populated each entry must be a non-empty string
+        if self.filter_prefix_strip and not all(
+            isinstance(p, str) and p for p in self.filter_prefix_strip
+        ):
+            raise ValueError(
+                f"HeaderConfig.filter_prefix_strip entries must be non-empty strings, "
+                f"got {self.filter_prefix_strip!r}"
+            )
+
+
+@dataclass
+class ObservatoryRegistry:
+    """
+    Maps observatory keys (matched against the OBSERVAT FITS header value,
+    case-insensitive) to ``astropy.coordinates.EarthLocation`` instances
+    used by the header-correction stage for HJD/BJD/sidereal/airmass
+    calculations.
+
+    Defaults cover the BSU and BSU-affiliated SARA sites plus SFRO. Sites
+    that astropy already knows about (KPNO, CTIO, Roque de los Muchachos)
+    are looked up via ``EarthLocation.of_site``; explicit BSU/BSUO/SFRO
+    coordinates are taken from the BSU Cooper Science observatory record
+    (R. Berrington, BSU).
+
+    Use :meth:`register` to add custom sites without modifying source.
+    """
+    # Lazily-populated cache of resolved EarthLocations keyed on the
+    # uppercased site name. None values are placeholders that get resolved
+    # via EarthLocation.of_site on first lookup.
+    _sites: dict = field(default_factory=dict)
+    _astropy_aliases: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        from astropy import coordinates as _coords
+        from astropy import units as _u
+
+        # Explicit lat/lon/altitude entries from the header-correct.py source
+        # (R. Berrington, BSU, 2024-08, Cooper Science Observatory).
+        explicit = {
+            "BSUO": _coords.EarthLocation.from_geodetic(
+                lon=_coords.Angle("-85:24:41.9 degrees"),
+                lat=_coords.Angle("40:11:59.7 degrees"),
+                height=322.8 * _u.m,
+                ellipsoid="WGS84",
+            ),
+            "BSU": _coords.EarthLocation.from_geodetic(
+                lon=_coords.Angle("-85:24:40.62 degrees"),
+                lat=_coords.Angle("40:11:59.61 degrees"),
+                height=304.5 * _u.m,
+                ellipsoid="WGS84",
+            ),
+            "SFRO": _coords.EarthLocation.from_geodetic(
+                lon=_coords.Angle("-99:22:56.0 degrees"),
+                lat=_coords.Angle("31:32:49.5 degrees"),
+                height=464.6 * _u.m,
+                ellipsoid="WGS84",
+            ),
+        }
+        # Pre-fill explicit entries; keep _sites dict normalized to uppercase keys
+        for key, loc in explicit.items():
+            self._sites.setdefault(key, loc)
+
+        # SARA partner sites resolve to the host observatory in astropy's
+        # site database. We store the alias name and resolve lazily so we
+        # don't pay the lookup cost unless a frame uses one of these sites.
+        sara_aliases = {
+            "SARA-KP": "kpno",
+            "SARA-N": "kpno",
+            "SARA-CT": "ctio",
+            "SARA-S": "ctio",
+            "SARA-RM": "Roque de los Muchachos",
+        }
+        for key, astropy_name in sara_aliases.items():
+            self._astropy_aliases.setdefault(key, astropy_name)
+
+    def register(self, key: str, location) -> None:
+        """
+        Register a custom observatory site.
+
+        :param key: Site key (matched case-insensitively against OBSERVAT)
+        :param location: An ``astropy.coordinates.EarthLocation``
+        """
+        from astropy.coordinates import EarthLocation
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"Site key must be a non-empty string, got {key!r}")
+        if not isinstance(location, EarthLocation):
+            raise TypeError(
+                f"Site location must be an EarthLocation, got {type(location).__name__}"
+            )
+        self._sites[key.upper().strip()] = location
+
+    def get(self, key: str):
+        """
+        Look up an EarthLocation by site key. Resolves SARA aliases via
+        astropy's site database on first lookup. Returns None if the key
+        isn't registered and isn't an astropy-known site name.
+
+        :param key: Site key from OBSERVAT or cfg.location
+        :return: EarthLocation or None
+        """
+        from astropy.coordinates import EarthLocation
+        if not key:
+            return None
+        upper = key.upper().strip()
+
+        # Direct hit on an explicit registration
+        if upper in self._sites:
+            return self._sites[upper]
+
+        # SARA / known-alias hit — resolve, cache, return
+        if upper in self._astropy_aliases:
+            try:
+                loc = EarthLocation.of_site(self._astropy_aliases[upper])
+                self._sites[upper] = loc
+                return loc
+            except Exception:
+                return None
+
+        # Last resort: try treating the key as a direct astropy site name.
+        # The lookup is case-insensitive in astropy, so use the original key.
+        try:
+            loc = EarthLocation.of_site(key)
+            self._sites[upper] = loc
+            return loc
+        except Exception:
+            return None
 
 
 @dataclass
@@ -153,6 +361,21 @@ class ReductionConfig:
     # prefix stripping, and time/coord alias lists. Defaults follow the
     # FITS standard / BSUO conventions; override to support other setups.
     headers: HeaderConfig = field(default_factory=HeaderConfig)
+
+    # Observatory registry — maps OBSERVAT site keys to EarthLocation
+    # objects. Defaults cover BSU/BSUO/SARA-*/SFRO; call
+    # cfg.observatories.register(key, EarthLocation(...)) to add others.
+    observatories: ObservatoryRegistry = field(default_factory=ObservatoryRegistry)
+
+    # Header-correction stage toggles (applied to each calibrated science
+    # frame after it's written). Each can be turned off independently.
+    correct_headers: bool = True       # master switch for the whole stage
+    correct_jd: bool = True            # write JD_START/JD_MID/JD_END
+    correct_hjd: bool = True           # write HJD/HJD_UTC at mid-exposure
+    correct_bjd: bool = True           # write BJD_UTC/BJD_TDB at mid-exposure
+    correct_sidereal: bool = True      # write mean + apparent sidereal time
+    correct_eairmass: bool = True      # write SECZ + EAIRMASS via IRAF formula
+    correct_filter_spaces: bool = False  # replace spaces in FILTER with underscores
 
     def __post_init__(self):
         if self.gain <= 0:
@@ -555,7 +778,7 @@ def _discover_master_flats(calibrated_data: Path, cfg) -> dict:
         if not raw_filt:
             continue
         try:
-            filt = _normalize_filter(raw_filt)
+            filt = _normalize_filter(raw_filt, prefixes=cfg.headers.filter_prefix_strip)
         except ValueError:
             continue
         found[filt] = master_path
@@ -771,10 +994,10 @@ def _load_masters_from_disk(calibrated_data: Path, cfg: ReductionConfig, log):
                 f"Master dark shape {master_dark.data.shape} does not match "
                 f"master bias shape {reference_shape}."
             )
-        max_dark_exp = _get_exposure_time(master_dark.header)
+        max_dark_exp = _get_exposure_time(master_dark.header, key=cfg.headers.exptime_key)
         log(
             f"Loaded master dark from {dark_path}"
-            + (f" (EXPTIME={max_dark_exp:.1f}s)" if max_dark_exp else "")
+            + (f" (exposure={max_dark_exp:.1f}s)" if max_dark_exp else "")
         )
 
     # Master flats are discovered in science_images via _discover_master_flats —
@@ -875,8 +1098,8 @@ def bias(files, calibrated_data, intermediate_dir, cfg: ReductionConfig, log, ca
 
     if n_total == 0:
         raise ValueError(
-            f"No BIAS frames found in '{files.location}'. "
-            "Check that IMAGETYP headers are set to 'BIAS'."
+            f"No {cfg.headers.imagetyp_bias!r} frames found in '{files.location}'. "
+            f"Check that IMAGETYP headers match cfg.headers.imagetyp_bias."
         )
     log(f"Found {n_total} bias frame(s).")
 
@@ -932,7 +1155,7 @@ def bias(files, calibrated_data, intermediate_dir, cfg: ReductionConfig, log, ca
         sigma_clip_func=np.ma.median,
         mem_limit=cfg.mem_limit,
     )
-    combined_bias.meta["combined"] = True
+    combined_bias.meta[cfg.headers.combined_flag_key] = True
     write_image_only(combined_bias, master_bias_path, overwrite=cfg.overwrite)
     log(f"Master bias created: {master_bias_path}")
 
@@ -960,19 +1183,20 @@ def dark(files, zero, calibrated_data, intermediate_dir, cfg: ReductionConfig,
 
     if n_total == 0:
         raise ValueError(
-            f"No DARK frames found in '{files.location}', but cfg.dark_bool=True. "
-            "Either add dark frames or set dark_bool=False."
+            f"No {cfg.headers.imagetyp_dark!r} frames found in '{files.location}', "
+            "but cfg.dark_bool=True. Either add dark frames, set dark_bool=False, "
+            "or adjust cfg.headers.imagetyp_dark to match your data."
         )
     log(f"Found {n_total} dark frame(s).")
 
     # Fast path: reuse existing master dark if fresh. Also scan raw darks
-    # for max EXPTIME so the later science-scaling warning still works.
+    # for max exposure time so the later science-scaling warning still works.
     master_dark_path = calibrated_data / cfg.master_dark_name
     if cfg.reuse_masters and _master_is_fresh(master_dark_path, dark_paths):
         log(f"Reusing existing master dark: {master_dark_path}")
-        max_dark_exp = _max_dark_exposure(dark_paths)
+        max_dark_exp = _max_dark_exposure(dark_paths, exptime_key=cfg.headers.exptime_key)
         if max_dark_exp is not None:
-            log(f"Longest dark EXPTIME (from raw headers): {max_dark_exp:.1f} s")
+            log(f"Longest dark exposure (from raw headers): {max_dark_exp:.1f} s")
         return _load_master(master_dark_path), max_dark_exp
 
     calibrated_dark_paths = []
@@ -986,8 +1210,10 @@ def dark(files, zero, calibrated_data, intermediate_dir, cfg: ReductionConfig,
         log(f"Processing dark {n_done}/{n_total}: {file_name}")
         try:
             ccd = CCDData.read(dark_path, unit="adu", format="fits")
-            if _get_exposure_time(ccd.header) is None:
-                raise ValueError("missing or invalid EXPTIME")
+            if _get_exposure_time(ccd.header, key=cfg.headers.exptime_key) is None:
+                raise ValueError(
+                    f"missing or invalid {cfg.headers.exptime_key} header"
+                )
 
             sub_ccd = _reduce_dark(ccd, cfg, zero)
             _assert_shape_matches(sub_ccd, reference_shape, f"dark frame {file_name}")
@@ -1017,12 +1243,12 @@ def dark(files, zero, calibrated_data, intermediate_dir, cfg: ReductionConfig,
         sigma_clip_func=np.ma.median,
         mem_limit=cfg.mem_limit,
     )
-    combined_dark.meta["combined"] = True
+    combined_dark.meta[cfg.headers.combined_flag_key] = True
     write_image_only(combined_dark, master_dark_path, overwrite=cfg.overwrite)
     log(f"Master dark created: {master_dark_path}")
 
     # Track longest dark exposure for later science-exposure scaling check
-    max_dark_exp = _max_dark_exposure(calibrated_dark_paths)
+    max_dark_exp = _max_dark_exposure(calibrated_dark_paths, exptime_key=cfg.headers.exptime_key)
     if max_dark_exp is not None:
         log(f"Longest dark EXPTIME: {max_dark_exp:.1f} s")
 
@@ -1085,7 +1311,10 @@ def _can_reuse_master_flats(raw_flat_paths, calibrated_data, cfg, log) -> bool:
     for raw_path in raw_flat_paths:
         try:
             with fits.open(raw_path) as hdul:
-                filt = _normalize_filter(hdul[0].header.get("FILTER"))
+                filt = _normalize_filter(
+                    hdul[0].header.get(cfg.headers.filter_key),
+                    prefixes=cfg.headers.filter_prefix_strip,
+                )
                 filters_needed.add(filt)
         except Exception:
             # A single unreadable raw flat forces regeneration
@@ -1120,8 +1349,8 @@ def _process_flats(files, zero, combined_dark, intermediate_dir,
 
     if n_total == 0:
         raise ValueError(
-            f"No FLAT frames found in '{files.location}'. "
-            "Check that IMAGETYP headers are set to 'FLAT'."
+            f"No {cfg.headers.imagetyp_flat!r} frames found in '{files.location}'. "
+            f"Check that IMAGETYP headers match cfg.headers.imagetyp_flat."
         )
     log(f"Found {n_total} flat frame(s).")
 
@@ -1141,7 +1370,10 @@ def _process_flats(files, zero, combined_dark, intermediate_dir,
             continue
 
         try:
-            filt = _normalize_filter(ccd.header.get("FILTER"))
+            filt = _normalize_filter(
+                ccd.header.get(cfg.headers.filter_key),
+                prefixes=cfg.headers.filter_prefix_strip,
+            )
         except ValueError as e:
             n_failed += 1
             log(f"Warning: {e} in {file_name}. Skipping.")
@@ -1155,7 +1387,7 @@ def _process_flats(files, zero, combined_dark, intermediate_dir,
             new_fname = f"{file_name.split('.')[0]}.fits"
             output_path = intermediate_dir / new_fname
             write_image_only(final_ccd, output_path, overwrite=cfg.overwrite)
-            add_header(intermediate_dir, new_fname, "FLAT", None, None, None, cfg)
+            add_header(intermediate_dir, new_fname, cfg.headers.imagetyp_flat, cfg)
         except Exception as e:
             n_failed += 1
             log(f"Warning: flat calibration failed for {file_name}: {e}. Skipping.")
@@ -1201,12 +1433,12 @@ def _combine_flats(paths_by_filter, calibrated_data, cfg, log, cancel_event):
             sigma_clip_dev_func=mad_std,
             mem_limit=cfg.mem_limit,
         )
-        combined_flats.meta["combined"] = True
+        combined_flats.meta[cfg.headers.combined_flag_key] = True
         flat_file_name = cfg.master_flat_pattern.format(filter=filt)
         # Store the normalized name in the header too, so science lookup matches
-        combined_flats.meta["FILTER"] = filt
+        combined_flats.meta[cfg.headers.filter_key] = filt
         write_image_only(combined_flats, calibrated_data / flat_file_name, overwrite=cfg.overwrite)
-        add_header(calibrated_data, flat_file_name, "FLAT", None, None, None, cfg)
+        add_header(calibrated_data, flat_file_name, cfg.headers.imagetyp_flat, cfg)
         log(f"Master flat created: {flat_file_name}")
 
     log("\nFinished creating master flats by filter.")
@@ -1275,20 +1507,20 @@ def science_images(files, calibrated_data, zero, combined_dark,
             log(f"Warning: failed to read {file_name}: {e}. Skipping.")
             continue
 
-        # EXPTIME validation (needed for dark scaling)
+        # Exposure time validation (needed for dark scaling)
         if cfg.dark_bool:
-            exp = _get_exposure_time(light.header)
+            exp = _get_exposure_time(light.header, key=cfg.headers.exptime_key)
             if exp is None:
                 n_failed += 1
                 log(
-                    f"Warning: missing or invalid EXPTIME in {file_name} "
-                    "and dark scaling requires it. Skipping."
+                    f"Warning: missing or invalid {cfg.headers.exptime_key} "
+                    f"in {file_name} and dark scaling requires it. Skipping."
                 )
                 continue
             if (max_dark_exp is not None and not warned_long_exp
                     and exp > max_dark_exp * DARK_SCALING_WARN_RATIO):
                 log(
-                    f"Warning: science EXPTIME={exp:.1f}s is more than "
+                    f"Warning: science exposure={exp:.1f}s is more than "
                     f"{DARK_SCALING_WARN_RATIO:.0f}× the longest dark "
                     f"({max_dark_exp:.1f}s). Dark scaling may amplify noise. "
                     "Consider collecting longer darks. (This warning will not repeat.)"
@@ -1296,9 +1528,9 @@ def science_images(files, calibrated_data, zero, combined_dark,
                 warned_long_exp = True
 
         # Filter
-        raw_filt = light.header.get("FILTER")
+        raw_filt = light.header.get(cfg.headers.filter_key)
         try:
-            filt = _normalize_filter(raw_filt)
+            filt = _normalize_filter(raw_filt, prefixes=cfg.headers.filter_prefix_strip)
         except ValueError as e:
             n_failed += 1
             log(f"Warning: {e} in {file_name}. Skipping.")
@@ -1333,33 +1565,20 @@ def science_images(files, calibrated_data, zero, combined_dark,
             log(f"Warning: failed to write {new_fname}: {e}. Skipping.")
             continue
 
-        # Header + BJD_TDB (guarded against missing coords/time).
-        # Different capture software writes these under different keys —
-        # e.g. BSUO frames commonly use HJD_UTC and OBJCTRA / OBJCT DEC
-        # instead of the FITS-convention JD-HELIO / RA / DEC.
-        hjd = _header_get_any(light.header, "JD-HELIO", "HJD_UTC", "HJD-UTC", "HJD")
-        ra = _header_get_any(light.header, "RA", "OBJCTRA", "OBJCT RA", "RA-OBJ")
-        dec = _header_get_any(light.header, "DEC", "OBJCTDEC", "OBJCT DEC", "DEC-OBJ")
-        if hjd is None or ra is None or dec is None:
-            missing = [
-                name for name, val in
-                (("HJD", hjd), ("RA", ra), ("DEC", dec))
-                if val is None
-            ]
+        # Write the basic reduction-metadata headers, then run the full
+        # header-correction stage (RA/DEC reformat, JD/HJD/BJD, sidereal
+        # time, effective airmass). Each step is independently toggleable
+        # via cfg.correct_*; failures are caught here so a bad header on
+        # one frame doesn't abort the run.
+        add_header(calibrated_data, new_fname, science_imagetyp, cfg)
+        try:
+            correct_headers(calibrated_data / new_fname, cfg, log=log)
+        except Exception as e:
             log(
-                f"Warning: missing {'/'.join(missing)} in {file_name}. "
-                "Writing calibrated image without BJD_TDB."
+                f"Warning: header correction failed for {file_name}: {e}. "
+                f"Calibrated image was still written; downstream code may "
+                f"see incomplete time/coord headers."
             )
-            add_header(calibrated_data, new_fname, science_imagetyp, None, None, None, cfg)
-        else:
-            try:
-                add_header(calibrated_data, new_fname, science_imagetyp, hjd, ra, dec, cfg)
-            except Exception as e:
-                log(
-                    f"Warning: BJD_TDB calculation failed for {file_name}: {e}. "
-                    "Writing calibrated image without BJD_TDB."
-                )
-                add_header(calibrated_data, new_fname, science_imagetyp, None, None, None, cfg)
 
         n_succeeded += 1
 
@@ -1375,62 +1594,89 @@ def science_images(files, calibrated_data, zero, combined_dark,
 # Header utilities
 # ---------------------------------------------------------------------------
 
-def add_header(pathway, fname, imagetyp, hjd, ra, dec, cfg: ReductionConfig):
+def add_header(pathway, fname, imagetyp, cfg: ReductionConfig):
     """
-    Write reduction metadata into a FITS header.
+    Write basic reduction-metadata keywords to a FITS file.
 
-    For LIGHT frames with all of hjd/ra/dec present, the HJD is converted
-    to BJD_TDB and stored. If any of hjd/ra/dec is None, BJD_TDB is
-    silently skipped — the caller is responsible for logging.
+    This writes the bookkeeping headers — gain, read noise, observatory,
+    image type, trim/overscan sections, epoch, and equinox — that should
+    be present on every reduced frame. Time-dependent corrections (HJD,
+    BJD_TDB, sidereal time, airmass, RA/DEC reformatting) are handled
+    separately by :func:`correct_headers`.
 
     :param pathway: Directory containing the file
     :param fname: File name
-    :param imagetyp: FITS IMAGETYP value
-    :param hjd: Heliocentric Julian Date (LIGHT frames only, else None)
-    :param ra: Right ascension string (LIGHT frames only, else None)
-    :param dec: Declination string (LIGHT frames only, else None)
+    :param imagetyp: FITS IMAGETYP value to write (from ``cfg.headers``)
     :param cfg: ReductionConfig
     """
     image_name = pathway / fname
-    fits.setval(image_name, "GAIN",     value=cfg.gain,     comment="Units of e-/ADU")
-    fits.setval(image_name, "RDNOISE",  value=cfg.rdnoise,  comment="Units of e-")
-    fits.setval(image_name, "OBSERVAT", value=cfg.location, comment="Observing location")
-    fits.setval(image_name, "IMAGETYP", value=imagetyp,     comment="Image type")
-    fits.setval(image_name, "DATASEC",  value=cfg.trim_region,     comment="Trim data section")
-    fits.setval(image_name, "BIASSEC",  value=cfg.overscan_region, comment="Overscan section")
-    fits.setval(image_name, "EPOCH",    value="J2000.0")
-
-    if imagetyp == "LIGHT" and hjd is not None and ra is not None and dec is not None:
-        bjd = BJD_TDB(hjd, cfg.location, ra, dec)
-        fits.setval(image_name, "BJD_TDB", value=bjd.value,
-                    comment="Bary. Julian Date, Bary. Dynamical Time")
+    h = cfg.headers
+    fits.setval(image_name, h.gain_key,        value=cfg.gain,            comment="Units of e-/ADU")
+    fits.setval(image_name, h.rdnoise_key,     value=cfg.rdnoise,         comment="Units of e-")
+    fits.setval(image_name, h.observatory_key, value=cfg.location,        comment="Observing location")
+    fits.setval(image_name, h.imagetyp_key,    value=imagetyp,            comment="Image type")
+    fits.setval(image_name, h.datasec_key,     value=cfg.trim_region,     comment="Trim data section")
+    fits.setval(image_name, h.biassec_key,     value=cfg.overscan_region, comment="Overscan section")
+    fits.setval(image_name, h.epoch_key,       value=h.epoch_value,       comment="Epoch of image coordinates")
+    fits.setval(image_name, h.equinox_key,     value=h.equinox_value,     comment="Equinox of image coordinates")
 
 
-def BJD_TDB(hjd, obs_loc: str, ra, dec):
+def _build_header_correction_opts(cfg) -> HeaderCorrectionOptions:
     """
-    Convert a Heliocentric Julian Date to Barycentric Julian Date (TDB).
-
-    :param hjd: HJD of mid-exposure
-    :param obs_loc: Site key string (e.g. 'bsuo') or an astropy site name
-    :param ra: Right ascension (hms string)
-    :param dec: Declination (degrees string)
-    :return: Barycentric Julian Date as an astropy Time object (TDB scale)
+    Build a :class:`HeaderCorrectionOptions` from the toggle fields on a
+    :class:`ReductionConfig`. Pure adapter — no logic of its own.
     """
-    if obs_loc.lower() == "bsuo":
-        coords = {"lon": -85.411896, "lat": 40.199879, "elevation": 0.2873}
-        earth_loc = EarthLocation.from_geodetic(
-            coords["lon"], coords["lat"], coords["elevation"]
-        )
-    else:
-        earth_loc = EarthLocation.of_site(obs_loc)
+    return HeaderCorrectionOptions(
+        do_jd=cfg.correct_jd,
+        do_hjd=cfg.correct_hjd,
+        do_bjd=cfg.correct_bjd,
+        do_sidereal=cfg.correct_sidereal,
+        do_eairmass=cfg.correct_eairmass,
+        do_filter_parse=cfg.correct_filter_spaces,
+        # default_observatory falls back to the cfg-level location string when
+        # OBSERVAT is missing from the FITS header, mirroring the original
+        # script's --observat behaviour.
+        default_observatory=cfg.location.upper() if cfg.location else "BSU",
+    )
 
-    helio = Time(hjd, scale="utc", format="jd")
-    star = SkyCoord(ra, dec, unit=(u.hour, u.deg))
 
-    ltt = helio.light_travel_time(star, "heliocentric", location=earth_loc)
-    guess = helio - ltt
-    delta = (guess + guess.light_travel_time(star, "heliocentric", earth_loc)).jd - helio.jd
-    guess -= delta * u.d
+def correct_headers(image_path, cfg: ReductionConfig, log=None):
+    """
+    Apply IRAF-style header corrections to a single FITS image in place.
 
-    ltt = guess.light_travel_time(star, "barycentric", earth_loc)
-    return guess.tdb + ltt
+    Thin wrapper that adapts a :class:`ReductionConfig` (toggles +
+    observatory registry) to the standalone :mod:`header_correction`
+    module. All calculation logic lives there and matches Robert
+    Berrington's original ``header-correct.py`` script verbatim.
+
+    Performs (each independently toggleable via ``cfg.correct_*``):
+      - RA/DEC reformatting to ``HH:MM:SS.s`` / ``+DD:MM:SS.s``,
+        preserving original values as ``RA_ORIG`` / ``DEC_ORIG``
+      - Filter space → underscore (preserving ``FILT_ORG``)
+      - Julian Date suite at exposure mid-point, with ``JD_ORIG`` preserving
+        any prior value
+      - Heliocentric and Barycentric Julian Dates at mid-exposure
+      - Sidereal time at mid-exposure (mean and apparent, IAU2006/IAU2006A)
+      - Effective airmass via the IRAF ``setairmass`` formula
+      - ``EPOCH`` and ``EQUINOX`` written if missing
+
+    Original values are preserved as ``*_ORIG`` keywords on first run, so
+    re-running on already-corrected files is safe.
+
+    :param image_path: Path to the FITS file (modified in place)
+    :param cfg: ReductionConfig (toggles + observatory registry)
+    :param log: Optional logging callable (defaults to silent)
+    :return: A :class:`HeaderCorrectionReport` summarising what changed
+    """
+    if log is None:
+        log = lambda _msg: None
+    if not cfg.correct_headers:
+        return None
+
+    opts = _build_header_correction_opts(cfg)
+    return _correct_headers(
+        image_path=image_path,
+        opts=opts,
+        registry=cfg.observatories,
+        log=log,
+    )

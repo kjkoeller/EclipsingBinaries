@@ -44,7 +44,7 @@ from EclipsingBinaries.IRAF_Reduction import (
     _build_header_correction_opts,
     correct_headers as cfg_correct_headers,
 )
-from EclipsingBinaries.headercorrect import (
+from EclipsingBinaries.headerCorrect import (
     HeaderCorrectionOptions,
     ObservatoryRegistry,
     ObservatorySite,

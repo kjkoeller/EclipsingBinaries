@@ -1,6 +1,4 @@
-"""
-End-of-run summary tracking and report writing for the data reduction
-pipeline.
+"""End-of-run summary tracking and report writing for the data reduction pipeline.
 
 Every run of :func:`EclipsingBinaries.IRAF_Reduction.run_reduction`
 records into a :class:`RunSummary` instance. On completion (success,
@@ -44,7 +42,9 @@ FAILURE_REASON_MAX = 200
 
 @dataclass
 class StageSummary:
+
     """Per-stage tally of frames processed and how the stage finished."""
+
     name: str
     status: str = "pending"
     detail: str = ""
@@ -56,7 +56,9 @@ class StageSummary:
 
 @dataclass
 class FrameFailure:
+
     """A single frame that failed during a stage, with the reason."""
+
     stage: str
     file: str
     reason: str
@@ -64,13 +66,14 @@ class FrameFailure:
 
 @dataclass
 class RunSummary:
-    """
-    Aggregate record of a reduction run.
+
+    """Aggregate record of a reduction run.
 
     All fields are populated incrementally as the pipeline executes;
     :func:`finalize` is called once at the end to add the terminal
     status, finished timestamp, and total duration before writing to disk.
     """
+
     # --- run identification ---
     raw_path: str
     calibrated_path: str
@@ -226,13 +229,14 @@ def write_summary(summary: RunSummary, output_dir: Path,
     return [json_path, txt_path]
 
 
-def _format_txt(s: RunSummary) -> str:
-    """Render a RunSummary as a plain-text report."""
-    lines: List[str] = []
-    lines.append("=" * 70)
-    lines.append("EclipsingBinaries Data Reduction Summary")
-    lines.append("=" * 70)
-    lines.append(f"Status:      {s.overall_status.upper()}")
+def _format_header(s: RunSummary) -> List[str]:
+    """Title bar + run identification block."""
+    lines = [
+        "=" * 70,
+        "EclipsingBinaries Data Reduction Summary",
+        "=" * 70,
+        f"Status:      {s.overall_status.upper()}",
+    ]
     if s.error_message:
         lines.append(f"Error:       {s.error_message}")
     lines.append(f"Started:     {s.started_utc}")
@@ -240,39 +244,51 @@ def _format_txt(s: RunSummary) -> str:
         lines.append(f"Finished:    {s.finished_utc}")
     if s.duration_sec is not None:
         lines.append(f"Duration:    {_fmt_duration(s.duration_sec)}")
-    lines.append("")
-    lines.append(f"Raw input:   {s.raw_path}")
-    lines.append(f"Output:      {s.calibrated_path}")
-    lines.append(f"Location:    {s.location}")
+    return lines
+
+
+def _format_run_metadata(s: RunSummary) -> List[str]:
+    """Path / location / shape / reused-masters block."""
+    lines = [
+        "",
+        f"Raw input:   {s.raw_path}",
+        f"Output:      {s.calibrated_path}",
+        f"Location:    {s.location}",
+    ]
     if s.reference_shape:
         lines.append(f"Frame shape: {tuple(s.reference_shape)}")
     if s.masters_reused:
         lines.append(f"Reused:      {', '.join(s.masters_reused)}")
+    return lines
 
-    # Dark-scaling sanity check display (was scattered through the log)
+
+def _format_exposure_check(s: RunSummary) -> List[str]:
+    """Optional dark/science exposure-ratio sanity check."""
+    if s.longest_dark_exposure_sec is None and s.longest_science_exposure_sec is None:
+        return []
+    lines = ["", "Exposure-time check:"]
+    if s.longest_dark_exposure_sec is not None:
+        lines.append(f"  Longest dark:    {s.longest_dark_exposure_sec:.1f} s")
+    if s.longest_science_exposure_sec is not None:
+        lines.append(f"  Longest science: {s.longest_science_exposure_sec:.1f} s")
     if (s.longest_dark_exposure_sec is not None
-            or s.longest_science_exposure_sec is not None):
-        lines.append("")
-        lines.append("Exposure-time check:")
-        if s.longest_dark_exposure_sec is not None:
-            lines.append(f"  Longest dark:    {s.longest_dark_exposure_sec:.1f} s")
-        if s.longest_science_exposure_sec is not None:
-            lines.append(f"  Longest science: {s.longest_science_exposure_sec:.1f} s")
-        # If both known, surface the ratio so users notice scaling concerns
-        if (s.longest_dark_exposure_sec is not None
-                and s.longest_science_exposure_sec is not None
-                and s.longest_dark_exposure_sec > 0):
-            ratio = s.longest_science_exposure_sec / s.longest_dark_exposure_sec
-            lines.append(f"  Science/dark ratio: {ratio:.1f}x")
+            and s.longest_science_exposure_sec is not None
+            and s.longest_dark_exposure_sec > 0):
+        ratio = s.longest_science_exposure_sec / s.longest_dark_exposure_sec
+        lines.append(f"  Science/dark ratio: {ratio:.1f}x")
+    return lines
 
-    # Per-stage breakdown
-    lines.append("")
-    lines.append("-" * 70)
-    lines.append(
+
+def _format_stage_table(s: RunSummary) -> List[str]:
+    """Per-stage tabular breakdown ordered by STAGE_ORDER."""
+    lines = [
+        "",
+        "-" * 70,
         f"{'Stage':<10} {'Status':<10} {'Total':>6} {'OK':>6} {'Fail':>6} "
-        f"{'Time':>10}  Detail"
-    )
-    lines.append("-" * 70)
+        f"{'Time':>10}  Detail",
+        "-" * 70,
+    ]
+    # Known stages in canonical order, then any custom stages we don't know about
     seen = set()
     for name in STAGE_ORDER:
         if name in s.stages:
@@ -281,23 +297,32 @@ def _format_txt(s: RunSummary) -> str:
     for name, stage in s.stages.items():
         if name not in seen:
             lines.append(_format_stage_line(stage))
+    return lines
 
-    # Per-frame failures
-    if s.failed_frames:
-        lines.append("")
-        lines.append("-" * 70)
-        lines.append(f"Failed frames ({len(s.failed_frames)}):")
-        lines.append("-" * 70)
-        for f in s.failed_frames:
-            lines.append(f"  [{f.stage}] {f.file}")
-            for line in str(f.reason).splitlines() or [""]:
-                lines.append(f"      {line}")
-    else:
-        lines.append("")
-        lines.append("No per-frame failures.")
 
-    lines.append("")
-    return "\n".join(lines) + "\n"
+def _format_failures(s: RunSummary) -> List[str]:
+    """Per-frame failure list, or 'no failures' line."""
+    if not s.failed_frames:
+        return ["", "No per-frame failures."]
+    lines = ["", "-" * 70, f"Failed frames ({len(s.failed_frames)}):", "-" * 70]
+    for f in s.failed_frames:
+        lines.append(f"  [{f.stage}] {f.file}")
+        for line in str(f.reason).splitlines() or [""]:
+            lines.append(f"      {line}")
+    return lines
+
+
+def _format_txt(s: RunSummary) -> str:
+    """Render a RunSummary as a plain-text report."""
+    sections = (
+        _format_header(s)
+        + _format_run_metadata(s)
+        + _format_exposure_check(s)
+        + _format_stage_table(s)
+        + _format_failures(s)
+        + [""]   # trailing blank line before final newline
+    )
+    return "\n".join(sections) + "\n"
 
 
 def _format_stage_line(st: StageSummary) -> str:

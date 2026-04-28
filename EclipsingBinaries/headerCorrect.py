@@ -9,7 +9,7 @@ verbatim; the structural changes are:
     1. CLI argument parsing is replaced with a HeaderCorrectionOptions
        dataclass plus an ObservatoryRegistry, both populated from the
        pipeline's ReductionConfig (or constructed directly in scripts).
-    2. The single per-file loop is split into focused helpers
+    2. The single monolithic per-file loop is split into focused helpers
        so individual corrections can be enabled or skipped via flags.
     3. ``print()`` debug output is routed through a ``log`` callback so the
        same code drives both the GUI's log pane and the command line.
@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional, Dict, Any
+from typing import Callable, Optional, Dict
 import re
 
 from astropy.io import fits
@@ -39,15 +39,15 @@ from astropy import units as u
 
 @dataclass(frozen=True)
 class ObservatorySite:
-    """
-    A single observatory site, either by astropy site name or by explicit
-    geodetic coordinates.
+
+    """A single observatory site, either by astropy name or explicit coordinates.
 
     If ``astropy_name`` is set, ``EarthLocation.of_site(astropy_name)`` is
     used. Otherwise ``lat``, ``lon``, ``altitude_m``, and ``ellipsoid`` are
     used to build the EarthLocation. Exactly one of the two must be
     populated.
     """
+
     name: str
     astropy_name: Optional[str] = None
     lat: Optional[str] = None         # sexagesimal degrees, e.g. "40:11:59.7"
@@ -73,10 +73,12 @@ class ObservatorySite:
 
 
 class ObservatoryRegistry:
-    """
-    A lookup table mapping site keys (case-insensitive) to ObservatorySite
-    entries. Populated with the BSU/SARA/SFRO defaults from the original
-    header-correct.py script. Custom sites can be registered at runtime.
+
+    """Lookup table mapping site keys (case-insensitive) to ObservatorySite entries.
+
+    Populated with the BSU/SARA/SFRO defaults from the original
+    ``header-correct.py`` script. Custom sites can be registered at
+    runtime via :meth:`register`.
     """
 
     # Defaults — copied verbatim from header-correct.py so behaviour is
@@ -105,6 +107,11 @@ class ObservatoryRegistry:
     )
 
     def __init__(self, sites=None):
+        """Initialise the registry, optionally seeding with custom sites.
+
+        :param sites: Iterable of :class:`ObservatorySite` to register.
+            Defaults to the BSU/BSUO/SARA-*/SFRO set if omitted.
+        """
         self._sites: Dict[str, ObservatorySite] = {}
         for site in (sites if sites is not None else self._DEFAULT_SITES):
             self.register(site)
@@ -114,6 +121,7 @@ class ObservatoryRegistry:
         self._sites[site.name.upper()] = site
 
     def get(self, name: str) -> Optional[ObservatorySite]:
+        """Look up a site by name (case-insensitive). Returns None if absent."""
         if name is None:
             return None
         return self._sites.get(name.upper())
@@ -149,11 +157,14 @@ DEFAULT_REGISTRY = ObservatoryRegistry()
 
 @dataclass
 class HeaderCorrectionOptions:
+
+    """What to compute and how.
+
+    Mirrors the original CLI flags but with sane defaults matching
+    ``header-correct.py`` (--JD --HJD --BJD --eairmass --sidereal all on;
+    --filter_parse off).
     """
-    What to compute and how. Mirrors the original CLI flags but with sane
-    defaults matching ``header-correct.py`` (--JD --HJD --BJD --eairmass
-    --sidereal all on; --filter_parse off).
-    """
+
     do_jd: bool = True                  # JD_START / JD_MID / JD_END / JD
     do_hjd: bool = True                 # HJD / HJD_UTC at mid-exposure
     do_bjd: bool = True                 # BJD_UTC and BJD_TDB at mid-exposure
@@ -177,7 +188,9 @@ class HeaderCorrectionOptions:
 
 @dataclass
 class HeaderCorrectionReport:
+
     """Tracks what each call to correct_headers() actually did."""
+
     file: Path
     observatory: Optional[str] = None
     wrote_keys: list = field(default_factory=list)
@@ -185,12 +198,15 @@ class HeaderCorrectionReport:
     skipped: list = field(default_factory=list)
 
     def note(self, key: str) -> None:
+        """Record that ``key`` was written to the FITS header."""
         self.wrote_keys.append(key)
 
     def warn(self, msg: str) -> None:
+        """Record a warning encountered during correction."""
         self.warnings.append(msg)
 
     def skip(self, what: str) -> None:
+        """Record that a section was skipped (e.g. flag disabled)."""
         self.skipped.append(what)
 
 
@@ -477,9 +493,7 @@ def _write_sidereal(header, date_mid, location, report, log) -> None:
 
 
 def _write_eairmass(header, date_mid, target, location, report, log) -> None:
-    """
-    Mirror lines 693-726 of header-correct.py (the IRAF setairmass formula).
-    """
+    """Mirror lines 693-726 of header-correct.py (the IRAF setairmass formula)."""
     altaz = target.transform_to(
         coords.AltAz(obstime=date_mid, location=location)
     )
@@ -508,6 +522,87 @@ def _write_eairmass(header, date_mid, target, location, report, log) -> None:
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
+def _safe_call(report, label, fn, *args, **kwargs):
+    """
+    Run a header-writing helper, reporting any failure rather than raising.
+
+    Centralises the try/except/skip/warn pattern that repeats for every
+    toggleable correction. Keeps the caller focused on *what* to compute,
+    not on how to report when it fails.
+    """
+    try:
+        return fn(*args, **kwargs)
+    except (ValueError, TypeError, KeyError, AttributeError, OSError) as e:
+        # We catch a deliberately broad-but-not-bare set of exceptions:
+        # malformed coordinates, missing keys, bad header values. We never
+        # catch e.g. KeyboardInterrupt or SystemExit.
+        report.warn(f"{label} failed: {e}")
+        return None
+
+
+def _read_date_obs(header, location):
+    """Build the DATE-OBS Time anchor (returns None if header lacks DATE-OBS)."""
+    if "DATE-OBS" not in header:
+        return None
+    if location is not None:
+        return Time(header["DATE-OBS"], scale="utc",
+                    format="fits", location=location)
+    return Time(header["DATE-OBS"], scale="utc", format="fits")
+
+
+def _maybe_build_target(opts, header, image_epoch, image_equinox, date_mid, report):
+    """Construct a SkyCoord target if any time-correction needs it."""
+    if not (opts.do_hjd or opts.do_bjd):
+        return None
+    try:
+        return _build_target(header, image_epoch, image_equinox, date_mid)
+    except (ValueError, TypeError, KeyError) as e:
+        report.warn(f"Could not build SkyCoord for HJD/BJD: {e}")
+        return None
+
+
+def _apply_time_corrections(opts, header, date, date_mid, date_end,
+                            target, location, report, log):
+    """
+    Run each toggleable time/coord-derived correction. Each one is gated
+    by its own opts flag and wrapped in _safe_call so a single failure
+    doesn't prevent the others from running.
+    """
+    if opts.do_jd:
+        _safe_call(report, "JD",
+                   _write_jd_suite, header, date, date_mid, date_end, report, log)
+    else:
+        report.skip("JD")
+
+    if opts.do_hjd:
+        if target is not None:
+            _safe_call(report, "HJD",
+                       _write_hjd, header, date, date_mid, target, report, log)
+    else:
+        report.skip("HJD")
+
+    if opts.do_bjd:
+        if target is not None:
+            _safe_call(report, "BJD",
+                       _write_bjd, header, date_mid, target, report, log)
+    else:
+        report.skip("BJD")
+
+    if opts.do_sidereal:
+        if location is not None:
+            _safe_call(report, "Sidereal",
+                       _write_sidereal, header, date_mid, location, report, log)
+    else:
+        report.skip("sidereal")
+
+    if opts.do_eairmass:
+        if target is not None and location is not None:
+            _safe_call(report, "Effective airmass",
+                       _write_eairmass, header, date_mid, target, location, report, log)
+    else:
+        report.skip("eairmass")
+
 
 def correct_headers(
     image_path,
@@ -549,78 +644,33 @@ def correct_headers(
         if opts.do_radec_format:
             _format_radec(header, opts, report, log)
 
-        # Everything below requires a time anchor. If we don't need any of
-        # the time/coord-derived fields and the file is already RA/DEC-only,
-        # we can stop here.
+        # Everything below needs a time anchor (DATE-OBS) and, for some
+        # corrections, an observer location.
         need_observer = (
             opts.do_hjd or opts.do_bjd or opts.do_sidereal or opts.do_eairmass
         )
+        location = _resolve_observatory(header, opts, registry, report, log) \
+            if need_observer else None
 
-        if need_observer:
-            location = _resolve_observatory(header, opts, registry, report, log)
-        else:
-            location = None
-
-        if "DATE-OBS" not in header:
+        date = _read_date_obs(header, location)
+        if date is None:
             report.warn(
                 "DATE-OBS missing; cannot compute JD/HJD/BJD/sidereal/airmass."
             )
             return report
 
-        if location is not None:
-            date = Time(header["DATE-OBS"], scale="utc",
-                        format="fits", location=location)
-        else:
-            date = Time(header["DATE-OBS"], scale="utc", format="fits")
-
         exp_time = _exposure_time(header, log)
         date_mid = date + exp_time / 2.0
         date_end = date + exp_time
 
-        if opts.do_jd:
-            _write_jd_suite(header, date, date_mid, date_end, report, log)
-        else:
-            report.skip("JD")
+        target = _maybe_build_target(
+            opts, header, image_epoch, image_equinox, date_mid, report,
+        )
 
-        # HJD/BJD both need a sky-frame target
-        target = None
-        if opts.do_hjd or opts.do_bjd:
-            try:
-                target = _build_target(header, image_epoch, image_equinox, date_mid)
-            except Exception as e:
-                report.warn(f"Could not build SkyCoord for HJD/BJD: {e}")
-
-        if opts.do_hjd and target is not None:
-            try:
-                _write_hjd(header, date, date_mid, target, report, log)
-            except Exception as e:
-                report.warn(f"HJD calculation failed: {e}")
-        elif not opts.do_hjd:
-            report.skip("HJD")
-
-        if opts.do_bjd and target is not None:
-            try:
-                _write_bjd(header, date_mid, target, report, log)
-            except Exception as e:
-                report.warn(f"BJD calculation failed: {e}")
-        elif not opts.do_bjd:
-            report.skip("BJD")
-
-        if opts.do_sidereal and location is not None:
-            try:
-                _write_sidereal(header, date_mid, location, report, log)
-            except Exception as e:
-                report.warn(f"Sidereal calculation failed: {e}")
-        elif not opts.do_sidereal:
-            report.skip("sidereal")
-
-        if opts.do_eairmass and target is not None and location is not None:
-            try:
-                _write_eairmass(header, date_mid, target, location, report, log)
-            except Exception as e:
-                report.warn(f"Effective airmass calculation failed: {e}")
-        elif not opts.do_eairmass:
-            report.skip("eairmass")
+        _apply_time_corrections(
+            opts, header, date, date_mid, date_end,
+            target, location, report, log,
+        )
 
     return report
 

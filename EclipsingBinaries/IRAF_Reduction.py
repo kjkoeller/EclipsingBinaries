@@ -21,8 +21,7 @@ from astropy import wcs
 from astropy.stats import mad_std
 from astropy import units as u
 from astropy.io import fits
-from astropy.time import Time
-from astropy.coordinates import SkyCoord, EarthLocation
+from astropy.coordinates import Angle, EarthLocation
 from astropy.nddata import CCDData
 
 import ccdproc as ccdp
@@ -33,7 +32,6 @@ from .headerCorrect import (
     correct_headers as _correct_headers,
 )
 from .runSummary import (
-    RunSummary,
     new_summary,
     finalize as _finalize_summary,
     write_summary,
@@ -238,28 +236,25 @@ class ObservatoryRegistry:
     _astropy_aliases: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        from astropy import coordinates as _coords
-        from astropy import units as _u
-
         # Explicit lat/lon/altitude entries from the header-correct.py source
         # (R. Berrington, BSU, 2024-08, Cooper Science Observatory).
         explicit = {
-            "BSUO": _coords.EarthLocation.from_geodetic(
-                lon=_coords.Angle("-85:24:41.9 degrees"),
-                lat=_coords.Angle("40:11:59.7 degrees"),
-                height=322.8 * _u.m,
+            "BSUO": EarthLocation.from_geodetic(
+                lon=Angle("-85:24:41.9 degrees"),
+                lat=Angle("40:11:59.7 degrees"),
+                height=322.8 * u.m,
                 ellipsoid="WGS84",
             ),
-            "BSU": _coords.EarthLocation.from_geodetic(
-                lon=_coords.Angle("-85:24:40.62 degrees"),
-                lat=_coords.Angle("40:11:59.61 degrees"),
-                height=304.5 * _u.m,
+            "BSU": EarthLocation.from_geodetic(
+                lon=Angle("-85:24:40.62 degrees"),
+                lat=Angle("40:11:59.61 degrees"),
+                height=304.5 * u.m,
                 ellipsoid="WGS84",
             ),
-            "SFRO": _coords.EarthLocation.from_geodetic(
-                lon=_coords.Angle("-99:22:56.0 degrees"),
-                lat=_coords.Angle("31:32:49.5 degrees"),
-                height=464.6 * _u.m,
+            "SFRO": EarthLocation.from_geodetic(
+                lon=Angle("-99:22:56.0 degrees"),
+                lat=Angle("31:32:49.5 degrees"),
+                height=464.6 * u.m,
                 ellipsoid="WGS84",
             ),
         }
@@ -287,7 +282,6 @@ class ObservatoryRegistry:
         :param key: Site key (matched case-insensitively against OBSERVAT)
         :param location: An ``astropy.coordinates.EarthLocation``
         """
-        from astropy.coordinates import EarthLocation
         if not isinstance(key, str) or not key.strip():
             raise ValueError(f"Site key must be a non-empty string, got {key!r}")
         if not isinstance(location, EarthLocation):
@@ -305,7 +299,6 @@ class ObservatoryRegistry:
         :param key: Site key from OBSERVAT or cfg.location
         :return: EarthLocation or None
         """
-        from astropy.coordinates import EarthLocation
         if not key:
             return None
         upper = key.upper().strip()
@@ -511,9 +504,26 @@ def _get_exposure_time(header, key="EXPTIME") -> Optional[float]:
     return exp_f
 
 
+def _read_dark_exposure(dpath, exptime_key) -> Optional[float]:
+    """Read EXPTIME from a single dark frame; return None on any read error."""
+    try:
+        with fits.open(dpath) as hdul:
+            return _get_exposure_time(hdul[0].header, key=exptime_key)
+    except (OSError, ValueError, KeyError, fits.VerifyError):
+        # Caller decides what to do with an unreadable dark; we just signal
+        # absence by returning None rather than swallowing-and-continuing
+        # in the hot loop above.
+        return None
+
+
 def _max_dark_exposure(dark_paths, exptime_key="EXPTIME") -> Optional[float]:
     """
     Find the maximum exposure time across a list of calibrated dark frames.
+
+    Frames that can't be read or have invalid EXPTIME are silently skipped —
+    this function is best-effort metadata gathering, not a data integrity
+    check. The pipeline's pre-flight FITS readability check upstream is the
+    canonical place where unreadable files surface.
 
     :param dark_paths: List of paths to calibrated darks
     :param exptime_key: Header keyword holding exposure time
@@ -521,14 +531,9 @@ def _max_dark_exposure(dark_paths, exptime_key="EXPTIME") -> Optional[float]:
     """
     max_exp = None
     for dpath in dark_paths:
-        try:
-            with fits.open(dpath) as hdul:
-                exp = _get_exposure_time(hdul[0].header, key=exptime_key)
-                if exp is not None:
-                    if max_exp is None or exp > max_exp:
-                        max_exp = exp
-        except Exception:
-            continue
+        exp = _read_dark_exposure(dpath, exptime_key)
+        if exp is not None and (max_exp is None or exp > max_exp):
+            max_exp = exp
     return max_exp
 
 
@@ -1143,6 +1148,55 @@ def _reduce_science(ccd, cfg: ReductionConfig, zero, combined_dark, good_flat):
 # Pipeline stages
 # ---------------------------------------------------------------------------
 
+def _record_stage_failure(summary, stage_name: str, file_name: str, reason) -> None:
+    """Single point for recording a per-frame failure (no-op if summary is None)."""
+    if summary is not None:
+        summary.record_failure(stage_name, file_name, str(reason))
+
+
+def _set_stage_cancelled(summary, stage_name: str, n_succeeded: int, n_failed: int) -> None:
+    """Mark a stage as cancelled in the summary (no-op if summary is None)."""
+    if summary is None:
+        return
+    s = summary.stage(stage_name)
+    s.status = "cancelled"
+    s.n_succeeded = n_succeeded
+    s.n_failed = n_failed
+
+
+def _set_stage_done(summary, stage_name: str, status: str,
+                    n_succeeded: int, n_failed: int, detail: str = "") -> None:
+    """Mark a stage's terminal status + counts in the summary."""
+    if summary is None:
+        return
+    s = summary.stage(stage_name)
+    s.status = status
+    s.n_succeeded = n_succeeded
+    s.n_failed = n_failed
+    if detail:
+        s.detail = detail
+
+
+def _combine_and_write_master(paths, master_path, cfg) -> CCDData:
+    """
+    Average-combine a list of calibrated frame paths into a master, tag
+    it with the configured combined-flag, and write it to disk.
+    Shared by the bias and dark stages.
+    """
+    combined = ccdp.combine(
+        paths,
+        method="average",
+        sigma_clip=True,
+        sigma_clip_low_thresh=cfg.sigma_clip_low_thresh,
+        sigma_clip_high_thresh=cfg.sigma_clip_high_thresh,
+        sigma_clip_func=np.ma.median,
+        mem_limit=cfg.mem_limit,
+    )
+    combined.meta[cfg.headers.combined_flag_key] = True
+    write_image_only(combined, master_path, overwrite=cfg.overwrite)
+    return combined
+
+
 def bias(files, calibrated_data, intermediate_dir, cfg: ReductionConfig,
          log, cancel_event, summary=None):
     """
@@ -1179,22 +1233,54 @@ def bias(files, calibrated_data, intermediate_dir, cfg: ReductionConfig,
     if cfg.reuse_masters and _master_is_fresh(master_bias_path, bias_paths):
         log(f"Reusing existing master bias: {master_bias_path}")
         if summary is not None:
-            summary.stage("bias").status = "skipped"
-            summary.stage("bias").detail = "reused fresh master"
+            _set_stage_done(summary, "bias", "skipped", 0, 0, "reused fresh master")
             summary.record_master_reused("bias")
         return _load_master(master_bias_path)
 
+    calibrated_bias_paths, n_failed, reference_shape = _process_bias_frames(
+        bias_paths, intermediate_dir, cfg, log, cancel_event, summary, n_total,
+    )
+    if calibrated_bias_paths is None:
+        # Cancelled mid-loop; helper already recorded the cancelled state.
+        return None
+
+    if not calibrated_bias_paths:
+        raise RuntimeError(
+            f"All {n_total} bias frames failed to process. Cannot create master bias."
+        )
+    if n_failed:
+        log(f"Warning: {n_failed}/{n_total} bias frame(s) failed to process.")
+
+    log(f"\nCombining {len(calibrated_bias_paths)} bias frame(s) into master bias.")
+    combined_bias = _combine_and_write_master(
+        calibrated_bias_paths, master_bias_path, cfg,
+    )
+    log(f"Master bias created: {master_bias_path}")
+
+    _set_stage_done(summary, "bias", "ok",
+                    len(calibrated_bias_paths), n_failed)
+    return combined_bias
+
+
+def _process_bias_frames(bias_paths, intermediate_dir, cfg, log, cancel_event,
+                         summary, n_total):
+    """
+    Process the per-frame body of the bias stage.
+
+    :return: ``(calibrated_paths, n_failed, reference_shape)``. If the
+        cancellation event fires, returns ``(None, n_failed, None)`` and
+        the summary's bias stage has been marked cancelled.
+    """
     calibrated_bias_paths = []
     n_failed = 0
     reference_shape = None
+
     for n_done, bias_path in enumerate(bias_paths, start=1):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
-            if summary is not None:
-                summary.stage("bias").status = "cancelled"
-                summary.stage("bias").n_succeeded = len(calibrated_bias_paths)
-                summary.stage("bias").n_failed = n_failed
-            return None
+            _set_stage_cancelled(summary, "bias",
+                                 len(calibrated_bias_paths), n_failed)
+            return None, n_failed, None
 
         file_name = Path(bias_path).name
         log(f"Processing bias {n_done}/{n_total}: {file_name}")
@@ -1212,40 +1298,13 @@ def bias(files, calibrated_data, intermediate_dir, cfg: ReductionConfig,
             output_path = intermediate_dir / f"{file_name.split('.')[0]}.fits"
             write_image_only(new_ccd, output_path, overwrite=cfg.overwrite)
             calibrated_bias_paths.append(str(output_path))
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError, fits.VerifyError) as e:
             n_failed += 1
             log(f"Warning: failed to process {file_name}: {e}. Skipping.")
-            if summary is not None:
-                summary.record_failure("bias", file_name, str(e))
+            _record_stage_failure(summary, "bias", file_name, e)
             continue
 
-    if not calibrated_bias_paths:
-        raise RuntimeError(
-            f"All {n_total} bias frames failed to process. Cannot create master bias."
-        )
-    if n_failed:
-        log(f"Warning: {n_failed}/{n_total} bias frame(s) failed to process.")
-
-    log(f"\nCombining {len(calibrated_bias_paths)} bias frame(s) into master bias.")
-    combined_bias = ccdp.combine(
-        calibrated_bias_paths,
-        method="average",
-        sigma_clip=True,
-        sigma_clip_low_thresh=cfg.sigma_clip_low_thresh,
-        sigma_clip_high_thresh=cfg.sigma_clip_high_thresh,
-        sigma_clip_func=np.ma.median,
-        mem_limit=cfg.mem_limit,
-    )
-    combined_bias.meta[cfg.headers.combined_flag_key] = True
-    write_image_only(combined_bias, master_bias_path, overwrite=cfg.overwrite)
-    log(f"Master bias created: {master_bias_path}")
-
-    if summary is not None:
-        summary.stage("bias").status = "ok"
-        summary.stage("bias").n_succeeded = len(calibrated_bias_paths)
-        summary.stage("bias").n_failed = n_failed
-
-    return combined_bias
+    return calibrated_bias_paths, n_failed, reference_shape
 
 
 def dark(files, zero, calibrated_data, intermediate_dir, cfg: ReductionConfig,
@@ -1288,21 +1347,60 @@ def dark(files, zero, calibrated_data, intermediate_dir, cfg: ReductionConfig,
         if max_dark_exp is not None:
             log(f"Longest dark exposure (from raw headers): {max_dark_exp:.1f} s")
         if summary is not None:
-            summary.stage("dark").status = "skipped"
-            summary.stage("dark").detail = "reused fresh master"
+            _set_stage_done(summary, "dark", "skipped", 0, 0, "reused fresh master")
             summary.record_master_reused("dark")
         return _load_master(master_dark_path), max_dark_exp
 
+    calibrated_dark_paths, n_failed = _process_dark_frames(
+        dark_paths, intermediate_dir, zero, cfg, log,
+        cancel_event, reference_shape, summary, n_total,
+    )
+    if calibrated_dark_paths is None:
+        # Cancelled mid-loop
+        return None, None
+
+    if not calibrated_dark_paths:
+        raise RuntimeError(
+            f"All {n_total} dark frames failed to process. Cannot create master dark."
+        )
+    if n_failed:
+        log(f"Warning: {n_failed}/{n_total} dark frame(s) failed to process.")
+
+    log(f"\nCombining {len(calibrated_dark_paths)} dark frame(s) into master dark.")
+    combined_dark = _combine_and_write_master(
+        calibrated_dark_paths, master_dark_path, cfg,
+    )
+    log(f"Master dark created: {master_dark_path}")
+
+    # Track longest dark exposure for later science-exposure scaling check
+    max_dark_exp = _max_dark_exposure(calibrated_dark_paths, exptime_key=cfg.headers.exptime_key)
+    if max_dark_exp is not None:
+        log(f"Longest dark EXPTIME: {max_dark_exp:.1f} s")
+
+    _set_stage_done(summary, "dark", "ok",
+                    len(calibrated_dark_paths), n_failed)
+
+    return combined_dark, max_dark_exp
+
+
+def _process_dark_frames(dark_paths, intermediate_dir, zero, cfg, log,
+                         cancel_event, reference_shape, summary, n_total):
+    """
+    Process the per-frame body of the dark stage.
+
+    :return: ``(calibrated_paths, n_failed)`` on success, or
+        ``(None, n_failed)`` if cancelled mid-loop (the summary's dark
+        stage has already been marked cancelled in that case).
+    """
     calibrated_dark_paths = []
     n_failed = 0
+
     for n_done, dark_path in enumerate(dark_paths, start=1):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
-            if summary is not None:
-                summary.stage("dark").status = "cancelled"
-                summary.stage("dark").n_succeeded = len(calibrated_dark_paths)
-                summary.stage("dark").n_failed = n_failed
-            return None, None
+            _set_stage_cancelled(summary, "dark",
+                                 len(calibrated_dark_paths), n_failed)
+            return None, n_failed
 
         file_name = Path(dark_path).name
         log(f"Processing dark {n_done}/{n_total}: {file_name}")
@@ -1319,45 +1417,13 @@ def dark(files, zero, calibrated_data, intermediate_dir, cfg: ReductionConfig,
             output_path = intermediate_dir / f"{file_name.split('.')[0]}.fits"
             write_image_only(sub_ccd, output_path, overwrite=cfg.overwrite)
             calibrated_dark_paths.append(str(output_path))
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError, fits.VerifyError) as e:
             n_failed += 1
             log(f"Warning: failed to process {file_name}: {e}. Skipping.")
-            if summary is not None:
-                summary.record_failure("dark", file_name, str(e))
+            _record_stage_failure(summary, "dark", file_name, e)
             continue
 
-    if not calibrated_dark_paths:
-        raise RuntimeError(
-            f"All {n_total} dark frames failed to process. Cannot create master dark."
-        )
-    if n_failed:
-        log(f"Warning: {n_failed}/{n_total} dark frame(s) failed to process.")
-
-    log(f"\nCombining {len(calibrated_dark_paths)} dark frame(s) into master dark.")
-    combined_dark = ccdp.combine(
-        calibrated_dark_paths,
-        method="average",
-        sigma_clip=True,
-        sigma_clip_low_thresh=cfg.sigma_clip_low_thresh,
-        sigma_clip_high_thresh=cfg.sigma_clip_high_thresh,
-        sigma_clip_func=np.ma.median,
-        mem_limit=cfg.mem_limit,
-    )
-    combined_dark.meta[cfg.headers.combined_flag_key] = True
-    write_image_only(combined_dark, master_dark_path, overwrite=cfg.overwrite)
-    log(f"Master dark created: {master_dark_path}")
-
-    # Track longest dark exposure for later science-exposure scaling check
-    max_dark_exp = _max_dark_exposure(calibrated_dark_paths, exptime_key=cfg.headers.exptime_key)
-    if max_dark_exp is not None:
-        log(f"Longest dark EXPTIME: {max_dark_exp:.1f} s")
-
-    if summary is not None:
-        summary.stage("dark").status = "ok"
-        summary.stage("dark").n_succeeded = len(calibrated_dark_paths)
-        summary.stage("dark").n_failed = n_failed
-
-    return combined_dark, max_dark_exp
+    return calibrated_dark_paths, n_failed
 
 
 def flat(files, zero, combined_dark, calibrated_data, intermediate_dir,
@@ -1460,6 +1526,51 @@ def _can_reuse_master_flats(raw_flat_paths, calibrated_data, cfg, log) -> bool:
     return True
 
 
+def _calibrate_one_flat(flat_path, intermediate_dir, zero, combined_dark,
+                        cfg, log, reference_shape, summary, n_done, n_total):
+    """
+    Read, calibrate, and write a single flat frame.
+
+    :return: ``(filter_key, output_path)`` on success, or ``None`` if the
+        frame should be counted as failed and skipped. Diagnostic logging
+        and summary recording are handled inside.
+    """
+    file_name = Path(flat_path).name
+
+    try:
+        ccd = CCDData.read(flat_path, unit="adu", format="fits")
+    except (OSError, ValueError, fits.VerifyError) as e:
+        log(f"Warning: failed to read {file_name}: {e}. Skipping.")
+        _record_stage_failure(summary, "flat", file_name, e)
+        return None
+
+    try:
+        filt = _normalize_filter(
+            ccd.header.get(cfg.headers.filter_key),
+            prefixes=cfg.headers.filter_prefix_strip,
+        )
+    except ValueError as e:
+        log(f"Warning: {e} in {file_name}. Skipping.")
+        _record_stage_failure(summary, "flat", file_name, e)
+        return None
+
+    log(f"Processing flat {n_done}/{n_total} [{filt}]: {file_name}")
+    try:
+        final_ccd = _reduce_flat(ccd, cfg, zero, combined_dark)
+        _assert_shape_matches(final_ccd, reference_shape, f"flat frame {file_name}")
+
+        new_fname = f"{file_name.split('.')[0]}.fits"
+        output_path = intermediate_dir / new_fname
+        write_image_only(final_ccd, output_path, overwrite=cfg.overwrite)
+        add_header(intermediate_dir, new_fname, cfg.headers.imagetyp_flat, cfg)
+    except (OSError, ValueError, RuntimeError, fits.VerifyError) as e:
+        log(f"Warning: flat calibration failed for {file_name}: {e}. Skipping.")
+        _record_stage_failure(summary, "flat", file_name, e)
+        return None
+
+    return filt, str(output_path)
+
+
 def _process_flats(files, zero, combined_dark, intermediate_dir,
                    cfg, log, cancel_event, reference_shape, summary=None):
     """
@@ -1487,54 +1598,23 @@ def _process_flats(files, zero, combined_dark, intermediate_dir,
     paths_by_filter: dict[str, list[str]] = {}
     n_failed = 0
     n_succeeded = 0
+
     for n_done, flat_path in enumerate(flat_paths, start=1):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
-            if summary is not None:
-                summary.stage("flat").status = "cancelled"
-                summary.stage("flat").n_succeeded = n_succeeded
-                summary.stage("flat").n_failed = n_failed
+            _set_stage_cancelled(summary, "flat", n_succeeded, n_failed)
             return None
 
-        file_name = Path(flat_path).name
-        try:
-            ccd = CCDData.read(flat_path, unit="adu", format="fits")
-        except Exception as e:
+        result = _calibrate_one_flat(
+            flat_path, intermediate_dir, zero, combined_dark,
+            cfg, log, reference_shape, summary, n_done, n_total,
+        )
+        if result is None:
             n_failed += 1
-            log(f"Warning: failed to read {file_name}: {e}. Skipping.")
-            if summary is not None:
-                summary.record_failure("flat", file_name, str(e))
             continue
 
-        try:
-            filt = _normalize_filter(
-                ccd.header.get(cfg.headers.filter_key),
-                prefixes=cfg.headers.filter_prefix_strip,
-            )
-        except ValueError as e:
-            n_failed += 1
-            log(f"Warning: {e} in {file_name}. Skipping.")
-            if summary is not None:
-                summary.record_failure("flat", file_name, str(e))
-            continue
-
-        log(f"Processing flat {n_done}/{n_total} [{filt}]: {file_name}")
-        try:
-            final_ccd = _reduce_flat(ccd, cfg, zero, combined_dark)
-            _assert_shape_matches(final_ccd, reference_shape, f"flat frame {file_name}")
-
-            new_fname = f"{file_name.split('.')[0]}.fits"
-            output_path = intermediate_dir / new_fname
-            write_image_only(final_ccd, output_path, overwrite=cfg.overwrite)
-            add_header(intermediate_dir, new_fname, cfg.headers.imagetyp_flat, cfg)
-        except Exception as e:
-            n_failed += 1
-            log(f"Warning: flat calibration failed for {file_name}: {e}. Skipping.")
-            if summary is not None:
-                summary.record_failure("flat", file_name, str(e))
-            continue
-
-        paths_by_filter.setdefault(filt, []).append(str(output_path))
+        filt, output_path = result
+        paths_by_filter.setdefault(filt, []).append(output_path)
         n_succeeded += 1
 
     if n_failed:
@@ -1589,6 +1669,158 @@ def _combine_flats(paths_by_filter, calibrated_data, cfg, log, cancel_event):
     log("\nFinished creating master flats by filter.")
 
 
+def _load_master_flats(calibrated_data, cfg, log) -> dict:
+    """
+    Discover and load every master flat in the calibrated_data directory.
+
+    :return: ``{filter: CCDData}`` keyed on normalised filter name.
+    :raises RuntimeError: If no readable master flats are found.
+    """
+    flat_paths_by_filter = _discover_master_flats(calibrated_data, cfg)
+    combined_flats: dict[str, CCDData] = {}
+    for filt_key, master_path in flat_paths_by_filter.items():
+        try:
+            combined_flats[filt_key] = _load_master(master_path)
+        except (OSError, ValueError, fits.VerifyError) as e:
+            log(f"Warning: failed to load master flat {master_path.name}: {e}. Skipping.")
+            continue
+
+    if not combined_flats:
+        raise RuntimeError(
+            f"No master flats found in '{calibrated_data}' "
+            f"(pattern '{cfg.master_flat_pattern}'). "
+            "Science reduction cannot proceed."
+        )
+    log(f"Loaded master flats for filter(s): {sorted(combined_flats.keys())}")
+    return combined_flats
+
+
+def _record_science_failure(summary, file_name, reason) -> None:
+    """Single point for recording a per-frame failure (no-op if summary is None)."""
+    if summary is not None:
+        summary.record_failure("science", file_name, reason)
+
+
+def _check_science_exptime(light, file_name, max_dark_exp, warned_long_exp,
+                           cfg, log, summary) -> tuple:
+    """
+    Validate exposure time when dark scaling is in effect, and emit the
+    one-shot "long science exposure" warning if applicable.
+
+    :return: ``(ok, exp, warned_long_exp)``. ``ok=False`` means the frame
+        should be skipped.
+    """
+    exp = _get_exposure_time(light.header, key=cfg.headers.exptime_key)
+
+    if not cfg.dark_bool:
+        return True, exp, warned_long_exp
+
+    if exp is None:
+        log(
+            f"Warning: missing or invalid {cfg.headers.exptime_key} "
+            f"in {file_name} and dark scaling requires it. Skipping."
+        )
+        _record_science_failure(
+            summary, file_name,
+            f"missing/invalid {cfg.headers.exptime_key}",
+        )
+        return False, exp, warned_long_exp
+
+    if (max_dark_exp is not None and not warned_long_exp
+            and exp > max_dark_exp * DARK_SCALING_WARN_RATIO):
+        log(
+            f"Warning: science exposure={exp:.1f}s is more than "
+            f"{DARK_SCALING_WARN_RATIO:.0f}× the longest dark "
+            f"({max_dark_exp:.1f}s). Dark scaling may amplify noise. "
+            "Consider collecting longer darks. (This warning will not repeat.)"
+        )
+        warned_long_exp = True
+    return True, exp, warned_long_exp
+
+
+def _resolve_science_filter(light, file_name, combined_flats, cfg, log, summary):
+    """
+    Look up the matching master flat for this science frame's FILTER.
+
+    :return: filter key string, or None if no usable flat.
+    """
+    raw_filt = light.header.get(cfg.headers.filter_key)
+    try:
+        filt = _normalize_filter(raw_filt, prefixes=cfg.headers.filter_prefix_strip)
+    except ValueError as e:
+        log(f"Warning: {e} in {file_name}. Skipping.")
+        _record_science_failure(summary, file_name, str(e))
+        return None
+
+    if filt not in combined_flats:
+        reason = (f"no master flat for filter {filt!r} "
+                  f"(available: {sorted(combined_flats.keys())})")
+        log(f"Warning: {reason} (needed by {file_name}). Skipping.")
+        _record_science_failure(summary, file_name, reason)
+        return None
+
+    return filt
+
+
+def _calibrate_one_science(light, light_path, calibrated_data, zero, combined_dark,
+                           combined_flats, filt, science_imagetyp,
+                           cfg, log, reference_shape, summary) -> bool:
+    """
+    Run the full reduce → assert-shape → write → add-header → correct-header
+    pipeline for a single science frame. Returns True on full success.
+
+    Per-frame errors (calibration, shape mismatch, write failure) are
+    logged and reported to the summary, then we return False so the caller
+    counts this frame as failed and moves on.
+    """
+    file_name = Path(light_path).name
+
+    try:
+        reduced = _reduce_science(light, cfg, zero, combined_dark, combined_flats[filt])
+        _assert_shape_matches(reduced, reference_shape, f"science frame {file_name}")
+    except (ValueError, TypeError, RuntimeError) as e:
+        log(f"Warning: calibration failed for {file_name}: {e}. Skipping.")
+        _record_science_failure(summary, file_name, str(e))
+        return False
+
+    new_fname = f"{file_name.split('.')[0]}.fits"
+    try:
+        write_image_only(reduced, calibrated_data / new_fname, overwrite=cfg.overwrite)
+    except (OSError, fits.VerifyError) as e:
+        log(f"Warning: failed to write {new_fname}: {e}. Skipping.")
+        _record_science_failure(summary, file_name, f"write failed: {e}")
+        return False
+
+    # Basic reduction-metadata headers, then the full header-correction
+    # stage (RA/DEC reformat, JD/HJD/BJD, sidereal time, effective airmass).
+    # Each step is independently toggleable via cfg.correct_*; failures
+    # are caught here so a bad header on one frame doesn't abort the run.
+    add_header(calibrated_data, new_fname, science_imagetyp, cfg)
+    try:
+        correct_headers(calibrated_data / new_fname, cfg, log=log)
+    except (ValueError, TypeError, KeyError, OSError) as e:
+        log(
+            f"Warning: header correction failed for {file_name}: {e}. "
+            f"Calibrated image was still written; downstream code may "
+            f"see incomplete time/coord headers."
+        )
+        # Non-fatal; calibrated image is on disk so we still count success.
+    return True
+
+
+def _finalize_science_summary(summary, status, n_succeeded, n_failed,
+                              longest_science_exp) -> None:
+    """Write final science-stage stats into the summary in one place."""
+    if summary is None:
+        return
+    s = summary.stage("science")
+    s.status = status
+    s.n_succeeded = n_succeeded
+    s.n_failed = n_failed
+    if longest_science_exp > 0:
+        summary.longest_science_exposure_sec = longest_science_exp
+
+
 def science_images(files, calibrated_data, zero, combined_dark,
                    cfg: ReductionConfig, log, cancel_event,
                    reference_shape, max_dark_exp, summary=None):
@@ -1605,26 +1837,7 @@ def science_images(files, calibrated_data, zero, combined_dark,
     """
     science_imagetyp = cfg.headers.imagetyp_light
 
-    # Build master-flat lookup by filename pattern rather than by IMAGETYP
-    # header. This works for both pipeline-generated masters (which have
-    # IMAGETYP=<flat> written by add_header) AND externally-produced masters
-    # that may not have the same header conventions.
-    flat_paths_by_filter = _discover_master_flats(calibrated_data, cfg)
-    combined_flats: dict[str, CCDData] = {}
-    for filt_key, master_path in flat_paths_by_filter.items():
-        try:
-            combined_flats[filt_key] = _load_master(master_path)
-        except Exception as e:
-            log(f"Warning: failed to load master flat {master_path.name}: {e}. Skipping.")
-            continue
-
-    if not combined_flats:
-        raise RuntimeError(
-            f"No master flats found in '{calibrated_data}' "
-            f"(pattern '{cfg.master_flat_pattern}'). "
-            "Science reduction cannot proceed."
-        )
-    log(f"Loaded master flats for filter(s): {sorted(combined_flats.keys())}")
+    combined_flats = _load_master_flats(calibrated_data, cfg, log)
 
     science_paths = files.files_filtered(imagetyp=science_imagetyp, include_path=True)
     n_total = len(science_paths)
@@ -1646,24 +1859,19 @@ def science_images(files, calibrated_data, zero, combined_dark,
     for n_done, light_path in enumerate(science_paths, start=1):
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
-            if summary is not None:
-                summary.stage("science").status = "cancelled"
-                summary.stage("science").n_succeeded = n_succeeded
-                summary.stage("science").n_failed = n_failed
-                if longest_science_exp > 0:
-                    summary.longest_science_exposure_sec = longest_science_exp
+            _finalize_science_summary(summary, "cancelled",
+                                      n_succeeded, n_failed, longest_science_exp)
             return
 
         file_name = Path(light_path).name
 
-        # Read
+        # Read the raw frame
         try:
             light = CCDData.read(light_path, unit="adu", format="fits")
-        except Exception as e:
+        except (OSError, ValueError, fits.VerifyError) as e:
             n_failed += 1
             log(f"Warning: failed to read {file_name}: {e}. Skipping.")
-            if summary is not None:
-                summary.record_failure("science", file_name, str(e))
+            _record_science_failure(summary, file_name, str(e))
             continue
 
         # Track longest science exposure for the summary regardless of
@@ -1672,100 +1880,39 @@ def science_images(files, calibrated_data, zero, combined_dark,
         if exp is not None and exp > longest_science_exp:
             longest_science_exp = exp
 
-        # Exposure time validation (needed for dark scaling)
-        if cfg.dark_bool:
-            if exp is None:
-                n_failed += 1
-                log(
-                    f"Warning: missing or invalid {cfg.headers.exptime_key} "
-                    f"in {file_name} and dark scaling requires it. Skipping."
-                )
-                if summary is not None:
-                    summary.record_failure(
-                        "science", file_name,
-                        f"missing/invalid {cfg.headers.exptime_key}",
-                    )
-                continue
-            if (max_dark_exp is not None and not warned_long_exp
-                    and exp > max_dark_exp * DARK_SCALING_WARN_RATIO):
-                log(
-                    f"Warning: science exposure={exp:.1f}s is more than "
-                    f"{DARK_SCALING_WARN_RATIO:.0f}× the longest dark "
-                    f"({max_dark_exp:.1f}s). Dark scaling may amplify noise. "
-                    "Consider collecting longer darks. (This warning will not repeat.)"
-                )
-                warned_long_exp = True
-
-        # Filter
-        raw_filt = light.header.get(cfg.headers.filter_key)
-        try:
-            filt = _normalize_filter(raw_filt, prefixes=cfg.headers.filter_prefix_strip)
-        except ValueError as e:
+        # Validate exposure time (only matters when dark-scaling is on)
+        ok, exp, warned_long_exp = _check_science_exptime(
+            light, file_name, max_dark_exp, warned_long_exp,
+            cfg, log, summary,
+        )
+        if not ok:
             n_failed += 1
-            log(f"Warning: {e} in {file_name}. Skipping.")
-            if summary is not None:
-                summary.record_failure("science", file_name, str(e))
             continue
 
-        # Matching master flat
-        if filt not in combined_flats:
+        # Resolve filter and look up its master flat
+        filt = _resolve_science_filter(
+            light, file_name, combined_flats, cfg, log, summary,
+        )
+        if filt is None:
             n_failed += 1
-            reason = (f"no master flat for filter {filt!r} "
-                      f"(available: {sorted(combined_flats.keys())})")
-            log(f"Warning: {reason} (needed by {file_name}). Skipping.")
-            if summary is not None:
-                summary.record_failure("science", file_name, reason)
             continue
 
         log(f"Calibrating science {n_done}/{n_total} [{filt}]: {file_name}")
 
-        # Calibrate
-        try:
-            reduced = _reduce_science(light, cfg, zero, combined_dark, combined_flats[filt])
-            _assert_shape_matches(reduced, reference_shape, f"science frame {file_name}")
-        except Exception as e:
+        # Reduce + write + header-correct
+        if _calibrate_one_science(
+            light, light_path, calibrated_data, zero, combined_dark,
+            combined_flats, filt, science_imagetyp,
+            cfg, log, reference_shape, summary,
+        ):
+            n_succeeded += 1
+        else:
             n_failed += 1
-            log(f"Warning: calibration failed for {file_name}: {e}. Skipping.")
-            if summary is not None:
-                summary.record_failure("science", file_name, str(e))
-            continue
-
-        new_fname = f"{file_name.split('.')[0]}.fits"
-        try:
-            write_image_only(reduced, calibrated_data / new_fname, overwrite=cfg.overwrite)
-        except Exception as e:
-            n_failed += 1
-            log(f"Warning: failed to write {new_fname}: {e}. Skipping.")
-            if summary is not None:
-                summary.record_failure("science", file_name, f"write failed: {e}")
-            continue
-
-        # Write the basic reduction-metadata headers, then run the full
-        # header-correction stage (RA/DEC reformat, JD/HJD/BJD, sidereal
-        # time, effective airmass). Each step is independently toggleable
-        # via cfg.correct_*; failures are caught here so a bad header on
-        # one frame doesn't abort the run.
-        add_header(calibrated_data, new_fname, science_imagetyp, cfg)
-        try:
-            correct_headers(calibrated_data / new_fname, cfg, log=log)
-        except Exception as e:
-            log(
-                f"Warning: header correction failed for {file_name}: {e}. "
-                f"Calibrated image was still written; downstream code may "
-                f"see incomplete time/coord headers."
-            )
-            # Note: correction failure is non-fatal and not counted as a
-            # frame failure — the calibrated image is still on disk.
-
-        n_succeeded += 1
 
     log(f"\nScience reduction summary: {n_succeeded} succeeded, {n_failed} skipped.")
-    if summary is not None:
-        summary.stage("science").status = "ok" if n_succeeded > 0 else "failed"
-        summary.stage("science").n_succeeded = n_succeeded
-        summary.stage("science").n_failed = n_failed
-        if longest_science_exp > 0:
-            summary.longest_science_exposure_sec = longest_science_exp
+    final_status = "ok" if n_succeeded > 0 else "failed"
+    _finalize_science_summary(summary, final_status,
+                              n_succeeded, n_failed, longest_science_exp)
     if n_succeeded == 0:
         raise RuntimeError(
             f"All {n_total} science frames were skipped. "

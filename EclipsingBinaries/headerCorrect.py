@@ -1,669 +1,700 @@
-#!/usr/bin/python3
-#
-#########################################################################################
-#                                                                                       #
-# Program to search image FITS file headers to make sure the RA and Dec coordinates     #
-# are formatted correctly for IRAF to read (RA -> HH:MM:SS.s, Dec -> +DD:MM:SS.s).      #
-# Original header values are written into the RA_ORIG and DEC_ORIG keywords.  It will   #
-# also correct any errors in the Julian Date (JD), Heliocentric Julian Date (HJD,       #
-# HJD_UTC), and add a Barycentric Julian Date (BJD_TDB) into the image headers.  It     #
-# will also check to make sure the EPOCH and EQUINOX keywords are in the headers.  If   #
-# they are not add them with either the default value of (EPOCH -> 2000.0,              #
-# EQUINOX -> J2000.0).  It will also determine various other important observational    #
-# values like effective airmass (EAIRMASS), and Sidereal Time (ST) if they do not       #
-# exist.                                                                                # 
-#                                                                                       #
-#########################################################################################
-#
 """
-Created By: Robert C. Berrington
-Created On: 08/03/2024
-Last Edited By: Kyle Koeller
-Last Edits ON: 08/18/2024
+FITS header correction utilities for IRAF compatibility and reproducible
+photometric reductions.
+
+This module is a refactor of Robert Berrington's standalone header-correct.py
+script (rberring@bsu.edu, 08/09/2024). All calculation logic is preserved
+verbatim; the structural changes are:
+
+    1. CLI argument parsing is replaced with a HeaderCorrectionOptions
+       dataclass plus an ObservatoryRegistry, both populated from the
+       pipeline's ReductionConfig (or constructed directly in scripts).
+    2. The single monolithic per-file loop is split into focused helpers
+       so individual corrections can be enabled or skipped via flags.
+    3. ``print()`` debug output is routed through a ``log`` callback so the
+       same code drives both the GUI's log pane and the command line.
+    4. There is a single public entry point ``correct_headers(image_path,
+       cfg, ...)`` returning a small report object describing what changed.
+
+Author:  Kyle Koeller (refactor) - 04/24/2026
+Original: Robert Berrington (BSU) - 08/09/2024
 """
-import argparse
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable, Optional, Dict
+import re
+
 from astropy.io import fits
 from astropy.time import Time
-# from astropy import time
 from astropy import coordinates as coords
-from astropy import units as u # contains important time and physical units
-import glob  # Needed to allow windows to expand unix style filename wildcards
-import re
-# import io
-#
-# First We need to parse the command line for settings
-#
-def header_correct():
-    parser = argparse.ArgumentParser(prog="HJD_correct.py",
-                                    description="Corrects (RA, Dec) values to have :s and adds JDs, HJDs, BJDs and effecitve airmass to image headers",
-                                    epilog="\nThis is a program in the testing phase.  Please use with caution.  To report any issues or bugs, please contact rberring@bsu.edu",
-                                    add_help=True)
-    parser.add_argument("-f", "--file", "--filename",
-                        dest='wildcard_list',
-                        metavar="<filename(s)>",
-                        help="input FITS filename(s)",
-                        nargs='+',
-                        default=['temp.fits'])
-    parser.add_argument("-d", "--delimiter",
-                        dest='delimiter',
-                        help="character to delimit the sexigesimal angle measures.",
-                        metavar="<delimiter>",
-                        nargs='?',
-                        default=[':'],
-                        const=[':'],
-                        type=str)
-    parser.add_argument("-eq", "--equinox",
-                        dest='specified_equinox',
-                        nargs='?',
-                        default='J2000.0',
-                        const='J2000.0',
-                        help="Equinox of the equitorial coordinates (RA,Dec).")
-    parser.add_argument("-ep", "--epoch",
-                        dest='specified_epoch',
-                        nargs='?',
-                        default=2000.0,
-                        const=2000.0,
-                        help="Epoch of the equitorial coordinates (RA,Dec) in Julian years.")
-    parser.add_argument("-ol", "--observat", "--observatory-location",
-                        dest='observat',
-                        nargs='*',
-                        default=['BSU'],
-                        help='Set the default observatory location.  Image header will take presidence.')
-    parser.add_argument("-de", "--debug",
-                        dest='debug',
-                        action=argparse.BooleanOptionalAction,
-                        default=False,
-                        help="Print out additional debugging information.")
-    parser.add_argument("-v", "--verbose",
-                        dest='verbose',
-                        action='count',
-                        default=0,
-                        help='Set verbosity output. Multiple entries increment verbosity level.')
-    parser.add_argument("--JD",
-                        dest='JD_flag',
-                        action=argparse.BooleanOptionalAction,
-                        default=True, # default is to calculate JDs.
-                        help="Calculate of JDs, and enter into the image headers.")
-    parser.add_argument("--HJD",
-                        dest='HJD_flag',
-                        action=argparse.BooleanOptionalAction,
-                        default=True, # default is to calculate HJDs.
-                        help="Calculate HJDs, and enter into the image headers.")
-    parser.add_argument("--BJD",
-                        dest='BJD_flag',
-                        action=argparse.BooleanOptionalAction,
-                        default=True, # default is to calculate BJDs.
-                        help="Calculate BJDs, and enter into the image headers.")
-    parser.add_argument("-X", "--airmass", "--eairmass", "--effective-airmass",
-                        dest='eairmass_flag',
-                        action=argparse.BooleanOptionalAction,
-                        default=True, # default is to calculate BJDs.
-                        help="Calculate the effective airmass, and enter into the image headers.")
-    parser.add_argument("-st", "--sidereal", "--sidereal-time",
-                        dest='sidereal_flag',
-                        action=argparse.BooleanOptionalAction,
-                        default=True, # default is to calculate sidereal times.
-                        help="Calculate the current sidereal time, and enter into the image headers.")
-    parser.add_argument("-fp", "--filter_parse",
-                        dest='filter_parse',
-                        action=argparse.BooleanOptionalAction,
-                        default=False, # default is not to parse filter names for spaces and replace with underscores.
-                        help="Parse filter names for spaces and replace with underscores.")
-    parser.add_argument("-lf", "--logfile",
-                        dest='log_flag',
-                        action=argparse.BooleanOptionalAction,
-                        default=False, # default is to not open a logfile.
-                        help="Write out operations into a log file.")
-    parser.add_argument("-lfn", "--logfilename",
-                        dest='logfilename',
-                        metavar="<logfilename>",
-                        help="Output logfile name.",
-                        nargs='*',
-                        default=['FITS_correction.log'])
-    parser.add_argument("-lc", "--logfile_comment",
-                        dest='header_comment',
-                        metavar="<#>",
-                        help="Comment character to mark the header of the logfile.",
-                        nargs='*',
-                        default=['#'])
-    parser.add_argument("-ld", "--logfile_delimiter",
-                        dest='log_file_delimiter',
-                        metavar="< >",
-                        help="Character to delimit the values of the logfile.",
-                        nargs='*',
-                        default=[' '])
-    args = parser.parse_args()
-    #
-    # Expand out any wildcards included on the command line and append to a list of images
-    # to operate on.
-    #
-    max_filename_length = 0
-    filename_list=[]
-    for wildcard in args.wildcard_list:
-        filename=glob.glob(wildcard)
-        for file in filename:
-            current_filename_length = len(file) # measure the length of the filename.
-            filename_list.append(file)
-            if max_filename_length < current_filename_length:
-                max_filename_length = current_filename_length # store the maximum filename length.
-    #
-    # Lets fix the inability of windows to unix style file expansions with wildcards.
-    #
-    if args.debug==True or args.verbose >= 3:
-        print('Files specified at the command line',args.wildcard_list)
-    #
-    # Show the list of images to be operated on.
-    #
-    if args.debug == True or args.verbose >= 2:
-        print('List of images to operate on:',filename_list)
-    #
-    # setup the header strings for the log file.  These will be written to the log file later.
-    #
-    if args.log_flag:
-        header_comment   = args.header_comment[0]
-        header_filename  = ' Filename '
-        header_JD        = (26 * ' ') + ' JD' + (27 * ' ')
-        header_HJD       = (26 * ' ') + 'HJD' + (27 * ' ')
-        header_BJD       = (26 * ' ') + 'BJD' + (27 * ' ')
-        header_types     = (4 * ' ') + 'original' + (11 * ' ') + 'corrected' + (11 * ' ') + 'deltat' + (7 * ' ')
-        header_blank     = (53 * ' ')
-        header_units     = (44 * ' ') + '[sec]' + (7 * ' ')
-        header_BJDHJD    = (6 * ' ') + 'BJD_TDB' + (9 * ' ') + 'BJD_TDB-HJD' + (4 * ' ')
-        header_Bunits    = (25 * ' ') + '[sec]' + (7 * ' ')
-        if max_filename_length > 10: # Then the file name length is longer than the 'Filename' header.
-            header_line1 = header_comment + header_filename + ((max_filename_length - 10) * ' ') + '|'
-            header_line2 = header_comment + (max_filename_length * ' ') + '|'
-            header_line3 = header_comment + (max_filename_length * ' ') + '|'
-        else: # longest file name is shorter than the 'Filename' header.
-            header_line1 = header_comment + header_filename + '|'
-            header_line2 = header_comment + (10 * ' ') + '|'
-            header_line3 = header_comment + (10 * ' ') + '|'
+from astropy import units as u
 
-        if args.JD_flag:
-            header_line1 += header_JD + '|'
-            header_line2 += header_types + '|'
-            header_line3 += header_units + '|'
-        if args.HJD_flag:
-            header_line1 += header_HJD + '|'
-            header_line2 += header_types + '|'
-            header_line3 += header_units + '|'
-        if args.BJD_flag:
-            if args.HJD_flag: # then HJD was calculated and we need to see how HJD and BJD differ
-                header_line1 += header_BJDHJD
-                header_line2 += header_blank
-                header_line3 += header_Bunits
-            else: # HJD was never calculated, and not difference between BJD and HJD can be determined
-                header_line1 += header_BJD
-                header_line2 += header_blank
-                header_line3 += header_blank
-        header_line1 += '\n'
-        header_line2 += '\n'
-        header_line3 += '\n'
-        change_log_delimiter = args.log_file_delimiter[0]
-    #
-    # Setup a database of known observatory sites that are not located in the Astropy known sites.
-    #
-    # First entry is the Ball State University Observatory (BSUO)
-    #
-    BSU_lat = coords.Angle('40:11:59.61 degrees')   # +=N -=Sf
-    BSU_long = coords.Angle('-85:24:40.62 degrees') # +=E -=W
-    BSU_alt = 289.56 * u.m
-    BSU_datum = 'WGS84'
-    BSU_Timezone = -4
-    #
-    # Let's open the log file for keeping track of changes made.
-    #
-    logfilename = args.logfilename[0]
-    delimiter = args.delimiter[0]
-    #
-    # Write the header for the log file.
-    #
-    if args.log_flag:
-        change_log = open(file=logfilename, mode="w+t")
-        if args.debug == True or args.verbose >= 1:
-            print('Opening Logfile:', logfilename)
-        if args.debug == True or args.verbose >= 2:
-            print('Writing header to logfile:',logfilename)
-            print(header_line1,"\n")
-            print(header_line2,"\n")
-            print(header_line3,"\n")
-        change_log.write(header_line1)
-        change_log.write(header_line2)
-        change_log.write(header_line3)
-    #
-    # Start operating on the list of files to be updated.  The list is in the variable filename_list, and
-    # filename contains the current image operated on.
-    #
-    for filename in filename_list:
-        if args.verbose >= 1 or args.debug == True:
-            print('Current open image file:',filename)
 
-        current_image = fits.open(filename, mode='update')
+# ---------------------------------------------------------------------------
+# Observatory registry
+# ---------------------------------------------------------------------------
 
-        if args.log_flag:
-            if max_filename_length >= 12:
-                change_log_line = filename + change_log_delimiter + ((max_filename_length + 2 - len(change_log_delimiter) - len(filename)) * ' ')
-            else:
-                change_log_line = filename + change_log_delimiter + ((12 - len(change_log_delimiter) - len(filename)) * ' ')
+@dataclass(frozen=True)
+class ObservatorySite:
 
-        if 'EPOCH' in current_image[0].header:             # Test to see if the EPOCH keyword exists
-            image_epoch = current_image[0].header['EPOCH'] # Read epoch for RA,Dec from image header
-        else:                                              # Then it does not exist and set.
-            image_epoch = args.specified_epoch
-            current_image[0].header['EPOCH'] = (image_epoch,'Epoch of image coordinates')
+    """A single observatory site, either by astropy name or explicit coordinates.
 
-        if 'EQUINOX' in current_image[0].header:               # Test to see if the EQUINOX keyword exists
-            image_equinox = current_image[0].header['EQUINOX'] # Read epoch for RA,Dec from image header
-        else:                                                  # Then it does not exist and set.
-            image_equinox = args.specified_equinox
-            current_image[0].header['EQUINOX'] = (image_equinox,'Equinox of image coordinates')
+    If ``astropy_name`` is set, ``EarthLocation.of_site(astropy_name)`` is
+    used. Otherwise ``lat``, ``lon``, ``altitude_m``, and ``ellipsoid`` are
+    used to build the EarthLocation. Exactly one of the two must be
+    populated.
+    """
 
-        if args.filter_parse: # if filter_parse is set to true remove the space in the filter keyword
-            if 'FILT_ORG' in current_image[0].header: # then we have already corrected FILT_ORG.  Skip.
-                if args.debug == True or args.verbose >= 1:
-                    print('We have already corrected the FLITERS parameter.  Using FILT_ORG.')
-                FILTER_image = current_image[0].header['FILT_ORG']
-            elif 'FILTER' in current_image[0].header:     # Test for the FILTER keyword
-                FILTER_image = current_image[0].header['FILTER']
-            elif 'FILTERS' in current_image[0].header:  # Test for the FILTERS keyword
-                    FILTER_image = current_image[0].header['FILTERS']
-            else:
-                print('*WARNING* no recognized FILTER keyword present in header')
-                # args.filter_parse == False
+    name: str
+    astropy_name: Optional[str] = None
+    lat: Optional[str] = None         # sexagesimal degrees, e.g. "40:11:59.7"
+    lon: Optional[str] = None         # sexagesimal degrees, signed; +E -W
+    altitude_m: Optional[float] = None
+    ellipsoid: str = "WGS84"
+    timezone: Optional[int] = None    # hours from UTC; informational only
+
+    def to_earth_location(self) -> coords.EarthLocation:
+        if self.astropy_name is not None:
+            return coords.EarthLocation.of_site(self.astropy_name)
+        if self.lat is None or self.lon is None or self.altitude_m is None:
+            raise ValueError(
+                f"ObservatorySite {self.name!r} has neither an astropy_name "
+                f"nor a complete lat/lon/altitude triple."
+            )
+        return coords.EarthLocation.from_geodetic(
+            lon=coords.Angle(f"{self.lon} degrees"),
+            lat=coords.Angle(f"{self.lat} degrees"),
+            height=self.altitude_m * u.m,
+            ellipsoid=self.ellipsoid,
+        )
+
+
+class ObservatoryRegistry:
+
+    """Lookup table mapping site keys (case-insensitive) to ObservatorySite entries.
+
+    Populated with the BSU/SARA/SFRO defaults from the original
+    ``header-correct.py`` script. Custom sites can be registered at
+    runtime via :meth:`register`.
+    """
+
+    # Defaults — copied verbatim from header-correct.py so behaviour is
+    # bit-for-bit identical for these sites.
+    _DEFAULT_SITES = (
+        ObservatorySite(
+            name="BSUO",
+            lat="40:11:59.7", lon="-85:24:41.9",
+            altitude_m=322.8, ellipsoid="WGS84", timezone=-5,
+        ),
+        ObservatorySite(
+            name="BSU",
+            lat="40:11:59.61", lon="-85:24:40.62",
+            altitude_m=304.5, ellipsoid="WGS84", timezone=-5,
+        ),
+        ObservatorySite(
+            name="SFRO",
+            lat="31:32:49.5", lon="-99:22:56.0",
+            altitude_m=464.6, ellipsoid="WGS84", timezone=-6,
+        ),
+        ObservatorySite(name="SARA-KP", astropy_name="kpno"),
+        ObservatorySite(name="SARA-N", astropy_name="kpno"),
+        ObservatorySite(name="SARA-CT", astropy_name="ctio"),
+        ObservatorySite(name="SARA-S", astropy_name="ctio"),
+        ObservatorySite(name="SARA-RM", astropy_name="Roque de los Muchachos"),
+    )
+
+    def __init__(self, sites=None):
+        """Initialise the registry, optionally seeding with custom sites.
+
+        :param sites: Iterable of :class:`ObservatorySite` to register.
+            Defaults to the BSU/BSUO/SARA-*/SFRO set if omitted.
+        """
+        self._sites: Dict[str, ObservatorySite] = {}
+        for site in (sites if sites is not None else self._DEFAULT_SITES):
+            self.register(site)
+
+    def register(self, site: ObservatorySite) -> None:
+        """Add or replace a site. Lookup is case-insensitive."""
+        self._sites[site.name.upper()] = site
+
+    def get(self, name: str) -> Optional[ObservatorySite]:
+        """Look up a site by name (case-insensitive). Returns None if absent."""
+        if name is None:
+            return None
+        return self._sites.get(name.upper())
+
+    def resolve(self, name: str, default: Optional[str] = "BSU",
+                log: Callable[[str], None] = print) -> coords.EarthLocation:
+        """
+        Resolve a site name to an EarthLocation, falling back to ``default``
+        if the name is not registered. Mirrors the original script's
+        "default to BSU on unknown" behaviour.
+        """
+        site = self.get(name)
+        if site is None:
+            log(
+                f"WARNING: Unknown observatory location {name!r}. "
+                f"Defaulting to {default!r}."
+            )
+            site = self.get(default)
+            if site is None:
+                raise ValueError(
+                    f"Default observatory {default!r} is not registered."
+                )
+        return site.to_earth_location()
+
+
+# Module-level default registry. Callers can pass their own to correct_headers.
+DEFAULT_REGISTRY = ObservatoryRegistry()
+
+
+# ---------------------------------------------------------------------------
+# Options
+# ---------------------------------------------------------------------------
+
+@dataclass
+class HeaderCorrectionOptions:
+
+    """What to compute and how.
+
+    Mirrors the original CLI flags but with sane defaults matching
+    ``header-correct.py`` (--JD --HJD --BJD --eairmass --sidereal all on;
+    --filter_parse off).
+    """
+
+    do_jd: bool = True                  # JD_START / JD_MID / JD_END / JD
+    do_hjd: bool = True                 # HJD / HJD_UTC at mid-exposure
+    do_bjd: bool = True                 # BJD_UTC and BJD_TDB at mid-exposure
+    do_sidereal: bool = True            # SIDEREAL / MEAN_ST / APP_ST / ST
+    do_eairmass: bool = True            # EAIRMASS / SECZ
+    do_filter_parse: bool = False       # space -> underscore in FILTER
+    do_radec_format: bool = True        # rewrite RA/DEC into IRAF sexagesimal
+
+    # Defaults written when the keyword is missing from the FITS header.
+    default_epoch: float = 2000.0
+    default_equinox: str = "J2000.0"
+    default_observatory: str = "BSU"
+
+    # Sexagesimal delimiter for RA/DEC strings.
+    delimiter: str = ":"
+
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+@dataclass
+class HeaderCorrectionReport:
+
+    """Tracks what each call to correct_headers() actually did."""
+
+    file: Path
+    observatory: Optional[str] = None
+    wrote_keys: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+    skipped: list = field(default_factory=list)
+
+    def note(self, key: str) -> None:
+        """Record that ``key`` was written to the FITS header."""
+        self.wrote_keys.append(key)
+
+    def warn(self, msg: str) -> None:
+        """Record a warning encountered during correction."""
+        self.warnings.append(msg)
+
+    def skip(self, what: str) -> None:
+        """Record that a section was skipped (e.g. flag disabled)."""
+        self.skipped.append(what)
+
+
+# ---------------------------------------------------------------------------
+# Helpers (each owns one section of the original script)
+# ---------------------------------------------------------------------------
+
+def _ensure_epoch_equinox(header, opts: HeaderCorrectionOptions, report) -> tuple:
+    """Mirror lines 285-295 of header-correct.py."""
+    if "EPOCH" in header:
+        image_epoch = header["EPOCH"]
+    else:
+        image_epoch = opts.default_epoch
+        header["EPOCH"] = (image_epoch, "Epoch of image coordinates")
+        report.note("EPOCH")
+
+    if "EQUINOX" in header:
+        image_equinox = header["EQUINOX"]
+    else:
+        image_equinox = opts.default_equinox
+        header["EQUINOX"] = (image_equinox, "Equinox of image coordinates")
+        report.note("EQUINOX")
+
+    return image_epoch, image_equinox
+
+
+def _parse_filter(header, report, log) -> None:
+    """Mirror lines 297-327 of header-correct.py."""
+    # Pick a filter source the same way the original script does.
+    if "FILT_ORG" in header:
+        log("Filter already corrected; using FILT_ORG.")
+        filter_image = header["FILT_ORG"]
+    elif "FILTER" in header:
+        filter_image = header["FILTER"]
+    elif "FILTERS" in header:
+        filter_image = header["FILTERS"]
+    else:
+        report.warn("No recognized FILTER keyword present in header.")
+        return
+
+    # Only rewrite if we haven't already and there's a space to replace.
+    if "FILT_ORG" in header:
+        return
+    if " " not in filter_image:
+        return
+
+    header["FILT_ORG"] = (filter_image, "original format of image FILTER keyword")
+    reformatted = re.sub(r" ", "_", filter_image, count=2)
+    header["FILTER"] = (reformatted, "Image filter")
+    header["FILTERS"] = (reformatted, "Image filter")
+    report.note("FILTER")
+    report.note("FILT_ORG")
+    log(f"FILTER changed: {filter_image!r} -> {reformatted!r}")
+
+
+def _format_radec(header, opts: HeaderCorrectionOptions, report, log) -> None:
+    """
+    Mirror lines 329-412 of header-correct.py.
+
+    Reads RA / DEC (preferring OBJCTRA / OBJCTDEC if present) and rewrites
+    the RA and DEC keywords in IRAF format (HH:MM:SS.s, +DD:MM:SS.s).
+    The original values are preserved as RA_ORIG / DEC_ORIG (only on the
+    first run; subsequent runs leave the originals untouched).
+    """
+    # --- RA ---
+    ra_image_angle = None
+    if "OBJCTRA" in header:
+        if "RA_ORIG" not in header and "RA" in header:
+            header["RA_ORIG"] = (header["RA"],
+                                 "original format of image RA coordinate")
+            report.note("RA_ORIG")
+        ra_image_angle = coords.Angle(header["OBJCTRA"], u.hour)
+    elif "RA" in header:
+        if "RA_ORIG" not in header:
+            header["RA_ORIG"] = (header["RA"],
+                                 "original format of image RA coordinate")
+            report.note("RA_ORIG")
+        ra_raw = header["RA"]
+        if isinstance(ra_raw, str):
+            ra_image_angle = coords.Angle(ra_raw, u.hour)
         else:
-            if args.debug == True or args.verbose >= 1:
-                print('Skipping filter keyword fix.')
+            ra_image_angle = coords.Angle(ra_raw, u.degree)
+    else:
+        report.warn("RA or OBJCTRA keyword header does not exist.")
 
-        if args.filter_parse:
-            # We do not need to test to see if the FILTER or FLITERS keyword exists.  That was done above.
-            if 'FILT_ORG' not in current_image[0].header:
-                if ' ' in FILTER_image:
-                    current_image[0].header['FILT_ORG'] = (FILTER_image,'original format of image FILTER keyword')
-                    FILTER_reformatted = re.sub(r' ', '_', FILTER_image, count=2)
-                    current_image[0].header['FILTER'] = (FILTER_reformatted,'Image filter')
-                    current_image[0].header['FILTERS'] = (FILTER_reformatted,'Image filter')
-                    if args.verbose >= 1 or args.debug == True:
-                        print ('FILTER_new  =', FILTER_reformatted, 'saved to header')
-                        if args.verbose >= 2 or args.debug == True:
-                            print('FILTER changed', FILTER_image,'->',FILTER_reformatted)
-                else:
-                    if args.debug == True or args.verbose >= 2:
-                        print('*WARNING* FILTER or FILTERS keyword does not contain a space.  Skipping...')
-        #
-        # Store original values from the image header for RA and DEC keywords from the image header.
-        #
-        if 'RA' in current_image[0].header:                  # Test to see if the RA keyword exists
-            RA_image_angle = current_image[0].header['RA']   # Read the RA keyword from the image header
-        else:                                                # Then it does not exist and set.
-            print('*WARNING* RA keyword header does not exist.')
+    # --- DEC ---
+    dec_image_angle = None
+    if "OBJCTDEC" in header:
+        if "DEC_ORIG" not in header and "DEC" in header:
+            header["DEC_ORIG"] = (header["DEC"],
+                                  "original format of image Dec coordinate")
+            report.note("DEC_ORIG")
+        dec_image_angle = coords.Angle(header["OBJCTDEC"], u.degree)
+    elif "DEC" in header:
+        if "DEC_ORIG" not in header:
+            header["DEC_ORIG"] = (header["DEC"],
+                                  "original format of image Dec coordinate")
+            report.note("DEC_ORIG")
+        dec_image_angle = coords.Angle(header["DEC"], u.degree)
+    else:
+        report.warn("DEC or OBJCTDEC keyword header does not exist.")
 
-        if 'DEC' in current_image[0].header:                 # Test to see if the DEC keyword exists
-            DEC_image_angle = current_image[0].header['DEC'] # Read the DEC keyword from the image header
-        else:                                                # Then it does not exist and set.
-            print('*WARNING* DEC keyword header does not exist.')
-        #
-        # Print out the original values for comparison if debug or verbosity are set.
-        #
-        if args.verbose > 0 or args.debug == True:
-            print ('RA =', RA_image_angle,
-                   'DEC =', DEC_image_angle,
-                   'EPOCH =', image_epoch,
-                   'EQUINOX =', image_equinox)
-        #
-        # First lets check RA.  I might want to change this algorithm to take advantage of the astropy angle
-        # unit type.
-        #
-        if delimiter in RA_image_angle:
-            if args.debug:
-                print('Image:', filename, 'has RA is in the correct format.')
-        else:
-            RA_reformatted_angle = re.sub(r' ', delimiter, RA_image_angle, count=2)
-            if args.verbose > 0 or args.debug == True:
-                print ('RA_new  = ', RA_reformatted_angle, 'saved to header')
-            current_image[0].header['RA_ORIG'] = (RA_image_angle,'original format of image RA coordinate')
-            current_image[0].header['RA'] = RA_reformatted_angle
-        #
-        # Now Lets check DEC.  I might want to change this algorithm to take advantage of the astropy angle
-        # unit type.
-        #
-        if delimiter in DEC_image_angle:
-            if args.debug:
-                print('Image:', filename, 'has DEC in the correct format.')
-        else:
-            DEC_reformatted_angle = re.sub(r' ', delimiter, DEC_image_angle, count=2)
-            if args.verbose > 0 or args.debug == True:
-                print ('DEC_new =', DEC_reformatted_angle, 'saved to header')
-            current_image[0].header['DEC_ORIG'] = (DEC_image_angle,'original format of image DEC coordinate')
-            current_image[0].header['DEC'] = DEC_reformatted_angle
-        #
-        # Print out the values saved to the header if debug or verbosity are set.
-        #
-        if args.verbose > 0 or args.debug == True:
-            print ('RA =',current_image[0].header['RA'],
-                   'DEC =',current_image[0].header['DEC'],
-                   'EPOCH =', image_epoch,
-                   'EQUINOX =', image_equinox)
-        #
-        # if either HJD (default: True), BJD (default: True), Sidereal time (default: True), or
-        # effective airmass (default: True) are asked to be calculated, then determine the observatory location and
-        # set for later use.
-        #
-        if args.HJD_flag == True or args.BJD_flag == True or args.sidereal_flag == True or args.eairmass_flag == True:
-            if 'OBSERVAT' in current_image[0].header:
-                observer_at = current_image[0].header['OBSERVAT']
-            else:
-                observer_at = args.observat[0]
-                current_image[0].header['OBSERVAT'] = observer_at
-                print('*WARNING* OBSERVAT keyword must be set for file:', filename)
-                print('Using value:', observer_at)
+    # Rewrite RA/DEC into IRAF-style sexagesimal.
+    if ra_image_angle is not None:
+        ra_str = coords.Angle.to_string(
+            ra_image_angle, u.hour, sep=opts.delimiter, pad=True
+        )
+        header["RA"] = (ra_str, "RA of target in correct IRAF format")
+        report.note("RA")
 
-            if (observer_at == 'sara-kp') or (observer_at == 'SARA-KP'):
-                observatory_location = coords.EarthLocation.of_site('kpno')
-                if args.debug:
-                    print('Using observatory location', observer_at)
-            elif (observer_at == 'sara-n') or (observer_at == 'SARA-N'):
-                observatory_location = coords.EarthLocation.of_site('kpno')
-                if args.debug:
-                    print('Using observatory location', observer_at)
-            elif (observer_at == 'sara-ct') or (observer_at == 'SARA-CT'):
-                observatory_location = coords.EarthLocation.of_site('ctio')
-                if args.debug:
-                    print('Using observatory location', observer_at)
-            elif (observer_at == 'sara-s') or (observer_at == 'SARA-S'):
-                observatory_location = coords.EarthLocation.of_site('ctio')
-                if args.debug:
-                    print('Using observatory location', observer_at)
-            elif (observer_at == 'sara-rm') or (observer_at == 'SARA-RM'):
-                observatory_location = coords.EarthLocation.of_site('Roque de los Muchachos')
-                if args.debug:
-                    print('Using observatory location', observer_at)
-            elif (observer_at == 'bsu') or (observer_at == 'BSU'):
-                observatory_location = coords.EarthLocation.from_geodetic(lon=BSU_long,
-                                                                          lat=BSU_lat,
-                                                                          height=BSU_alt,
-                                                                          ellipsoid=BSU_datum)
-                if args.debug:
-                    print('Using observatory location', observer_at)
-            elif (observer_at == 'bsuo') or (observer_at == 'BSUO'):
-                observatory_location = coords.EarthLocation.from_geodetic(lon=BSU_long,
-                                                                          lat=BSU_lat,
-                                                                          height=BSU_alt,
-                                                                          ellipsoid=BSU_datum)
-                if args.debug:
-                    print('Using observatory location', observer_at)
-            else:
-                print('WARNING: Unknown observatory location')
-                print('Defaulting to the Ball State University Observatory.')
-                observatory_location = coords.EarthLocation.from_geodetic(lon=BSU_long,
-                                                                          lat=BSU_lat,
-                                                                          height=BSU_alt,
-                                                                          ellipsoid=BSU_datum)
-            if args.debug:
-                print('OBSERVAT =', observer_at)
-                print('Location set', observer_at, 'to', observatory_location)
+    if dec_image_angle is not None:
+        dec_str = coords.Angle.to_string(
+            dec_image_angle, u.degree, sep=opts.delimiter,
+            alwayssign=True, pad=True,
+        )
+        header["DEC"] = (dec_str, "Dec of target in correct IRAF format")
+        report.note("DEC")
 
-            date = Time(current_image[0].header['DATE-OBS'], scale='utc', format='fits', location=observatory_location)
-        else: # then neither HJD, BJD, EAIRMASS, or ST are calculated, and we do not need observer location.
-            date = Time(current_image[0].header['DATE-OBS'], scale='utc', format='fits')
-        #
-        # Read exposure time from header. If keyword is not present assume exposure time = 0 sec.
-        #
-        if 'EXPTIME' in current_image[0].header:
-            exp_time = current_image[0].header['EXPTIME'] * u.second
-        elif 'EXP_TIME' in current_image[0].header:
-            exp_time = current_image[0].header['EXP_TIME'] * u.second
-        else:
-            print('*WARNING* no exposure time set. Assume exposure time = 0 sec.')
-            exp_time = 0 * u.second
-        #
-        # Determine start, mid and end exposure times, and if debug or verbosity set print out times.
-        #
-        half_exp_time = exp_time / 2.0
-        date_at_half_exptime = date + half_exp_time # correct time to the midpoint of the exposure.
-        date_at_end = date + exp_time
-        if args.debug == True or args.verbose >= 2:
-            print ('Exposure times for current image:', filename)
-            print ('date begin =', date.fits)
-            print ('date mid.  =', date_at_half_exptime.fits)
-            print ('date end   =', date_at_end.fits)
-            print ('exptime    =', exp_time, 'half exptime =', half_exp_time)
 
-        delta_t_half_exp = date_at_half_exptime - date
-        if args.debug == True or args.verbose >= 2:
-            print ('JD      =', date.jd, 'JD +1/2 =', date_at_half_exptime.jd)
-            print ('delta_t =', delta_t_half_exp.jd, 'sec =', (delta_t_half_exp.jd * 86400.0))
-        #
-        # Calculate the Julian Date (JD).  This will require positional information like
-        # date and time of observation that is read above.
-        #
-        if args.JD_flag:
-            if 'JD_START' in current_image[0].header:  # We have already run the script.  Save the original value.
-                JD_original = current_image[0].header['JD_START'] # Then store the value for later use
-            elif 'JD' in current_image[0].header:
-                JD_original = current_image[0].header['JD'] # Then store the value for later use
-                if 'JD_ORIG' in current_image[0].header:  # Then we have already run the script on this image.
-                    if args.debug == True or args.verbose >= 3:
-                        print('*NOTE* JD correction has already been run on file:', filename)
-                        print('Not saving JD_ORIG keyword and value to header.')
-                else:  # Then we have not run the script.
-                    current_image[0].header['JD_ORIG'] = (JD_original, 'Original JD value in image.')
-            else:  #  JD does not exist.  Using mid exposure time for JD time.
-                JD_original = date.jd # then store the JD and mid exposure for later use.
-                if 'JD_ORIG' not in current_image[0].header:
-                    current_image[0].header['JD_ORIG'] = (date.jd, 'Original JD from header.')
-                else:
-                    if args.debug == True or args.verbose >= 3:
-                        print('*WARNING* JD_ORIG already exists.  Not altering original value.')
-            current_image[0].header['JD'] = (date_at_half_exptime.jd, 'Julian Date at mid exposure.')
-            current_image[0].header['JD_MID'] = (date_at_half_exptime.jd, 'Julian Date at mid exposure.')
-            current_image[0].header['JD_START'] = (date.jd, 'Julian Date at exposure start.')
-            current_image[0].header['JD_END'] = (date_at_end.jd, 'Julian Date at exposure end.')
-            JD = date_at_half_exptime
-            delta_t_JD = JD.jd - JD_original
-            if args.debug:
-               print('JD corrected by', delta_t_JD,'sec =',(delta_t_JD * 86400.0))
-            if args.log_flag:
-                change_log_line += str(JD_original) + change_log_delimiter
-                change_log_line += str(JD.jd) + change_log_delimiter
-                change_log_line += str(delta_t_JD * 86400.0) + change_log_delimiter
-        else:
-            #
-            # calculate JD was set to False, and do not calculate.
-            #
-            if args.verbose >= 1 or args.debug == True:
-                print('Skipping JD calculation')
-        #
-        # Now calculate the HJDs and enter into the headers.  This will require extracting
-        # positional information like observatory location, RA and Dec of target.
-        #
-        if image_epoch == 2000.0 or image_equinox == 'J2000.0':
-            target_object = coords.SkyCoord(current_image[0].header['RA'],
-                                            current_image[0].header['DEC'],
-                                            unit=(u.hourangle, u.deg),
-                                            obstime=date_at_half_exptime,
-                                            frame='icrs')
-        else:  # Not sure if this will work so it remains untested and not currently supported.
-            target_object = coords.SkyCoord(current_image[0].header['RA'],
-                                            current_image[0].header['DEC'],
-                                            unit=(u.hourangle, u.deg),
-                                            obstime=date_at_half_exptime,
-                                            frame=image_equinox)
+def _resolve_observatory(header, opts: HeaderCorrectionOptions,
+                         registry, report, log):
+    """
+    Mirror lines 426-485 of header-correct.py. Returns EarthLocation.
 
-        if args.HJD_flag:
-            HJD_correction = date_at_half_exptime.light_travel_time(target_object, 'heliocentric')
-            if 'HJD' in current_image[0].header: # then HJDs are already in the headers as store.
-                HJD_original = current_image[0].header['HJD']
-                if 'HJD_ORIG' in current_image[0].header: # Then we have already run the HJD correction.
-                    if args.debug == True or args.verbose >= 3:
-                        print('*NOTE* HJD correction has already been run on file:', filename)
-                        print('Not saving HJD_ORIG keyword and value to header.')
-                else: # we have not run the HJD correction.
-                    current_image[0].header['HJD_ORIG'] = (HJD_original, 'Original HJD value in header.')
-            else: # Then HJDs do not exist
-                if args.debug == True or args.verbose >= 1:
-                    print('*WARNING* HJDs do not exist in file:', filename)
-                HJD_original = date.jd + HJD_correction.jd
-                if 'HJD_ORIG' not in current_image[0].header:
-                    current_image[0].header['HJD_ORIG'] = (HJD_original.jd, 'HJD value from exp start.')
-            HJD = date_at_half_exptime + HJD_correction
-            if args.debug:
-                print('JD',date_at_half_exptime.jd,'+ correction',HJD_correction.jd, '= HJD:',HJD.jd)
-            current_image[0].header['HJD'] = (HJD.jd, 'HJD_UTC at mid exposure')
-            current_image[0].header['HJD_UTC'] = (HJD.jd, 'HJD_UTC at mid exposure')
-            delta_t_HJD = HJD.jd - HJD_original
-            if args.debug:
-               print('HJD corrected by', delta_t_HJD, 'sec =', (delta_t_HJD * 86400.0))
-            if args.log_flag:
-                change_log_line += str(HJD_original) + change_log_delimiter
-                change_log_line += str(HJD.jd) + change_log_delimiter
-                change_log_line += str(delta_t_HJD * 86400.0) + change_log_delimiter
-        else:
-            # calculate HJD was set to False, and do not calculate.
-            if args.verbose >= 1 or args.debug == True:
-                print('Skipping HJD calculation')
-        #
-        # Now calculate the BJDs and enter into the headers.  This will require extracting
-        # positional information like observatory location, RA and Dec of target.
-        #
-        if args.BJD_flag:
-            BJD_correction = date_at_half_exptime.light_travel_time(target_object)
-            BJD_UTC = date_at_half_exptime.utc + BJD_correction
-            BJD_TDB = date_at_half_exptime.tdb + BJD_correction
-            if 'BJD' in current_image[0].header: # Then BJDs calculated and store for later use.
-                BJD_original = current_image[0].header['BJD']
-                if args.debug:
-                    print('Extracting BJD from header as original BJD.')
-            elif 'BJD_TDB' in current_image[0].header: # Then BJDs calculated and store for later use.
-                BJD_original = current_image[0].header['BJD_TDB']
-                if args.debug:
-                    print('Extracting BJD_TDB from header as original BJD.')
-            elif 'BJD_UTC' in current_image[0].header: # Then BJDs calculated and store for later use.
-                BJD_original = current_image[0].header['BJD_UTC']
-                if args.debug:
-                    print('Extracting BJD_UTC from header as original BJD.')
-            if args.debug:
-                print('JD',date_at_half_exptime.jd,' + correction',BJD_correction.jd,'= BJD:',BJD_TDB.jd)
-            current_image[0].header['BJD_UTC'] = (BJD_UTC.jd, 'BJD_UTC at mid exposure')
-            current_image[0].header['BJD_TDB'] = (BJD_TDB.jd, 'BJD_TDB at mid exposure')
-            if args.HJD_flag: # HJDs are determined and use to see difference
-                delta_t_BJDHJD = BJD_TDB.jd - HJD.jd
-                if args.debug:
-                    print('BJD_TDB - HJD =', delta_t_BJDHJD, ': sec =', (delta_t_BJDHJD * 86400.0))
-            else: # HJDs are not determined and use BJD_UTC to see difference
-                delta_t_BJD = BJD_TDB.jd - BJD_UTC.jd
-                if args.debug:
-                    print('BJD_TDB - BJD_UTC =', delta_t_BJD, ': sec =', (delta_t_BJD * 86400.0))
-            if args.log_flag:
-                change_log_line += str(BJD_TDB.jd) + change_log_delimiter
-                change_log_line += str(delta_t_BJDHJD * 86400.0) # This is the last line added to the change log.  No need for a delimiter.
-        else:
-            #
-            # calculate BJD was set to False, and do not calculate.
-            #
-            if args.verbose >= 1 or args.debug == True:
-                print('Skipping BJD calculation')
-        #
-        # Calculate the Sideral time and enter in to the header if the sidereal flag option is set.
-        # This requires information like observatory location and time of exposure information.
-        #
-        if args.sidereal_flag:
-            if args.debug == True or args.verbose >= 2:
-                print('Calculating Sidereal time.')
+    ``registry`` may be either an :class:`ObservatoryRegistry` (this module)
+    or any object exposing ``.get(name) -> EarthLocation | None``. This lets
+    the data-reduction pipeline pass its own registry without having to
+    rebuild it.
+    """
+    if "OBSERVAT" in header:
+        observer_at = header["OBSERVAT"]
+    else:
+        observer_at = opts.default_observatory
+        header["OBSERVAT"] = observer_at
+        report.note("OBSERVAT")
+        report.warn(
+            f"OBSERVAT keyword was missing; defaulted to {observer_at!r}."
+        )
 
-            if 'ST_ORIG' in current_image[0].header:   # Then we have already run the sidereal calculation on this image.  Skip.
-                if args.debug == True or args.verbose >=1:
-                    print('Sidereal Time calculation has already been run.  Usnig ST_ORIG as original value.')
-                sidereal_time_original = current_image[0].header['ST_ORIG']
-            else:  # Then this is our first time running this program.
-                if 'SIDEREAL' in current_image[0].header:  # Then the SIDEREAL keyword exist.
-                    sidereal_time_original = current_image[0].header['SIDEREAL']
-                elif 'ST' in current_image[0].header:      # Then the ST keyword exists
-                    sidereal_time_original = current_image[0].header['ST']
-                else:
-                    # sidereal_time_original is None
-                    if args.debug == True or args.verbose >=2:
-                        print('No sidereal time keyword exists in image header of file:',filename)
+    # Two registry styles supported:
+    #   (a) ObservatoryRegistry from this module -- has .resolve()
+    #   (b) generic object with .get() returning an EarthLocation or None
+    location = None
+    if hasattr(registry, "resolve"):
+        location = registry.resolve(
+            observer_at, default=opts.default_observatory, log=log
+        )
+    else:
+        location = registry.get(observer_at)
+        if location is None and opts.default_observatory:
+            log(
+                f"WARNING: Unknown observatory location {observer_at!r}. "
+                f"Falling back to {opts.default_observatory!r}."
+            )
+            location = registry.get(opts.default_observatory)
+        if location is None:
+            raise ValueError(
+                f"Observatory {observer_at!r} (and default "
+                f"{opts.default_observatory!r}) not found in registry."
+            )
 
-            mean_sidereal_time = Time.sidereal_time(date_at_half_exptime, kind='mean', longitude=observatory_location, model='IAU2006')
-            apparent_sidereal_time = Time.sidereal_time(date_at_half_exptime, kind='apparent', longitude=observatory_location, model='IAU2006A')
+    report.observatory = observer_at
+    return location
 
-            if sidereal_time_original is not None:  # Then the original sidereal time from the image header existed, write to keyword ST_ORIG
-                current_image[0].header['ST_ORIG'] = (sidereal_time_original, 'Original sidereal time at exp start.')
-            current_image[0].header['SIDEREAL']    = (apparent_sidereal_time.to_string(sep=':'), 'Local app sidereal time at exp midpt [IAU2006A]')
-            current_image[0].header['MEAN_ST']     = (mean_sidereal_time.to_string(sep=':'), 'local mean sidereal time at exp midpt [IAU2006]')
-            current_image[0].header['APP_ST']      = (apparent_sidereal_time.to_string(sep=':'), 'local app sidereal time at exp midpt [IAU2006A]')
-            current_image[0].header['ST']          = (apparent_sidereal_time.to_string(sep=':'), 'local app sidereal time at exp midpt [IAU2006A]')
-            if args.debug == True or args.verbose >= 2:
-                print('Wrote LMST:', mean_sidereal_time, 'and LAST:', apparent_sidereal_time, 'to file:', filename)
-        else:
-            if args.verbose >= 1 or args.debug == True:
-                print('Skipping sidereal time calculation.')
-        #
-        # Calculate the effictive airmass of the object at the time of mid exposure. This will
-        # require obervatory location, date and time of obseration, and object location.
-        #
-        if args.eairmass_flag:
-            if args.debug == True or args.verbose >= 1:
-                print('Calculating Effictve Airmass.')
-            horizon_coordinates = target_object.transform_to(coords.AltAz(obstime=date_at_half_exptime, location=observatory_location))
-            secz = horizon_coordinates.secz
 
-            seczminusone = (secz - 1.0)
-            eairmass = secz - 0.0018167 * seczminusone - 0.002875 * seczminusone * seczminusone - 0.0008083 * seczminusone * seczminusone * seczminusone
-            # Check to see if SECZ key header already exists in the header.
-            if 'SECZ' in current_image[0].header:  # SECZ is present in the header
-                secz_original = current_image[0].header['SECZ']
-                if args.debug == True or args.verbose >= 3:
-                    print('in image SECZ:', secz_original, 'calculated SECZ:', secz)
-                current_image[0].header['SECZ_ORG'] = (float(secz_original), 'Orignial value of SecZ in image header.')
-                current_image[0].header['SECZ'] = (float(secz), 'SecZ for airmass estimation.')
-            else:                                  # SECZ is not present in the header
-                if args.debug == True or args.verbose >= 3:
-                    print('Calculated SECZ:', secz)
-                current_image[0].header['SECZ'] = (float(secz), 'SecZ for airmass estimation.')
-            # Determine if the EAIRMASS keyword is present.
-            if 'EAIRMASS' in current_image[0].header:  # Then the EAIRMASS has already been determined.
-                if args.verbose >= 1 or args.debug == True:
-                    print('*WARNING* Effective airmass has already been determined.')
-                eairmass_original = current_image[0].header['EAIRMASS']
-                if args.debug == True or args.verbose >= 1:
-                    print('EAIRMASS:', eairmass_original,'->', eairmass, 'delta_ea:', eairmass_original - eairmass)
-            else:                                      # Then we have not calculated the effective airmass.
-                if args.verbose >= 3 or args.debug == True:
-                    print("keyword EAIRMASS does not exist.  Writing EAIRMASS:", eairmass)
-            current_image[0].header['EAIRMASS'] = (float(eairmass), 'Airmass at mid exposure.')
-            if args.debug == True or args.verbose >= 2:
-                print('Wrote EAIRMASS:', eairmass)
+def _exposure_time(header, log) -> u.Quantity:
+    """Mirror lines 493-501 of header-correct.py."""
+    if "EXPTIME" in header:
+        return header["EXPTIME"] * u.second
+    if "EXP_TIME" in header:
+        return header["EXP_TIME"] * u.second
+    if "EXPOSURE" in header:
+        return header["EXPOSURE"] * u.second
+    log("WARNING: no exposure time set. Assuming exposure time = 0 sec.")
+    return 0 * u.second
+
+
+def _write_jd_suite(header, date, date_mid, date_end, report, log) -> None:
+    """Mirror lines 523-552 of header-correct.py."""
+    if "JD_START" in header:
+        jd_original = header["JD_START"]
+    elif "JD" in header:
+        jd_original = header["JD"]
+        if "JD_ORIG" not in header:
+            header["JD_ORIG"] = (jd_original, "Original JD value in image.")
+            report.note("JD_ORIG")
+    else:
+        jd_original = date.jd
+        if "JD_ORIG" not in header:
+            header["JD_ORIG"] = (date.jd, "Original JD from header.")
+            report.note("JD_ORIG")
+
+    header["JD"]       = (date_mid.jd,  "Julian Date at mid exposure.")
+    header["JD_MID"]   = (date_mid.jd,  "Julian Date at mid exposure.")
+    header["JD_START"] = (date.jd,      "Julian Date at exposure start.")
+    header["JD_END"]   = (date_end.jd,  "Julian Date at exposure end.")
+    for k in ("JD", "JD_MID", "JD_START", "JD_END"):
+        report.note(k)
+
+
+def _build_target(header, image_epoch, image_equinox, date_mid):
+    """Mirror lines 563-574 of header-correct.py."""
+    if image_epoch == 2000.0 or image_equinox == "J2000.0":
+        return coords.SkyCoord(
+            header["RA"], header["DEC"],
+            unit=(u.hourangle, u.deg),
+            obstime=date_mid, frame="icrs",
+        )
+    return coords.SkyCoord(
+        header["RA"], header["DEC"],
+        unit=(u.hourangle, u.deg),
+        obstime=date_mid, frame=image_equinox,
+    )
+
+
+def _write_hjd(header, date, date_mid, target, report, log) -> Optional[Time]:
+    """Mirror lines 576-605 of header-correct.py. Returns the new HJD."""
+    hjd_correction = date_mid.light_travel_time(target, "heliocentric")
+
+    # Preserve the original HJD on the first run.
+    if "HJD" in header:
+        if "HJD_ORIG" not in header:
+            header["HJD_ORIG"] = (header["HJD"],
+                                  "Original HJD value in header.")
+            report.note("HJD_ORIG")
+    else:
+        log("HJD did not exist in header; computing from exposure start.")
+        hjd_orig = date + date.light_travel_time(target, "heliocentric")
+        if "HJD_ORIG" not in header:
+            header["HJD_ORIG"] = (hjd_orig.jd, "HJD value from exp start.")
+            report.note("HJD_ORIG")
+
+    hjd = date_mid + hjd_correction
+    header["HJD"]     = (hjd.jd, "HJD_UTC at mid exposure")
+    header["HJD_UTC"] = (hjd.jd, "HJD_UTC at mid exposure")
+    report.note("HJD")
+    report.note("HJD_UTC")
+    return hjd
+
+
+def _write_bjd(header, date_mid, target, report, log) -> None:
+    """Mirror lines 616-646 of header-correct.py."""
+    bjd_correction = date_mid.light_travel_time(target)
+    bjd_utc = date_mid.utc + bjd_correction
+    bjd_tdb = date_mid.tdb + bjd_correction
+
+    header["BJD_UTC"] = (bjd_utc.jd, "BJD_UTC at mid exposure")
+    header["BJD_TDB"] = (bjd_tdb.jd, "BJD_TDB at mid exposure")
+    report.note("BJD_UTC")
+    report.note("BJD_TDB")
+
+
+def _write_sidereal(header, date_mid, location, report, log) -> None:
+    """Mirror lines 657-685 of header-correct.py."""
+    if "ST_ORIG" in header:
+        sidereal_orig = header["ST_ORIG"]
+    elif "SIDEREAL" in header:
+        sidereal_orig = header["SIDEREAL"]
+    elif "ST" in header:
+        sidereal_orig = header["ST"]
+    else:
+        sidereal_orig = None
+
+    mean_st = Time.sidereal_time(date_mid, kind="mean",
+                                 longitude=location, model="IAU2006")
+    apparent_st = Time.sidereal_time(date_mid, kind="apparent",
+                                     longitude=location, model="IAU2006A")
+
+    if sidereal_orig is not None:
+        header["ST_ORIG"] = (sidereal_orig,
+                             "Original sidereal time at exp start.")
+        report.note("ST_ORIG")
+
+    header["SIDEREAL"] = (apparent_st.to_string(sep=":"),
+                          "Local app sidereal time at exp midpt [IAU2006A]")
+    header["MEAN_ST"]  = (mean_st.to_string(sep=":"),
+                          "local mean sidereal time at exp midpt [IAU2006]")
+    header["APP_ST"]   = (apparent_st.to_string(sep=":"),
+                          "local app sidereal time at exp midpt [IAU2006A]")
+    header["ST"]       = (apparent_st.to_string(sep=":"),
+                          "local app sidereal time at exp midpt [IAU2006A]")
+    for k in ("SIDEREAL", "MEAN_ST", "APP_ST", "ST"):
+        report.note(k)
+
+
+def _write_eairmass(header, date_mid, target, location, report, log) -> None:
+    """Mirror lines 693-726 of header-correct.py (the IRAF setairmass formula)."""
+    altaz = target.transform_to(
+        coords.AltAz(obstime=date_mid, location=location)
+    )
+    secz = altaz.secz
+    s = secz - 1.0
+    eairmass = (
+        secz
+        - 0.0018167 * s
+        - 0.002875  * s * s
+        - 0.0008083 * s * s * s
+    )
+
+    if "SECZ" in header:
+        secz_orig = header["SECZ"]
+        header["SECZ_ORG"] = (float(secz_orig),
+                              "Orignial value of SecZ in image header.")
+        report.note("SECZ_ORG")
+    header["SECZ"] = (float(secz),
+                      "SecZ for airmass estimation at exp midpt.")
+    header["EAIRMASS"] = (float(eairmass),
+                          "Effective Airmass for exposure.")
+    report.note("SECZ")
+    report.note("EAIRMASS")
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+def _safe_call(report, label, fn, *args, **kwargs):
+    """
+    Run a header-writing helper, reporting any failure rather than raising.
+
+    Centralises the try/except/skip/warn pattern that repeats for every
+    toggleable correction. Keeps the caller focused on *what* to compute,
+    not on how to report when it fails.
+    """
+    try:
+        return fn(*args, **kwargs)
+    except (ValueError, TypeError, KeyError, AttributeError, OSError) as e:
+        # We catch a deliberately broad-but-not-bare set of exceptions:
+        # malformed coordinates, missing keys, bad header values. We never
+        # catch e.g. KeyboardInterrupt or SystemExit.
+        report.warn(f"{label} failed: {e}")
+        return None
+
+
+def _read_date_obs(header, location):
+    """Build the DATE-OBS Time anchor (returns None if header lacks DATE-OBS)."""
+    if "DATE-OBS" not in header:
+        return None
+    if location is not None:
+        return Time(header["DATE-OBS"], scale="utc",
+                    format="fits", location=location)
+    return Time(header["DATE-OBS"], scale="utc", format="fits")
+
+
+def _maybe_build_target(opts, header, image_epoch, image_equinox, date_mid, report):
+    """Construct a SkyCoord target if any time-correction needs it."""
+    if not (opts.do_hjd or opts.do_bjd):
+        return None
+    try:
+        return _build_target(header, image_epoch, image_equinox, date_mid)
+    except (ValueError, TypeError, KeyError) as e:
+        report.warn(f"Could not build SkyCoord for HJD/BJD: {e}")
+        return None
+
+
+def _apply_time_corrections(opts, header, date, date_mid, date_end,
+                            target, location, report, log):
+    """
+    Run each toggleable time/coord-derived correction. Each one is gated
+    by its own opts flag and wrapped in _safe_call so a single failure
+    doesn't prevent the others from running.
+    """
+    if opts.do_jd:
+        _safe_call(report, "JD",
+                   _write_jd_suite, header, date, date_mid, date_end, report, log)
+    else:
+        report.skip("JD")
+
+    if opts.do_hjd:
+        if target is not None:
+            _safe_call(report, "HJD",
+                       _write_hjd, header, date, date_mid, target, report, log)
+    else:
+        report.skip("HJD")
+
+    if opts.do_bjd:
+        if target is not None:
+            _safe_call(report, "BJD",
+                       _write_bjd, header, date_mid, target, report, log)
+    else:
+        report.skip("BJD")
+
+    if opts.do_sidereal:
+        if location is not None:
+            _safe_call(report, "Sidereal",
+                       _write_sidereal, header, date_mid, location, report, log)
+    else:
+        report.skip("sidereal")
+
+    if opts.do_eairmass:
+        if target is not None and location is not None:
+            _safe_call(report, "Effective airmass",
+                       _write_eairmass, header, date_mid, target, location, report, log)
+    else:
+        report.skip("eairmass")
+
+
+def correct_headers(
+    image_path,
+    opts: Optional[HeaderCorrectionOptions] = None,
+    registry=None,
+    log: Callable[[str], None] = print,
+) -> HeaderCorrectionReport:
+    """
+    Apply header corrections in-place to a single FITS file.
+
+    Replicates the entire per-file body of header-correct.py — sections are
+    enabled or skipped via flags on ``opts``. The file is opened in update
+    mode and closed before this function returns.
+
+    :param image_path: Path to the FITS file
+    :param opts: Which corrections to run (defaults to all on)
+    :param registry: Observatory lookup. Either an :class:`ObservatoryRegistry`
+        from this module or any object with a ``.get(name)`` method returning
+        an :class:`astropy.coordinates.EarthLocation` (or None). Defaults to
+        the BSU/SARA/SFRO :data:`DEFAULT_REGISTRY`.
+    :param log: Callback for diagnostic output (defaults to print)
+    :return: HeaderCorrectionReport summarising the changes
+    """
+    image_path = Path(image_path)
+    opts = opts or HeaderCorrectionOptions()
+    registry = registry or DEFAULT_REGISTRY
+    report = HeaderCorrectionReport(file=image_path)
+
+    with fits.open(str(image_path), mode="update") as hdul:
+        header = hdul[0].header
+
+        image_epoch, image_equinox = _ensure_epoch_equinox(header, opts, report)
+
+        if opts.do_filter_parse:
+            _parse_filter(header, report, log)
         else:
-            if args.debug == True or args.verbose >= 1:
-                print('Skipping effective airmass calculation.')
-        #
-        # Close the current image, if verbosity or degug is set then announce successful closing.
-        #
-        if args.verbose >= 1 or args.debug == True:
-            current_image.close(verbose = True)
-        else:
-            current_image.close()
-        #
-        # terminate the line for this image and write to log file is log file option set.
-        #
-        if args.log_flag:
-            change_log_line += '\n'
-            change_log.write(change_log_line)
-    #
-    # Close the log file, and if debug or verbosity set (>= 2) then test to make sure it was
-    # closed successfully.
-    #
-    if args.log_flag:
-        change_log.close()
-        if change_log.closed:
-            if args.debug == True or args.verbose >= 2:
-                print('Closed file:', logfilename)
-        else:
-            if args.debug == True or args.verbose >= 2:
-                print('*WARNING* Failed to close file:', logfilename)
-    #
-    # announce completion of the script.
-    #
-    if args.debug == True or args.verbose >= 1:
-        print('Finished!')
+            report.skip("filter_parse")
+
+        if opts.do_radec_format:
+            _format_radec(header, opts, report, log)
+
+        # Everything below needs a time anchor (DATE-OBS) and, for some
+        # corrections, an observer location.
+        need_observer = (
+            opts.do_hjd or opts.do_bjd or opts.do_sidereal or opts.do_eairmass
+        )
+        location = _resolve_observatory(header, opts, registry, report, log) \
+            if need_observer else None
+
+        date = _read_date_obs(header, location)
+        if date is None:
+            report.warn(
+                "DATE-OBS missing; cannot compute JD/HJD/BJD/sidereal/airmass."
+            )
+            return report
+
+        exp_time = _exposure_time(header, log)
+        date_mid = date + exp_time / 2.0
+        date_end = date + exp_time
+
+        target = _maybe_build_target(
+            opts, header, image_epoch, image_equinox, date_mid, report,
+        )
+
+        _apply_time_corrections(
+            opts, header, date, date_mid, date_end,
+            target, location, report, log,
+        )
+
+    return report
+
+
+def correct_headers_batch(
+    image_paths,
+    opts: Optional[HeaderCorrectionOptions] = None,
+    registry=None,
+    log: Callable[[str], None] = print,
+):
+    """
+    Apply correct_headers() to a list of FITS files. Errors on any single
+    file are caught, logged, and recorded in that file's report rather than
+    aborting the batch.
+    """
+    opts = opts or HeaderCorrectionOptions()
+    registry = registry or DEFAULT_REGISTRY
+    reports = []
+    for path in image_paths:
+        try:
+            reports.append(correct_headers(path, opts, registry, log))
+        except Exception as e:
+            r = HeaderCorrectionReport(file=Path(path))
+            r.warn(f"correct_headers raised: {type(e).__name__}: {e}")
+            log(f"WARNING: header correction failed for {path}: {e}")
+            reports.append(r)
+    return reports

@@ -22,6 +22,7 @@ from astropy.io import fits
 from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
 from astropy.wcs import WCS
 import astropy.units as u
+import json
 from astropy import wcs
 
 # Suppress FITS header standards-compliance warnings that are not actionable
@@ -29,9 +30,6 @@ warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
 # Use non-interactive backend so plots can be saved without a display
 matplotlib.use('Agg')
-
-import json
-
 
 _config_loaded_attempted = False
 _loaded_config = None
@@ -42,15 +40,15 @@ def load_filter_config(radec_dir):
     global _loaded_config, _config_path_used, _config_loaded_attempted
     if _config_loaded_attempted:
         return _loaded_config, _config_path_used
-    
+
     _config_loaded_attempted = True
-    
+
     paths_to_check = []
     if radec_dir:
         paths_to_check.append(Path(radec_dir) / "filter_config.json")
     paths_to_check.append(Path.cwd() / "filter_config.json")
     paths_to_check.append(Path.home() / ".EclipsingBinaries" / "filter_config.json")
-    
+
     for p in paths_to_check:
         if p.exists():
             try:
@@ -62,6 +60,104 @@ def load_filter_config(radec_dir):
                 continue
     return None, None
 
+def calculate_target_snr(image_data, target_position, aperture_radius, annulus_radii, read_noise=10.83):
+    """Calculate the Signal-to-Noise Ratio (SNR) for the target star."""
+    target_aperture = CircularAperture(target_position, r=aperture_radius)
+    target_annulus = CircularAnnulus(target_position, *annulus_radii)
+
+    target_phot_table = aperture_photometry(image_data, target_aperture)
+    target_aperture_sum = float(target_phot_table['aperture_sum'][0])
+
+    target_bkg_mean = ApertureStats(image_data, target_annulus).mean
+    if np.isnan(target_bkg_mean) or np.isinf(target_bkg_mean):
+        target_bkg_mean = 0.0
+
+    target_bkg = target_bkg_mean * target_aperture.area
+    target_flx = target_aperture_sum - float(target_bkg)
+
+    target_flux_err = np.sqrt(target_aperture_sum + target_aperture.area * read_noise ** 2)
+
+    if target_flux_err > 0:
+        snr = target_flx / target_flux_err
+    else:
+        snr = 0.0
+
+    return snr, target_flx, target_flux_err, target_bkg_mean
+
+
+def auto_optimize_radii(image_data, target_position):
+    """Auto-suggest optimized aperture and annulus radii based on FWHM and SNR maximization."""
+    from astropy.modeling import models, fitting
+
+    x, y = target_position
+    x_int, y_int = int(np.round(x)), int(np.round(y))
+    box_size = 20
+
+    # Define cutout boundaries, ensuring they stay within the image
+    y_start = max(0, y_int - box_size)
+    y_end = min(image_data.shape[0], y_int + box_size)
+    x_start = max(0, x_int - box_size)
+    x_end = min(image_data.shape[1], x_int + box_size)
+
+    cutout = image_data[y_start:y_end, x_start:x_end]
+
+    # If the target is too close to the edge, return safe defaults
+    if cutout.size == 0:
+        return 4.0, 7.0, (12.0, 19.0)
+
+    yy, xx = np.mgrid[:cutout.shape[0], :cutout.shape[1]]
+
+    # Initialize the 2D Gaussian model
+    g_init = models.Gaussian2D(amplitude=np.max(cutout) - np.median(cutout),
+                               x_mean=x_int - x_start,
+                               y_mean=y_int - y_start,
+                               x_stddev=2.0,
+                               y_stddev=2.0)
+
+    fitter = fitting.LevMarLSQFitter()
+    g_fit = fitter(g_init, xx, yy, cutout - np.median(cutout))
+
+    # Calculate FWHM
+    sigma = np.mean([g_fit.x_stddev.value, g_fit.y_stddev.value])
+    fwhm = 2.355 * sigma
+
+    if fwhm <= 0 or np.isnan(fwhm):
+        fwhm = 4.0 # fallback
+
+    # Starting guess based on FWHM
+    suggested_aperture = 1.75 * fwhm
+    suggested_inner = np.floor(3 * fwhm)
+
+    # Target 10x area for the suggested outer annulus
+    ap_area = np.pi * suggested_aperture**2
+    ann_area = 10.0 * ap_area
+
+    # Maximize SNR over a small range of aperture radii
+    best_snr = 0
+    best_aperture = suggested_aperture
+
+    aperture_range = np.arange(max(1.0, fwhm), min(3 * fwhm, 30.0), 0.5)
+
+    for ap in aperture_range:
+        # Dynamic constraints
+        inn = max(suggested_inner, ap + 1.0)
+        # Approximate outer to maintain 10x annulus area proportion
+        ann_area = 10.0 * np.pi * ap**2
+        out = np.sqrt(ann_area / np.pi + inn**2)
+
+        snr, _, _, _ = calculate_target_snr(image_data, target_position, ap, (inn, out))
+        if snr > best_snr:
+            best_snr = snr
+            best_aperture = ap
+
+    # Calculate final suggested annulus radii based on best aperture
+    best_inner = max(np.floor(3 * fwhm), best_aperture + 1.0)
+    best_aperture_area = np.pi * best_aperture**2
+    suggested_annulus_area = 2 * best_aperture_area
+    best_outer = np.ceil(np.sqrt(suggested_annulus_area / np.pi + best_inner**2))
+
+    return fwhm, best_aperture, (best_inner, best_outer)
+
 def resolve_filter(header, radec_dir=None, log=print):
     global _config_log_printed
     filt_candidates = {
@@ -69,40 +165,41 @@ def resolve_filter(header, radec_dir=None, log=print):
         "Empty/V": "V", "V": "V",
         "Empty/R": "R", "R": "R",
     }
-    
+
     filter_val = None
     if "FILTER" in header:
         filter_val = header["FILTER"]
     elif "FILTERS" in header:
         filter_val = header["FILTERS"]
-        
+
     if filter_val in filt_candidates:
         return filt_candidates[filter_val]
-        
+
     config, config_path = load_filter_config(radec_dir)
     if not config:
         return filter_val
-        
+
     if not _config_log_printed:
         log(f"Using filter configuration from {config_path}")
         _config_log_printed = True
-        
+
     for telescope in config.get("TELESCOPE", []):
         ident = telescope.get("identification", {})
         fits_key = ident.get("fits_key")
         match_value = ident.get("match_value")
-        
+
         if fits_key in header and header[fits_key] == match_value:
             for filt in telescope.get("filters", []):
                 f_key = filt.get("fits_key")
                 f_match = filt.get("match_value")
-                
+
                 if f_key in header and header[f_key] == f_match:
                     return filt.get("processing_symbol")
-                    
+
     return filter_val
 
-def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=None, cancel_event=None):
+def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=None, cancel_event=None,
+         aperture_radius=20, annulus_radii=(30, 50)):
     """
     Entry point for multi-aperture photometry. Iterates over each filter and its
     corresponding RADEC file, dispatching to multiple_AP for the actual photometry.
@@ -136,7 +233,7 @@ def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=N
     try:
         images_path = Path(path)
         files = ccdp.ImageFileCollection(images_path)
-        
+
         valid_radec = [r for r in radec_list if r and Path(r).exists()] if radec_list else []
         radec_dir = Path(valid_radec[0]).parent if valid_radec else None
 
@@ -146,20 +243,20 @@ def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=N
             sym = resolve_filter(header, radec_dir=radec_dir, log=log)
             if sym is not None:
                 grouped_images.setdefault(sym, []).append(file_name)
-                
+
         # To maintain compatibility with existing radec_list order (B, V, R)
         expected_symbols = ["B", "V", "R"]
-        
+
         for idx, sym in enumerate(expected_symbols):
             if cancel_event and cancel_event.is_set():
                 log("Multi-Aperture Photometry was canceled.")
                 return
-                
+
             if radec_list and idx < len(radec_list):
                 radec_file = radec_list[idx]
             else:
                 continue
-                
+
             image_list = grouped_images.get(sym, [])
             if not image_list:
                 continue
@@ -174,7 +271,9 @@ def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=N
                 obj_name=obj_name,
                 radec_file=radec_file,
                 write_callback=write_callback,
-                cancel_event=cancel_event
+                cancel_event=cancel_event,
+                aperture_radius=aperture_radius,
+                annulus_radii=annulus_radii
             )
 
     except Exception as e:
@@ -183,7 +282,7 @@ def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=N
 
 
 def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file="",
-                write_callback=None, cancel_event=None):
+                write_callback=None, cancel_event=None, aperture_radius=20, annulus_radii=(30, 50)):
     """
     Perform aperture photometry on all images for a single filter. Comparison stars
     that fall outside the image bounds are automatically removed and the process
@@ -222,14 +321,10 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
             pbar.write(message)
         else:
             tqdm.write(message)
-    
+
     if cancel_event and cancel_event.is_set():
         log("Task canceled during photometry.")
         return
-
-    # Aperture and annulus sizes in pixels
-    aperture_radius = 20
-    annulus_radii = (30, 50)
 
     # Read noise from the detector, used in flux error calculations
     read_noise = 10.83  # electrons, sourced from FITS headers
@@ -242,14 +337,14 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
         # ---------------------------------------------------------------------------
         df = pd.read_csv(radec_file, skiprows=7, sep=",", header=None)
 
-        all_ra  = df[0].values
+        all_ra = df[0].values
         all_dec = df[1].values
         all_mag = df[4].values
 
         # Separate the target star from the comparison stars
-        target_ra  = all_ra[0]
+        target_ra = all_ra[0]
         target_dec = all_dec[0]
-        comp_ra_all  = all_ra[1:]
+        comp_ra_all = all_ra[1:]
         comp_dec_all = all_dec[1:]
         comp_mag_all = all_mag[1:]
 
@@ -285,7 +380,7 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                 return
 
             # Slice coordinate and magnitude arrays down to currently valid stars
-            cur_comp_ra  = comp_ra_all[valid_comp_indices]
+            cur_comp_ra = comp_ra_all[valid_comp_indices]
             cur_comp_dec = comp_dec_all[valid_comp_indices]
             cur_comp_mag = comp_mag_all[valid_comp_indices]
 
@@ -294,12 +389,12 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
 
             # Accumulators for per-image results
             magnitudes = []
-            mag_err    = []
-            hjd        = []
-            bjd        = []
+            mag_err = []
+            hjd = []
+            bjd = []
 
             # Use tqdm in terminal mode only; the GUI receives progress via write_callback
-            use_tqdm  = not write_callback
+            use_tqdm = not write_callback
             image_iter = (
                 tqdm(image_list, desc=f"Processing {filt} images") if use_tqdm else image_list
             )
@@ -324,12 +419,12 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                 wcs_ = WCS(header)
 
                 # Convert target RA/Dec to pixel coordinates
-                target_sky   = SkyCoord(target_ra, target_dec, unit=(u.h, u.deg), frame='icrs')
+                target_sky = SkyCoord(target_ra, target_dec, unit=(u.h, u.deg), frame='icrs')
                 target_pixel = wcs_.world_to_pixel(target_sky)
                 target_position = (float(target_pixel[0]), float(target_pixel[1]))
 
                 # Convert all active comparison star RA/Dec values to pixel coordinates
-                comp_sky   = SkyCoord(cur_comp_ra, cur_comp_dec, unit=(u.h, u.deg), frame='icrs')
+                comp_sky = SkyCoord(cur_comp_ra, cur_comp_dec, unit=(u.h, u.deg), frame='icrs')
                 comp_pixels = wcs_.world_to_pixel(comp_sky)
                 comp_x = np.array(comp_pixels[0], dtype=float)
                 comp_y = np.array(comp_pixels[1], dtype=float)
@@ -343,7 +438,7 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                 out_of_bounds_idx = None
 
                 for i, (cx, cy) in enumerate(zip(comp_x, comp_y)):
-                    x_in_bounds = margin <= cx < (img_width  - margin)
+                    x_in_bounds = margin <= cx < (img_width - margin)
                     y_in_bounds = margin <= cy < (img_height - margin)
                     if not x_in_bounds or not y_in_bounds:
                         out_of_bounds_idx = i
@@ -377,10 +472,8 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                 bjd.append(header['BJD-OBS'])
 
                 # ---------------------------------------------------------------------------
-                # Define apertures and annuli for the target and each comparison star
+                # Define apertures and annuli for each comparison star
                 # ---------------------------------------------------------------------------
-                target_aperture  = CircularAperture(target_position, r=aperture_radius)
-                target_annulus   = CircularAnnulus(target_position, *annulus_radii)
 
                 comparison_aperture = [
                     CircularAperture(pos, r=aperture_radius) for pos in comparison_positions
@@ -392,7 +485,8 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                 # ---------------------------------------------------------------------------
                 # Perform aperture photometry for the target star
                 # ---------------------------------------------------------------------------
-                target_phot_table = aperture_photometry(image_data, target_aperture)
+                _, target_flx, target_flux_err, _ = calculate_target_snr(
+                    image_data, target_position, aperture_radius, annulus_radii, read_noise)
 
                 # ---------------------------------------------------------------------------
                 # Perform aperture photometry for each comparison star individually so
@@ -404,14 +498,6 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                         aperture_photometry(image_data, comp_ap),
                         aperture_photometry(image_data, comp_an)
                     ))
-
-                # ---------------------------------------------------------------------------
-                # Estimate the sky background for the target star via annulus statistics.
-                # Fall back to zero if the mean is non-finite (e.g. star near the edge).
-                # ---------------------------------------------------------------------------
-                target_bkg_mean = ApertureStats(image_data, target_annulus).mean
-                if np.isnan(target_bkg_mean) or np.isinf(target_bkg_mean):
-                    target_bkg_mean = 0.0
 
                 # Estimate sky background for each comparison star in the same way
                 comparison_bkg_mean = []
@@ -427,14 +513,6 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                 # astropy Table columns can carry shape metadata that causes ambiguous
                 # behaviour in downstream arithmetic if left as Column objects.
                 # ---------------------------------------------------------------------------
-
-                # Background-subtracted flux for the target
-                target_aperture_sum = float(target_phot_table['aperture_sum'][0])
-                target_bkg  = target_bkg_mean * target_aperture.area
-                target_flx  = target_aperture_sum - float(target_bkg)
-
-                # Poisson + read-noise flux error for the target
-                target_flux_err = np.sqrt(target_aperture_sum + target_aperture.area * read_noise ** 2)
 
                 # Background-subtracted flux for each comparison star
                 comparison_flx = [
@@ -457,8 +535,9 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                 # Relative flux for each comparison star: its own flux divided by the sum
                 # of all other comparison stars' fluxes (i.e. excluding itself).
                 # This gives a check-star light curve for each comparison star.
+                # (currently not saved but kept as reference for future check-star analysis)
                 # ---------------------------------------------------------------------------
-                rel_flux_comps = [flx / (total_comp_flx - flx) for flx in comparison_flx]
+                # rel_flux_comps = [flx / (total_comp_flx - flx) for flx in comparison_flx]
 
                 # ---------------------------------------------------------------------------
                 # Target magnitude using the ensemble comparison method.
@@ -484,11 +563,27 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
         # Plot the resulting light curve with error bars and save it to disk
         # ---------------------------------------------------------------------------
         _, ax = plt.subplots(figsize=(11, 8))
-        ax.errorbar(hjd, magnitudes, yerr=mag_err, fmt='o', label="Source_AMag_T1")
+        filter_letter = filt.split("/")[-1]
+        target_display_name = f"{obj_name} - {filter_letter}" if obj_name else f"Target - {filter_letter}"
+
+        ax.errorbar(hjd, magnitudes, yerr=mag_err, fmt='o', label=target_display_name)
 
         fontsize = 14
+        if obj_name:
+            ax.set_title(target_display_name, fontsize=fontsize+2)
+
         ax.set_xlabel('HJD', fontsize=fontsize)
-        ax.set_ylabel('Source_AMag_T1', fontsize=fontsize)
+        ax.set_ylabel(f'Magnitude ({filter_letter})', fontsize=fontsize)
+
+        # Format HJD offset as an integer instead of scientific notation
+        from matplotlib.ticker import ScalarFormatter
+        class IntOffsetFormatter(ScalarFormatter):
+            def get_offset(self):
+                if len(self.locs) == 0 or self.offset == 0:
+                    return ''
+                return f"+{int(self.offset)}"
+
+        ax.xaxis.set_major_formatter(IntOffsetFormatter(useOffset=True))
         ax.invert_yaxis()  # Magnitudes increase downward by convention
         ax.grid()
         ax.legend(loc="upper right", fontsize=fontsize).set_draggable(True)
@@ -547,7 +642,7 @@ def im_plot(image_data, target_aperture, comparison_apertures, target_annulus, c
     )
     plt.colorbar(label='Counts')
 
-    lw    = 1.5  # Line width for aperture outlines
+    lw = 1.5  # Line width for aperture outlines
     alpha = 1.0  # Opacity for aperture outlines
 
     # Target star aperture and annulus in green

@@ -8,7 +8,7 @@
 
 # EclipsingBinaries
 
-EclipsingBinaries is a Python project for faster analysis of eclipsing binary star systems. The package can currently reduce data, find comparison stars from the APASS catalog, calculate and plot O-C values, find the color index and effective temperature, O’Connell effect parameters, and download TESS data and calculate TESS magnitudes from Gaia data.
+EclipsingBinaries is a Python project for faster analysis of eclipsing binary star systems. The package can currently reduce data, find comparison stars from the APASS catalog, calculate and plot O-C values, find the color index and effective temperature, O’Connell effect parameters, download TESS data, and perform interactive multi-aperture photometry with auto-suggested, optimized radii.
 
 -----
 

@@ -4,7 +4,7 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 04/21/2026
+Last Updated: 08/13/2026
 """
 
 import json
@@ -30,6 +30,8 @@ from .tess_data_search import run_tess_search
 from .apass import comparison_selector
 from .multi_aperture_photometry import main as multi_ap, auto_optimize_radii, calculate_target_snr
 from .gaia import target_star as gaia
+from .multi_aperture_photometry import main as multi_ap
+from .OC_plot import BSUO, TESS_OC, all_data, data_fit
 from .OConnell import main as oconnell
 from .color_light_curve import color_plot
 

@@ -2,7 +2,7 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 03/15/2026
+Last Updated: 09/16/2026
 """
 
 # import required packages
@@ -55,8 +55,9 @@ def run_tess_search(system_name, download_all, specific_sector, download_path, w
 
         # The ccd info comes from this paper:
         # https://archive.stsci.edu/files/live/sites/mast/files/home/missions-and-data/active-missions/tess/_documents/TESS_Instrument_Handbook_v0.1.pdf
-        filename = pkg_resources.resource_filename(__name__, 'tess_ccd_info.txt')
-        dc = pd.read_csv(filename, header=None, sep="\t", skiprows=[0])
+        resource_path = pkg_resources.files(__package__).joinpath('tess_ccd_info.txt')
+        with pkg_resources.as_file(resource_path) as filename:
+            dc = pd.read_csv(filename, header=None, sep="\t", skiprows=[0])
 
         gain = dc[3]  # videoscale, gain for the individual camera/ccd
         tess_camera = dc[0]  # camera number

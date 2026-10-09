@@ -42,7 +42,7 @@ Source = "https://github.com/kjkoeller/EclipsingBinaries"
 
 [project.scripts]
 EclipsingBinaries = "EclipsingBinaries.menu:main"
-EB_pipeline = "EclipsingBinaries.pipeline:monitor_directory"
+EB_pipeline = "EclipsingBinaries.pipeline:monitor_directory_cli"
 EB_HCorr = "EclipsingBinaries.headerCorrect:header_correct"
 
 [tool.setuptools]

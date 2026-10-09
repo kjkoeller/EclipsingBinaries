@@ -7,7 +7,7 @@ This program is meant to automatically do the data reduction of the raw images f
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to
 not overwrite the original images.
 """
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, replace
 from datetime import datetime, timezone
 import time
 from pathlib import Path
@@ -439,6 +439,32 @@ def ctio_config() -> ReductionConfig:
 def lapalma_config() -> ReductionConfig:
     """La Palma defaults."""
     return ReductionConfig(gain=1.0, rdnoise=6.3, dark_bool=True, location="lapalma")
+
+
+_SITE_PRESETS = {
+    "bsuo": bsuo_config,
+    "kpno": kpno_config,
+    "ctio": ctio_config,
+    "lapalma": lapalma_config,
+}
+
+
+def site_config(location: str = "bsuo", **overrides) -> ReductionConfig:
+    """
+    Build a ReductionConfig for an observing site.
+
+    Known sites (BSUO, KPNO, CTIO, La Palma) start from their preset gain and
+    read noise. Any other name starts from the package defaults with that
+    location. Overrides left as None are skipped, so optional command-line
+    values can be passed straight through.
+
+    :param location: Site name, case and spaces ignored ("La Palma" works)
+    :param overrides: Any ReductionConfig field, e.g. gain=2.1
+    :return: ReductionConfig
+    """
+    preset = _SITE_PRESETS.get(location.strip().lower().replace(" ", ""))
+    base = preset() if preset else ReductionConfig(location=location.strip())
+    return replace(base, **{key: value for key, value in overrides.items() if value is not None})
 
 
 # ---------------------------------------------------------------------------

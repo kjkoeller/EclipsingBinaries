@@ -81,7 +81,14 @@ To use the pipeline functionality type the following:
 EB_pipeline -h
 ```
 
-This will print out all the options that are available to edit and change. The `-i` and the `-o` are required for the script to run. Otherwise, the script will crash.
+This prints every available option. A typical run looks like:
+
+```
+EB_pipeline raw_images/ reduced_images/ --ra 00:28:27.96 --dec 78:57:42.65 --name NSVS_254037 --loc BSUO
+```
+
+The input and output folders and `--ra`, `--dec` and `--name` are required. See the
+[pipeline docs](https://eclipsingbinaries.readthedocs.io/) for the rest.
 
 -----
 

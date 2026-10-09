@@ -7,7 +7,8 @@ name = "EclipsingBinaries"
 dynamic = ["version"]
 description = "Binary Star Package for Ball State University's Astronomy Research Group"
 readme = "README.md"
-license = "MIT"
+# Matches the LICENSE file (Creative Commons Attribution-NonCommercial 4.0)
+license = "CC-BY-NC-4.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Kyle Koeller" }]
 requires-python = ">=3.12"
@@ -34,7 +35,7 @@ classifiers = [
 
 [project.optional-dependencies]
 test = ["pytest"]
-docs = ["sphinx", "sphinx-astropy", "matplotlib", "furo"]
+docs = ["sphinx", "matplotlib", "furo", "myst-parser"]
 
 [project.urls]
 Documentation = "https://eclipsingbinaries.readthedocs.io/"

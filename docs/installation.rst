@@ -5,15 +5,14 @@ Installation
 Requirements
 ============
 
-EclipsingBinaries has the following requirements:
+EclipsingBinaries needs Python 3.12 or newer. pip installs these packages automatically:
 
-- Python>=3.12
 - astropy>=6.0
 - astroquery>=0.4.6
 - ccdproc>=2.4.0
-- matplotlib>=3.7.1
+- matplotlib>=3.8.0
 - numpy>=1.26
-- pandas>=2.1.0
+- pandas>=2.1.1
 - PyAstronomy>=0.18.1
 - scipy>=1.11.2
 - statsmodels>=0.14
@@ -21,19 +20,27 @@ EclipsingBinaries has the following requirements:
 - pyia>=1.4
 - photutils>=1.8.0
 - tkinterdnd2>=0.6.1
-- python3-tk (Ubuntu/Debian system package)
 
-Ubuntu/Debian users should install the tkinter system package before starting
-the app::
+The list in ``pyproject.toml`` is the authoritative one.
 
-    sudo apt install python3-tk
+tkinter
+-------
 
-Homebrew Python on macOS also leaves tkinter out. Install it with the formula
-that matches your Python version::
+The GUI also needs tkinter, which comes with Python but is left out of some installs:
+
+- **macOS with Homebrew Python** — install the formula that matches your Python version::
 
     brew install python-tk@3.12
 
-The python.org installers for macOS and Windows already include tkinter.
+- **Ubuntu/Debian** — install the system package::
+
+    sudo apt install python3-tk
+
+- **Windows and macOS python.org installers** — already included. On Windows, keep
+  "tcl/tk and IDLE" checked in the installer.
+
+Everything except the GUI works without tkinter, so scripts and the ``EB_pipeline``
+command run on headless machines too.
 
 Installing EclipsingBinaries
 ============================
@@ -41,6 +48,13 @@ Installing EclipsingBinaries
 To install EclipsingBinaries with `pip <https://pip.pypa.io/en/latest/>`_, simply run::
 
     pip install EclipsingBinaries
+
+This installs two commands: ``EclipsingBinaries`` for the GUI (see :ref:`EB`) and
+``EB_pipeline`` for automated reductions (see :ref:`pipeline`).
+
+To check which version you have::
+
+    pip show EclipsingBinaries
 
 Updating
 --------
@@ -56,8 +70,20 @@ To install a specific version, run::
 Development Installation
 ------------------------
 
-To install the development version directly from GitHub::
+To install the development version directly from GitHub, along with the test and
+documentation tools::
 
     git clone https://github.com/kjkoeller/EclipsingBinaries.git
     cd EclipsingBinaries
-    pip install -e .
+    pip install -e ".[test,docs]"
+
+Run the tests with::
+
+    pytest
+
+The tests don't need an internet connection. To run them the way CI does, including the
+oldest supported dependency versions, use ``tox``.
+
+Build these docs with::
+
+    sphinx-build -b html docs docs/_build/html

@@ -56,8 +56,9 @@ Once installed, in the command line type the following:
 EclipsingBinaries
 ```
 
-This will run the `menu.py` file and will initiate all other programs for usage.
-Once installed using pip, you can just go to a command line and type `EclipsingBinaries` to start the program each time.
+This opens the GUI, which has every program in one window. Programs run in the background
+with a Cancel button, and file and folder fields accept drag and drop. See
+[Running EclipsingBinaries](https://eclipsingbinaries.readthedocs.io/en/latest/EB.html) for details.
 
 To check the version you have,
 
@@ -88,7 +89,7 @@ EB_pipeline raw_images/ reduced_images/ --ra 00:28:27.96 --dec 78:57:42.65 --nam
 ```
 
 The input and output folders and `--ra`, `--dec` and `--name` are required. See the
-[pipeline docs](https://eclipsingbinaries.readthedocs.io/) for the rest.
+[pipeline docs](https://eclipsingbinaries.readthedocs.io/en/latest/pipeline.html) for the rest.
 
 -----
 
@@ -98,9 +99,9 @@ The input and output folders and `--ra`, `--dec` and `--name` are required. See 
 - astropy>=6.0
 - astroquery>=0.4.6
 - ccdproc>=2.4.0
-- matplotlib>=3.7.1
+- matplotlib>=3.8.0
 - numpy>=1.26
-- pandas>=2.1.0
+- pandas>=2.1.1
 - PyAstronomy>=0.18.1
 - scipy>=1.11.2
 - statsmodels>=0.14
@@ -108,6 +109,28 @@ The input and output folders and `--ra`, `--dec` and `--name` are required. See 
 - pyia>=1.4
 - photutils>=1.8.0
 - tkinterdnd2>=0.6.1
-- python3-tk (Ubuntu/Debian system package)
+- tkinter for the GUI (see the notes above)
+
+pip installs everything except tkinter. `pyproject.toml` has the authoritative list.
 
 -----
+
+## Development
+
+```
+git clone https://github.com/kjkoeller/EclipsingBinaries.git
+cd EclipsingBinaries
+pip install -e ".[test,docs]"
+pytest
+```
+
+The tests run without an internet connection. See the
+[contributing guide](https://eclipsingbinaries.readthedocs.io/en/latest/contributing.html) for more.
+
+-----
+
+## License
+
+EclipsingBinaries is released under the
+[Creative Commons Attribution-NonCommercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/)
+license. See [LICENSE](LICENSE) for the full text.

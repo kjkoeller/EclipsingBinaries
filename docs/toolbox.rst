@@ -214,9 +214,6 @@ Only stars with Johnson B and V magnitudes below 14 are returned.
 Cousins R
 ^^^^^^^^^
 
-.. note::
-    Utilizes GPU acceleration through ``numba`` for the ``calculations`` function.
-
 The Cousins R magnitude for each comparison star is calculated using the equation
 from `Jester et al. 2005 <https://arxiv.org/pdf/astro-ph/0609736.pdf>`_:
 
@@ -336,7 +333,6 @@ The core O-C calculation is handled by the ``calculate_oc`` function:
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
    :pyobject: calculate_oc
 
-The `Numba <https://numba.pydata.org/>`_ ``@jit`` decorator accelerates this function.
 The eclipse number is determined using floor (positive epoch) or ceiling (negative epoch),
 and O-C values are rounded to five decimal places.
 

@@ -98,8 +98,6 @@ This will print out all the options that are available to edit and change. The `
 - scipy>=1.11.2
 - statsmodels>=0.14
 - tqdm>=4.64.1
-- numba>=0.59.0
-- seaborn>=0.12.2
 - pyia>=1.4
 - photutils>=1.8.0
 - tkinterdnd2>=0.6.1

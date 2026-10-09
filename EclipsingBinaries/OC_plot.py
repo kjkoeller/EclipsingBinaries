@@ -8,13 +8,12 @@ This calculates O-C values and produces an O-C plot.
 
 from math import sqrt, floor, ceil
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.figure import Figure
 from numpy.polynomial import Polynomial
 import statsmodels.formula.api as smf
-import seaborn as sns
-from numba import jit
 from pathlib import Path
+from ._log import make_logger
 
 
 def TESS_OC(T0, T0_err, period, df, output_path, write_callback=None, cancel_event=None):
@@ -43,11 +42,7 @@ def TESS_OC(T0, T0_err, period, df, output_path, write_callback=None, cancel_eve
     str or None
         Path to the saved output file, or None if canceled.
     """
-    def log(message):
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     min_strict = list(df[0])
     min_strict_err = list(df[2])
@@ -109,11 +104,7 @@ def BSUO(T0, T0_err, period, db, dv, dr, output_path, write_callback=None, cance
     str or None
         Path to the saved output file, or None if canceled.
     """
-    def log(message):
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     strict_B = list(db[0])
     strict_B_err = list(db[2])
@@ -180,11 +171,7 @@ def all_data(file_paths, period, output_path, write_callback=None, cancel_event=
     str or None
         Path to the saved merged output file, or None if canceled.
     """
-    def log(message):
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     minimum_list = []
     e_list = []
@@ -253,7 +240,6 @@ def all_data(file_paths, period, output_path, write_callback=None, cancel_event=
     return outfile
 
 
-@jit(forceobj=True)
 def calculate_oc(m, err, T0, T0_err, p):
     """
     Calculates O-C values and errors and finds the eclipse number.
@@ -315,11 +301,7 @@ def data_fit(input_file, period, write_callback=None, cancel_event=None):
     float or None
         The adjusted period from the linear fit, or None if canceled.
     """
-    def log(message):
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     df = pd.read_csv(input_file, header=0, sep=r"\s+")
 
@@ -360,7 +342,8 @@ def data_fit(input_file, period, write_callback=None, cancel_event=None):
     beginningtex = "\\documentclass{report}\n\\usepackage{booktabs}\n\\begin{document}\n"
     endtex = "\\end{document}"
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig = Figure(figsize=(10, 6))
+    ax = fig.subplots()
     i_string = ""
     new_period = period
 
@@ -370,7 +353,6 @@ def data_fit(input_file, period, write_callback=None, cancel_event=None):
         for i in range(1, 3):
             if cancel_event and cancel_event.is_set():
                 log("Task canceled during data fitting.")
-                plt.close(fig)
                 return None
 
             model = Polynomial(np.polynomial.polynomial.polyfit(x1_prim, y1_prim, i))
@@ -385,7 +367,7 @@ def data_fit(input_file, period, write_callback=None, cancel_event=None):
             else:
                 mod = smf.wls(formula="y ~ x", data=df, weights=weights)
                 res = mod.fit()
-                period_add = res.params[1]
+                period_add = res.params["x"]
                 new_period = period + period_add
                 log(f"Period correction from linear fit: {period_add:.8f} days")
                 log(f"Adjusted period: {new_period:.8f} days")
@@ -404,7 +386,6 @@ def data_fit(input_file, period, write_callback=None, cancel_event=None):
     ax.grid()
 
     fig.savefig(plot_path, bbox_inches="tight", dpi=150)
-    plt.close(fig)
     log(f"O-C plot saved to {plot_path}")
 
     return new_period
@@ -436,32 +417,29 @@ def residuals(x, y, x_label, y_label, degree, model, xs,
     write_callback : callable, optional
         Function to log messages.
     """
-    def log(message):
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
-    y_model = model(xs)
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
 
-    raw_dat = pd.DataFrame({x_label: x, y_label: y})
-    model_dat = pd.DataFrame({x_label: xs, y_label: y_model})
+    # Residuals from a polynomial of the requested degree, the same thing
+    # seaborn's residplot(order=degree) drew
+    coeffs = np.polyfit(x, y, degree)
+    resid = y - np.polyval(coeffs, x)
 
-    _, (ax1, ax2) = plt.subplots(2, 1)
+    fig = Figure()
+    ax1, ax2 = fig.subplots(2, 1)
     ax1.grid()
     ax2.grid()
-    sns.lineplot(x=x_label, y=y_label, data=model_dat, ax=ax1, color="red")
-    sns.scatterplot(x=x_label, y=y_label, data=raw_dat, ax=ax1,
-                    color="black", edgecolor="none")
-    sns.residplot(x=x_label, y=y_label, order=degree, data=raw_dat, ax=ax2,
-                  color="black", scatter_kws=dict(edgecolor="none"))
+    ax1.plot(xs, model(xs), color="red")
+    ax1.scatter(x, y, color="black", edgecolor="none")
+    ax1.set_xlabel(x_label)
+    ax1.set_ylabel(y_label)
+    ax2.scatter(x, resid, color="black", edgecolor="none")
     ax2.axhline(y=0, color="red")
+    ax2.set_xlabel(x_label)
+    ax2.set_ylabel("Residuals")
 
-    if output_path:
-        plt.savefig(output_path, bbox_inches="tight", dpi=150)
-        plt.close()
-        log(f"Residuals plot saved to {output_path}")
-    else:
-        plt.savefig("residuals.png", bbox_inches="tight", dpi=150)
-        plt.close()
-        log("Residuals plot saved to residuals.png")
+    output_path = output_path or "residuals.png"
+    fig.savefig(output_path, bbox_inches="tight", dpi=150)
+    log(f"Residuals plot saved to {output_path}")

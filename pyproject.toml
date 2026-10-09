@@ -1,6 +1,59 @@
 [build-system]
-requires = ["setuptools>=64", "setuptools_scm", "wheel"]
+requires = ["setuptools>=77", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "EclipsingBinaries"
+dynamic = ["version"]
+description = "Binary Star Package for Ball State University's Astronomy Research Group"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Kyle Koeller" }]
+requires-python = ">=3.12"
+dependencies = [
+    "astropy>=6.0",
+    "astroquery>=0.4.6",
+    "ccdproc>=2.4.0",
+    "matplotlib>=3.8.0",
+    "numpy>=1.26",
+    "pandas>=2.1.1",
+    "PyAstronomy>=0.18.1",
+    "scipy>=1.11.2",
+    "statsmodels>=0.14",
+    "tqdm>=4.64.1",
+    "pyia>=1.4",
+    "photutils>=1.8.0",
+    "tkinterdnd2>=0.6.1",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+docs = ["sphinx", "sphinx-astropy", "matplotlib", "furo"]
+
+[project.urls]
+Documentation = "https://eclipsingbinaries.readthedocs.io/"
+Source = "https://github.com/kjkoeller/EclipsingBinaries"
+
+[project.scripts]
+EclipsingBinaries = "EclipsingBinaries.menu:main"
+EB_pipeline = "EclipsingBinaries.pipeline:monitor_directory"
+EB_HCorr = "EclipsingBinaries.headerCorrect:header_correct"
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.packages.find]
+# Only the package itself. Without the include, find picked up docs/ and
+# tests/ too and installed them as top-level "docs" and "tests" packages.
+# The examples folder ships as before; listing it as a package just stops
+# setuptools warning that its files were being installed as loose data.
+include = ["EclipsingBinaries*"]
+
 [tool.setuptools_scm]
-write_to = "EclipsingBinaries/_version.py"
+version_file = "EclipsingBinaries/_version.py"

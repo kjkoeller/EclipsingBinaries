@@ -12,6 +12,7 @@ import numpy as np
 import astropy.io.fits as pyfits
 from time import gmtime, strftime
 from .vseq_updated import conversion
+from ._log import make_logger
 from astropy.time import Time
 from astropy.coordinates import EarthLocation, SkyCoord
 from astropy import units as u
@@ -35,15 +36,10 @@ def process_tess_cutout(search_file, pathway, sector, outprefix, write_callback,
     sector: int
         The sector number being downloaded
     """
-    def log(message):
-        """Log messages to the GUI or print to the console."""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     try:
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log(f"Task canceled while processing Sector {sector}.")
             return
 

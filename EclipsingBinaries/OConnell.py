@@ -16,6 +16,7 @@ from tqdm import tqdm
 import numpy as np
 import statistics as st
 from os import path
+from pathlib import Path
 
 # Lambda function to calculate sigma of a function
 sig_f = lambda f, x, sig_x: abs(f(x + sig_x) - f(x - sig_x)) / 2
@@ -31,13 +32,13 @@ def main(filepath="", filter_files=None, obj_name="", period=0, hjd=0, write_cal
             print(message)
 
     try:
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
         multi_OConnell_total(filter_files, hjd, period, order=10, sims=1000,
                              sections=4, section_order=7, plot_only=False, save=True,
-                             outName=(filepath + "\\" + obj_name + ".pdf"),
+                             outName=str(Path(filepath) / f"{obj_name}.pdf"),
                              write_callback=write_callback, cancel_event=cancel_event)
     except Exception as e:
         log(f"An error occurred: {e}")
@@ -430,7 +431,7 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
             a22s.append(oc[6][0])
             a22s_err.append(oc[6][1])
 
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
@@ -465,7 +466,7 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
             OER_line += '& $' + strr(OERs[band]) + r'\pm ' + strr(OERs_err[band]) + '$ '
             LCA_line += '& $' + strr(LCAs[band]) + r'\pm ' + strr(LCAs_err[band]) + '$ '
 
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 

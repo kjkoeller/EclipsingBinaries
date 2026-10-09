@@ -28,12 +28,17 @@ The list of OS’s and Python versions listed below have been tested to be able 
 
 The minimum working Python version is 3.12 and as of right now no versions lower work with all aspects of this package.
 
-For MacOS HomeBrew users, you will need to be built against TK 8.6 since TK 9.0 breaks drag and drop extension.
-For Ubuntu/Debian users, install the system tkinter package before starting the app:
+The GUI uses tkinter, which some Python installs leave out:
+
+- macOS with Homebrew Python: `brew install python-tk@3.12` (match your Python version). The python.org installer already includes it.
+- Windows: the python.org installer includes it as long as "tcl/tk and IDLE" stays checked.
+- Ubuntu/Debian: install the system package before starting the app:
 
 ```
 sudo apt install python3-tk
 ```
+
+Drag and drop works with both Tk 8.6 and Tk 9. If it can't load (for example an Intel Mac running Tk 9), the app still starts and the Browse buttons work as usual.
 
 -----
 
@@ -97,8 +102,7 @@ This will print out all the options that are available to edit and change. The `
 - seaborn>=0.12.2
 - pyia>=1.4
 - photutils>=1.8.0
-- tkinterdnd2>=0.4.3
-- tkmacosx>=1.0.4 (macOS only)
+- tkinterdnd2>=0.6.1
 - python3-tk (Ubuntu/Debian system package)
 
 -----

@@ -11,9 +11,14 @@ from .vseq_updated import io, calc, FT, binning, plot, Flower, Pecaut
 import numpy as np
 import matplotlib.pyplot as plt
 import statistics as st
-from tkinter import *
-from matplotlib.backends.backend_tkagg import (
-    FigureCanvasTkAgg)
+# tkinter is only needed for the standalone color_gui() window. Keeping the
+# import optional lets color_plot() run on machines without Tk, such as
+# headless servers or Homebrew Python without python-tk installed.
+try:
+    from tkinter import *
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+except ImportError:
+    pass
 from matplotlib.figure import Figure
 import textwrap
 

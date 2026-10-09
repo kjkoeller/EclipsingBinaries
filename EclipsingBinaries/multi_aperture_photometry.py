@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt
-import matplotlib
 import warnings
 from tqdm import tqdm
 
@@ -28,8 +27,6 @@ from astropy import wcs
 # Suppress FITS header standards-compliance warnings that are not actionable
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
-# Use non-interactive backend so plots can be saved without a display
-matplotlib.use('Agg')
 
 _config_loaded_attempted = False
 _loaded_config = None

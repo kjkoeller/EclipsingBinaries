@@ -12,7 +12,6 @@ import sys
 MOCK_MODULES = [
     'numba',
     'tkinterdnd2',
-    'tkmacosx',
     'ccdproc',
     'photutils',
     'photutils.aperture',

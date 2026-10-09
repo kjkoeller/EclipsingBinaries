@@ -22,14 +22,20 @@ EclipsingBinaries has the following requirements:
 - seaborn>=0.12.2
 - pyia>=1.4
 - photutils>=1.8.0
-- tkinterdnd2>=0.4.3
-- tkmacosx>=1.0.4 (macOS only)
+- tkinterdnd2>=0.6.1
 - python3-tk (Ubuntu/Debian system package)
 
 Ubuntu/Debian users should install the tkinter system package before starting
 the app::
 
     sudo apt install python3-tk
+
+Homebrew Python on macOS also leaves tkinter out. Install it with the formula
+that matches your Python version::
+
+    brew install python-tk@3.12
+
+The python.org installers for macOS and Windows already include tkinter.
 
 Installing EclipsingBinaries
 ============================

@@ -1,7 +1,7 @@
 # Configuration file for the Sphinx documentation builder.
 
 import datetime
-from configparser import ConfigParser
+import tomllib
 from importlib.metadata import version as get_version
 from unittest.mock import MagicMock
 import os
@@ -24,17 +24,16 @@ MOCK_MODULES = [
 for mod_name in MOCK_MODULES:
     sys.modules[mod_name] = MagicMock()
 
-# Get configuration information from setup.cfg
-conf = ConfigParser()
-conf.read([os.path.join(os.path.dirname(__file__), '..', 'setup.cfg')])
-setup_cfg = dict(conf.items('metadata'))
+# Project metadata lives in pyproject.toml
+with open(os.path.join(os.path.dirname(__file__), '..', 'pyproject.toml'), 'rb') as f:
+    project_meta = tomllib.load(f)['project']
 
 # By default, highlight as Python 3.
 highlight_language = 'python3'
 
 # -- Project information
-project = setup_cfg['name']
-author = setup_cfg['author']
+project = project_meta['name']
+author = project_meta['authors'][0]['name']
 copyright = '{0}, {1}'.format(datetime.datetime.now().year, author)
 
 try:
@@ -52,11 +51,11 @@ man_pages = [('index', project.lower(), project + u' Documentation',
               [author], 1)]
 
 extensions = [
-    'sphinx_astropy',
     'sphinx.ext.autodoc',
     'sphinx.ext.duration',
     'sphinx.ext.doctest',
     'sphinx.ext.intersphinx',
+    'myst_parser',  # renders CHANGELOG.md on the changelog page
 ]
 
 intersphinx_mapping = {

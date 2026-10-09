@@ -1,3 +1,5 @@
+.. _pipeline:
+
 Pipeline
 ========
 
@@ -93,7 +95,9 @@ The pipeline writes the following files to ``OUTPUT_DIR`` at the end of a succes
 - ``[name]_pipeline_summary.txt`` — a summary of the run including total runtime,
   per-stage duration, and any warnings encountered
 
-The summary report looks like this::
+The summary report looks like this:
+
+.. code-block:: text
 
     ============================================================
     Pipeline Summary — NSVS_254037
@@ -107,6 +111,17 @@ The summary report looks like this::
 
     No warnings.
     ============================================================
+
+Exit Codes
+----------
+
+``EB_pipeline`` exits with ``0`` when the run finishes or is stopped cleanly with Ctrl-C,
+``1`` when a stage fails or the inputs are invalid, and ``130`` after a second Ctrl-C. This
+makes it easy to check the result from a script or scheduled task.
+
+Header correction during the reduction uses built-in coordinates for BSUO, KPNO, CTIO,
+La Palma and the SARA sites, so the pipeline doesn't need an internet connection until the
+comparison star selection stage, which queries the APASS and Gaia catalogs.
 
 Process Locking
 ---------------
@@ -143,6 +158,8 @@ For a negative declination::
     Do not use the same folder for both ``INPUT_DIR`` and ``OUTPUT_DIR``. The reduction
     stage writes files to ``OUTPUT_DIR`` and monitoring ``INPUT_DIR`` for new files could
     behave unexpectedly if they overlap.
+
+.. _custom-filter-mapping:
 
 Custom Filter Mapping
 ---------------------

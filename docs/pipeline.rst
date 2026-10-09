@@ -24,7 +24,11 @@ To see all available options::
 
 To start the pipeline::
 
-    EB_pipeline INPUT_DIR OUTPUT_DIR --ra HH:MM:SS.SS --dec DD:MM:SS.SS [options]
+    EB_pipeline INPUT_DIR OUTPUT_DIR --ra HH:MM:SS.SS --dec DD:MM:SS.SS --name OBJECT_NAME [options]
+
+Press Ctrl-C once to stop cleanly: the current stage stops at its next checkpoint, and the
+summary report and lock file are still written and cleaned up. Press Ctrl-C a second time to
+quit immediately.
 
 Required Inputs
 ---------------
@@ -35,6 +39,7 @@ Required Inputs
 
 ``OUTPUT_DIR``
     Path to the folder where reduced images and all pipeline output files will be saved.
+    It is created if it doesn't exist, and must be a different folder from ``INPUT_DIR``.
 
 ``--ra``
     Right ascension of the target in the format ``HH:MM:SS.SS``.
@@ -42,6 +47,10 @@ Required Inputs
 ``--dec``
     Declination of the target in the format ``DD:MM:SS.SS``.
     For negative declinations use ``-DD:MM:SS.SS``.
+
+``--name``
+    Name of the target object. Use underscores instead of spaces (e.g. ``NSVS_254037``).
+    This name is used for all output file names.
 
 Optional Inputs
 ---------------
@@ -51,23 +60,23 @@ Optional Inputs
     data reduction. Default is ``3600`` seconds (1 hour).
 
 ``--loc``
-    Location of the telescope. Accepted values are ``BSUO`` or any site listed in the
-    `Astropy sites list <https://github.com/astropy/astropy-data/blob/gh-pages/coordinates/sites.json>`_.
-    Default is ``None``.
-
-``--name``
-    Name of the target object. Use underscores instead of spaces (e.g. ``NSVS_254037``).
-    This name is used for all output file names. Default is ``NSVS_254037``.
+    Location of the telescope. ``BSUO``, ``KPNO``, ``CTIO`` and ``LaPalma`` come with gain and
+    read noise presets. Any other site listed in the
+    `Astropy sites list <https://github.com/astropy/astropy-data/blob/gh-pages/coordinates/sites.json>`_
+    also works, using the BSUO camera values unless you pass ``--gain`` and ``--rdnoise``.
+    Default is ``BSUO``.
 
 ``--mem``
     Memory limit for the IRAF reduction stage in bytes. Default is ``450e6`` (450 MB).
     For example, to allow 800 MB use ``800e6``.
 
 ``--gain``
-    Gain of the camera in electrons per ADU. Default is ``1.43``.
+    Gain of the camera in electrons per ADU. Defaults to the ``--loc`` preset
+    (``1.43`` for BSUO).
 
 ``--rdnoise``
-    Readout noise of the camera in electrons. Default is ``10.83``.
+    Readout noise of the camera in electrons. Defaults to the ``--loc`` preset
+    (``10.83`` for BSUO).
 
 ``--log-file``
     Optional path to write all log output to a file in addition to the terminal.
@@ -104,9 +113,8 @@ Process Locking
 
 The pipeline creates a ``.pipeline.lock`` file in ``OUTPUT_DIR`` when it starts.
 This prevents a second instance from accidentally running on the same directory at
-the same time. If the pipeline exits unexpectedly, the lock is released automatically.
-If you are certain no other instance is running and the lock file remains, delete it
-manually and restart.
+the same time. The operating system releases the lock if the pipeline exits unexpectedly,
+so a leftover ``.pipeline.lock`` file from a crash does not block the next run.
 
 Example
 -------
@@ -118,8 +126,6 @@ A typical pipeline invocation::
         --name NSVS_254037 \
         --time 3000 \
         --loc CTIO \
-        --gain 1.43 \
-        --rdnoise 10.83 \
         --log-file C:/folder1/pipeline_run.log
 
 For a negative declination::
@@ -130,8 +136,8 @@ For a negative declination::
 
 .. note::
     The ``INPUT_DIR`` and ``OUTPUT_DIR`` positional arguments must come first, in that
-    order, before any ``--`` options. The ``--ra`` and ``--dec`` arguments are required
-    and have no default values.
+    order, before any ``--`` options. The ``--ra``, ``--dec`` and ``--name`` arguments are
+    required and have no default values.
 
 .. warning::
     Do not use the same folder for both ``INPUT_DIR`` and ``OUTPUT_DIR``. The reduction

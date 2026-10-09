@@ -7,7 +7,6 @@ Created: 8/29/2022
 Last Updated: 10/09/2026
 """
 
-import dataclasses
 import queue
 import sys
 import threading
@@ -35,8 +34,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 from photutils.aperture import CircularAperture, CircularAnnulus
 
-from .IRAF_Reduction import (run_reduction, ReductionConfig, bsuo_config, kpno_config,
-                             ctio_config, lapalma_config)
+from .IRAF_Reduction import run_reduction, site_config
 from .tess_data_search import run_tess_search
 from .apass import comparison_selector
 from .multi_aperture_photometry import main as multi_ap, auto_optimize_radii, calculate_target_snr
@@ -73,14 +71,6 @@ DND_FILES = "DND_Files"
 # How often the main thread checks for log lines and other updates queued
 # by worker threads, in milliseconds.
 UI_POLL_MS = 50
-
-# Reduction presets for the sites that have their own gain and read noise
-_SITE_PRESETS = {
-    "bsuo": bsuo_config,
-    "kpno": kpno_config,
-    "ctio": ctio_config,
-    "lapalma": lapalma_config,
-}
 
 
 def _example_path(*parts):
@@ -816,11 +806,9 @@ class ProgramLauncher(tk.Tk):
             self.write_to_log("Error: Calibrated images path is required.")
             return
 
-        preset = _SITE_PRESETS.get(loc.lower())
         try:
-            base = preset() if preset else ReductionConfig(location=loc)
-            cfg = dataclasses.replace(base, dark_bool=use_dark_frames,
-                                      overscan_region=overscan_region, trim_region=trim_region)
+            cfg = site_config(loc, dark_bool=use_dark_frames,
+                              overscan_region=overscan_region, trim_region=trim_region)
         except ValueError as e:
             self.write_to_log(f"Error: {e}")
             return

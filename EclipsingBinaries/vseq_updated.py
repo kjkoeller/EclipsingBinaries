@@ -1952,8 +1952,10 @@ class plot:
         Returns:
             tuple: Axes and figure objects.
         """
-        if fig == None:
-            fig = plt.figure(1, figsize=figsize, dpi=dpi)
+        if fig is None:
+            # A new figure each call. This used to reuse figure 1, so a second
+            # call drew its axes on top of whatever the first one left behind.
+            fig = plt.figure(figsize=figsize, dpi=dpi)
         axs = fig.subplots(len(height_ratios), sharex=sharex, sharey=sharey,
                            gridspec_kw={'hspace': hspace, 'height_ratios': height_ratios})
         return axs, fig
@@ -2135,7 +2137,7 @@ class Roche:
             return -r * q / (r ** 2 + z ** 2) ** (3 / 2) - (r + np.cos(phi)) / (
                     1 + r ** 2 + z ** 2 + 2 * r * np.cos(phi)) ** (3 / 2) + np.cos(phi) + (1 + q) * r
         else:
-            return print('Invalid body, choose M1 or M2.')
+            raise ValueError("Invalid body, choose M1 or M2.")
 
     def gen_Kopal_zero(rho, phi, z, q, Kopal,
                        xcm=None, ycm=0, zcm=0):

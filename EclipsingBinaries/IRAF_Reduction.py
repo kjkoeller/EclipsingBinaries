@@ -28,6 +28,7 @@ import ccdproc as ccdp
 import numpy as np
 
 from .headerCorrect import (
+    REGISTRY_SITE_COORDS,
     HeaderCorrectionOptions,
     correct_headers as _correct_headers,
 )
@@ -36,6 +37,7 @@ from .runSummary import (
     finalize as _finalize_summary,
     write_summary,
 )
+from ._log import make_logger
 
 # Suppress FITS standard-compliance header warnings
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
@@ -221,11 +223,12 @@ class ObservatoryRegistry:
     used by the header-correction stage for HJD/BJD/sidereal/airmass
     calculations.
 
-    Defaults cover the BSU and BSU-affiliated SARA sites plus SFRO. Sites
-    that astropy already knows about (KPNO, CTIO, Roque de los Muchachos)
-    are looked up via ``EarthLocation.of_site``; explicit BSU/BSUO/SFRO
+    Defaults cover the BSU and BSU-affiliated SARA sites plus SFRO. BSU/BSUO/SFRO
     coordinates are taken from the BSU Cooper Science observatory record
-    (R. Berrington, BSU).
+    (R. Berrington, BSU). KPNO, CTIO and La Palma use the same values as
+    astropy's site registry, stored here so header correction works without
+    an internet connection. Any other name falls back to
+    ``EarthLocation.of_site``, which downloads the registry the first time.
 
     Use :meth:`register` to add custom sites without modifying source.
     """
@@ -258,13 +261,24 @@ class ObservatoryRegistry:
                 ellipsoid="WGS84",
             ),
         }
+        # KPNO, CTIO and La Palma share their coordinates with headerCorrect,
+        # under the other names astropy accepts for them as well
+        other_names = {
+            "KPNO": ("KITT PEAK", "KITT PEAK NATIONAL OBSERVATORY"),
+            "CTIO": ("CERRO TOLOLO", "CERRO TOLOLO INTERAMERICAN OBSERVATORY"),
+            "LAPALMA": ("ROQUE DE LOS MUCHACHOS",),
+        }
+        for key, (lon, lat, height) in REGISTRY_SITE_COORDS.items():
+            loc = EarthLocation.from_geodetic(lon=lon * u.deg, lat=lat * u.deg, height=height * u.m)
+            for name in (key, *other_names.get(key, ())):
+                explicit[name] = loc
+
         # Pre-fill explicit entries; keep _sites dict normalized to uppercase keys
         for key, loc in explicit.items():
             self._sites.setdefault(key, loc)
 
-        # SARA partner sites resolve to the host observatory in astropy's
-        # site database. We store the alias name and resolve lazily so we
-        # don't pay the lookup cost unless a frame uses one of these sites.
+        # SARA partner sites resolve to their host observatory, which is one
+        # of the entries above.
         sara_aliases = {
             "SARA-KP": "kpno",
             "SARA-N": "kpno",
@@ -309,8 +323,12 @@ class ObservatoryRegistry:
 
         # SARA / known-alias hit — resolve, cache, return
         if upper in self._astropy_aliases:
+            target = self._astropy_aliases[upper]
+            if target.upper() in self._sites:
+                self._sites[upper] = self._sites[target.upper()]
+                return self._sites[upper]
             try:
-                loc = EarthLocation.of_site(self._astropy_aliases[upper])
+                loc = EarthLocation.of_site(target)
                 self._sites[upper] = loc
                 return loc
             except Exception:
@@ -855,11 +873,7 @@ def run_reduction(
     if cfg is None:
         cfg = bsuo_config()
 
-    def log(message):
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     def canceled():
         return cancel_event is not None and cancel_event.is_set()

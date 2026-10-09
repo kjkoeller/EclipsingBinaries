@@ -10,7 +10,6 @@ import sys
 # Mock heavy dependencies that are not needed to build docs
 # and may not be installable in the ReadTheDocs environment
 MOCK_MODULES = [
-    'numba',
     'tkinterdnd2',
     'ccdproc',
     'photutils',

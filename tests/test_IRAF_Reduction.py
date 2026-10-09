@@ -650,6 +650,27 @@ class TestObservatoryRegistry(unittest.TestCase):
         # Some kind of warning should have been logged
         self.assertTrue(any("NOWHERE" in m for m in msgs))
 
+    def test_builtin_sites_resolve_without_network(self):
+        # Every built-in site should come from local coordinates so header
+        # correction still works at a telescope with no internet connection
+        from unittest import mock
+        from astropy.coordinates import EarthLocation
+        from EclipsingBinaries.IRAF_Reduction import ObservatoryRegistry as ReductionRegistry
+
+        names = ["SARA-KP", "SARA-N", "SARA-CT", "SARA-S", "SARA-RM", "KPNO", "CTIO", "LAPALMA"]
+        with mock.patch.object(EarthLocation, "of_site", side_effect=AssertionError("tried to download")):
+            for name in names:
+                with self.subTest(site=name):
+                    self.assertIsNotNone(ObservatoryRegistry().get(name).to_earth_location())
+                    self.assertIsNotNone(ReductionRegistry().get(name))
+
+    def test_la_palma_matches_astropy_registry(self):
+        # Same numbers as astropy's sites.json entry for "lapalma"
+        loc = ObservatoryRegistry().get("SARA-RM").to_earth_location()
+        self.assertAlmostEqual(loc.lat.deg, 28.758333333, places=6)
+        self.assertAlmostEqual(loc.lon.wrap_at("180d").deg, -17.88, places=6)
+        self.assertAlmostEqual(loc.height.to_value("m"), 2327.0, places=3)
+
 
 # ---------------------------------------------------------------------------
 # Adapter

@@ -8,8 +8,8 @@ Editor: Kyle Koeller
 """
 
 from .vseq_updated import io, calc, FT, binning, plot, Flower, Pecaut
+from ._log import make_logger
 import numpy as np
-import matplotlib.pyplot as plt
 import statistics as st
 # tkinter is only needed for the standalone color_gui() window. Keeping the
 # import optional lets color_plot() run on machines without Tk, such as
@@ -89,12 +89,7 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
 
     :return: returns the B-V value and other assorted values
     """
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     B_HJD, B_mag, _ = io.importFile_pd(Bfile)[:3:]
     V_HJD, V_mag, _ = io.importFile_pd(Vfile)[:3:]
@@ -203,12 +198,7 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
     :param fs:
     :return: assorted values
     """
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     B_V = subtract_LC(Bfile, Vfile, Epoch, period, max_tol=max_tol, lower_lim=lower_lim, FTinterp=FTinterp, index="BV", write_callback=write_callback, cancel_event=cancel_event)
     Bphase, Bmag, B_interp_mag = B_V[1][:3:]
@@ -216,7 +206,8 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
     aB_minus_V = B_V[0][3]
     quadcolor, colorerr = B_V[3:5:]
     if Rfile == '':
-        axs, _ = plot.multiplot((7, 7.5), height_ratios=[8, 4.5])
+        fig = Figure(figsize=(7, 7.5), dpi=256)
+        axs, _ = plot.multiplot(height_ratios=[8, 4.5], fig=fig)
         mag = axs[0]
         bv = axs[1]
         mag.plot(Vphase, Vmag, 'og', ms=2)
@@ -243,11 +234,13 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
         # quadcolor,colorerr=B_V[3:5:]
         bv.axhline(quadcolor, color='gray', linewidth=None)
     else:
-        V_R = subtract_LC(Vfile, Rfile, Epoch, period, max_tol, lower_lim=lower_lim, index="VR")
+        V_R = subtract_LC(Vfile, Rfile, Epoch, period, max_tol, lower_lim=lower_lim, index="VR",
+                          write_callback=write_callback, cancel_event=cancel_event)
         Rphase, Rmag = V_R[2][:2:]
         # V_interp_mag = V_R[1][2]
         aV_minus_R = V_R[0][3]
-        axs, fig = plot.multiplot((7, 9), height_ratios=[8, 3, 3])
+        fig = Figure(figsize=(7, 9), dpi=256)
+        axs, _ = plot.multiplot(height_ratios=[8, 3, 3], fig=fig)
         mag = axs[0]
         bv = axs[2]
         vr = axs[1]
@@ -279,7 +272,7 @@ def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile=
         vr.set_ylabel(r'$\rm V-R_C$', fontsize=fs * 1.2)
         bv.set_xlabel(r'$\Phi$', fontsize=fs * 1.2)
     if save:
-        plt.savefig(outName, bbox_inches='tight')
+        fig.savefig(outName, bbox_inches='tight')
     # plt.show()
     log(f"Color Temp = {quadcolor} {colorerr}")
 

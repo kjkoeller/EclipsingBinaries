@@ -18,13 +18,13 @@ from astropy import wcs
 from astropy.io import fits
 from astropy.visualization import ZScaleInterval
 
-from numba import jit
-import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 import warnings
 from PyAstronomy import pyasl
 
 from .gaia import tess_mag as ga
 from .vseq_updated import isNaN, conversion
+from ._log import make_logger
 
 # turn off this warning that just tells the user,
 # "The warning raised when the contents of the FITS header have been modified to be standards compliant."
@@ -52,15 +52,10 @@ def comparison_selector(ra: str = "", dec: str = "", pipeline: bool = False, fol
     :return: A list of stars that are the most likely to be on the AIJ list of stars
     """
 
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     try:
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
@@ -124,15 +119,10 @@ def cousins_r(ra, dec, pipeline, folder_path, obj_name, write_callback, cancel_e
     :return: Outputs a file to be used for R_c values
     """
 
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     try:
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log("Task canceled before starting.")
             return
 
@@ -233,15 +223,10 @@ def query_vizier(ra_input, dec_input, write_callback, cancel_event):
     :return: table result from Vizier
     """
 
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     try:
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
@@ -394,15 +379,10 @@ def catalog_finder(ra, dec, pipeline, folder_path, obj_name, write_callback, can
     :return: Text file pathway, RA, and DEC
     """
 
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     try:
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
@@ -611,15 +591,10 @@ def create_radec(
     :return: None but saves the RADEC files to user specified locations
     """
 
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     try:
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
         filters = ["B", "V", "R", "I", "g", "r", "i", "T"]
@@ -635,7 +610,7 @@ def create_radec(
         # to write lines to the file in order create new RADEC files for each filter
         file_list = []
         for fcount, filt in enumerate(filters):
-            if cancel_event.is_set():
+            if cancel_event is not None and cancel_event.is_set():
                 log("Task canceled.")
                 return
             if filt != "T":
@@ -685,18 +660,14 @@ def overlay(df, tar_ra, tar_dec, fits_file, folder_path: str = "", obj_name: str
     :param write_callback: Optional callback to write log messages
     :return: File path to saved overlay image, or None when no FITS image is available
     """
+    log = make_logger(write_callback)
+
     if not fits_file:
-        if write_callback:
-            write_callback("No science image provided. Skipping overlay.")
-        else:
-            print("No science image provided. Skipping overlay.")
+        log("No science image provided. Skipping overlay.")
         return
 
     if not os.path.exists(fits_file):
-        if write_callback:
-            write_callback(f"Science image path does not exist: {fits_file}. Skipping overlay.")
-        else:
-            print(f"Science image path does not exist: {fits_file}. Skipping overlay.")
+        log(f"Science image path does not exist: {fits_file}. Skipping overlay.")
         return
 
     # If a directory is given, find the first FITS file within it
@@ -704,10 +675,7 @@ def overlay(df, tar_ra, tar_dec, fits_file, folder_path: str = "", obj_name: str
         fits_extensions = ('.fits', '.fts', '.fit', '.FITS', '.FTS', '.FIT')
         candidates = sorted(f for f in os.listdir(fits_file) if f.endswith(fits_extensions))
         if not candidates:
-            if write_callback:
-                write_callback(f"No FITS files found in {fits_file}. Skipping overlay.")
-            else:
-                print(f"No FITS files found in {fits_file}. Skipping overlay.")
+            log(f"No FITS files found in {fits_file}. Skipping overlay.")
             return
         fits_file = os.path.join(fits_file, candidates[0])
 
@@ -736,12 +704,12 @@ def overlay(df, tar_ra, tar_dec, fits_file, folder_path: str = "", obj_name: str
 
     # plot the image and the overlays
     wcs = WCS(header)
-    fig = plt.figure(figsize=(12, 8))
+    fig = Figure(figsize=(12, 8))
     fig.text(.5, 0.02, txt, ha='center')
-    ax = plt.subplot(projection=wcs)
-    plt.imshow(image, origin='lower', cmap='cividis', aspect='equal', vmin=vmin, vmax=vmax)
-    plt.xlabel('RA')
-    plt.ylabel('Dec')
+    ax = fig.add_subplot(projection=wcs)
+    ax.imshow(image, origin='lower', cmap='cividis', aspect='equal', vmin=vmin, vmax=vmax)
+    ax.set_xlabel('RA')
+    ax.set_ylabel('Dec')
 
     overlay = ax.get_coords_overlay('icrs')
     overlay.grid(color='white', ls='dotted')
@@ -755,23 +723,21 @@ def overlay(df, tar_ra, tar_dec, fits_file, folder_path: str = "", obj_name: str
     # annotates onto the image the index number and Johnson V magnitude
     for x, y in zip(ra_cat_new, dec_cat_new):
         px, py = wcs.wcs_world2pix(x, y, 0.)
-        plt.annotate(str(index_num[count]), xy=(px + 30, py - 50), color="white", fontsize=12)
+        ax.annotate(str(index_num[count]), xy=(px + 30, py - 50), color="white", fontsize=12)
         count += 1
 
-    plt.gca().invert_xaxis()
-    plt.legend(bbox_to_anchor=(1.45, 1.01), fancybox=False, shadow=False)
+    ax.invert_xaxis()
+    ax.legend(bbox_to_anchor=(1.45, 1.01), fancybox=False, shadow=False)
 
     output_dir = folder_path if folder_path else os.path.dirname(os.path.abspath(fits_file))
     overlay_name = f"{obj_name}_overlay.png" if obj_name else "overlay.png"
     overlay_path = os.path.join(output_dir, overlay_name)
     os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(overlay_path, bbox_inches='tight', dpi=256)
-    plt.close(fig)
+    fig.savefig(overlay_path, bbox_inches='tight', dpi=256)
 
     return overlay_path
 
 
-@jit(forceobj=True)
 def calculations(B, V, g, r, i, e_B, e_V, e_g, e_r, e_i, count):
     """
     Calculates (O-C) values

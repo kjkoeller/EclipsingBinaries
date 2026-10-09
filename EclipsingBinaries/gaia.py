@@ -23,6 +23,7 @@ import socket
 import time
 
 from .vseq_updated import splitter
+from ._log import make_logger
 
 def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_event=None):
     """
@@ -32,15 +33,10 @@ def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_ev
     :return: Outputs a file with the specific parameters
     """
 
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     try:
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
@@ -73,7 +69,7 @@ def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_ev
                 0.001388888888888889)
         )=1""".format(ra, dec, ra, dec))
 
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
@@ -150,12 +146,7 @@ def _query_single_tic_region(
     write_callback=None,
     cancel_event=None
 ) -> pd.DataFrame:
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     required_columns = ["_RAJ2000", "_DEJ2000", "Tmag", "e_Tmag"]
     vizier_servers = (
@@ -222,12 +213,7 @@ def _query_tic_catalog(
     write_callback=None,
     cancel_event=None
 ) -> pd.DataFrame:
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     if cancel_event and cancel_event.is_set():
         log("Task canceled.")
@@ -349,12 +335,7 @@ def tess_mag(ra, dec, write_callback, cancel_event, apass_vmag=None):
 
     :return: list of TESS magnitudes and errors
     """
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
     try:
         if cancel_event and cancel_event.is_set():
             log("Task canceled.")

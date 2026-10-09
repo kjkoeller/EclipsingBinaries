@@ -37,6 +37,23 @@ from astropy import units as u
 # Observatory registry
 # ---------------------------------------------------------------------------
 
+# Host observatories for the SARA sites, plus the KPNO/CTIO/La Palma presets.
+# The values are the ones in astropy's site registry (IRAF Observatory
+# Database), so results match EarthLocation.of_site exactly, but nothing has
+# to be downloaded. Each entry is (east-positive longitude, latitude, height
+# in meters).
+REGISTRY_SITE_COORDS = {
+    "KPNO": (248.4, 31.96333333333333, 2120.0),
+    "CTIO": (289.185, -30.165277777777778, 2215.0),
+    "LAPALMA": (342.12, 28.758333333333333, 2327.0),
+}
+
+
+def _registry_site(name, host):
+    lon, lat, height = REGISTRY_SITE_COORDS[host]
+    return ObservatorySite(name=name, lat=str(lat), lon=str(lon), altitude_m=height)
+
+
 @dataclass(frozen=True)
 class ObservatorySite:
 
@@ -99,11 +116,14 @@ class ObservatoryRegistry:
             lat="31:32:49.5", lon="-99:22:56.0",
             altitude_m=464.6, ellipsoid="WGS84", timezone=-6,
         ),
-        ObservatorySite(name="SARA-KP", astropy_name="kpno"),
-        ObservatorySite(name="SARA-N", astropy_name="kpno"),
-        ObservatorySite(name="SARA-CT", astropy_name="ctio"),
-        ObservatorySite(name="SARA-S", astropy_name="ctio"),
-        ObservatorySite(name="SARA-RM", astropy_name="Roque de los Muchachos"),
+        _registry_site("SARA-KP", "KPNO"),
+        _registry_site("SARA-N", "KPNO"),
+        _registry_site("SARA-CT", "CTIO"),
+        _registry_site("SARA-S", "CTIO"),
+        _registry_site("SARA-RM", "LAPALMA"),
+        _registry_site("KPNO", "KPNO"),
+        _registry_site("CTIO", "CTIO"),
+        _registry_site("LAPALMA", "LAPALMA"),
     )
 
     def __init__(self, sites=None):

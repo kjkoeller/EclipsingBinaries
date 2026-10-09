@@ -8,6 +8,7 @@ Last Updated: 09/16/2026
 # import required packages
 from astroquery.mast import Tesscut
 from .tesscut import process_tess_cutout
+from ._log import make_logger
 from os.path import exists
 import pandas as pd
 import os
@@ -34,15 +35,10 @@ def run_tess_search(system_name, download_all, specific_sector, download_path, w
         Callback to log progress or errors to the GUI.
     """
 
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
     try:
         # Check for cancellation
-        if cancel_event.is_set():
+        if cancel_event is not None and cancel_event.is_set():
             log("Task canceled before starting.")
             return
 
@@ -104,7 +100,7 @@ def run_tess_search(system_name, download_all, specific_sector, download_path, w
         if not download_all:
             log("Downloading all available sectors.")
             for sector in sector_table["sector"]:
-                if cancel_event.is_set():
+                if cancel_event is not None and cancel_event.is_set():
                     log(f"Task canceled while processing Sector {sector}.")
                     return
                 download_sector(system_name, sector, download_path, write_callback, cancel_event)
@@ -137,12 +133,7 @@ def download_sector(system_name, sector, download_path, write_callback, cancel_e
         to write log messages to the GUI
     """
 
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     try:
         if not exists(download_path):

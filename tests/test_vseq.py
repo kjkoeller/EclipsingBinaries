@@ -651,3 +651,29 @@ def test_calc_newton_linear():
 def test_calc_newton_max_iter_returns_false():
     f = lambda x: x ** 3 - x - 1000
     assert calc.Newton(f, 0.0, e=1e-15, max_iter=2) is False
+
+
+# ===========================================================================
+# plot.multiplot
+# ===========================================================================
+def test_multiplot_makes_a_new_figure_each_call():
+    import matplotlib.pyplot as plt
+
+    axs1, fig1 = plot.multiplot(height_ratios=[3, 1])
+    axs2, fig2 = plot.multiplot(height_ratios=[3, 1])
+    try:
+        assert fig1 is not fig2
+        # A reused figure would have collected four axes by now
+        assert len(fig2.axes) == 2
+    finally:
+        plt.close(fig1)
+        plt.close(fig2)
+
+
+def test_multiplot_uses_a_supplied_figure():
+    from matplotlib.figure import Figure
+
+    fig = Figure()
+    axs, returned = plot.multiplot(height_ratios=[8, 3, 3], fig=fig)
+    assert returned is fig
+    assert len(axs) == 3

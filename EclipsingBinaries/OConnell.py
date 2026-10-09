@@ -10,12 +10,13 @@ Last Edits Done By: Kyle Koeller
 """
 
 # Importing necessary libraries
-import matplotlib.pyplot as plt
+import matplotlib
+from matplotlib.figure import Figure
 from .vseq_updated import plot, binning, calc, FT, OConnell
+from ._log import make_logger
 from tqdm import tqdm
 import numpy as np
 import statistics as st
-from os import path
 from pathlib import Path
 
 # Lambda function to calculate sigma of a function
@@ -24,12 +25,7 @@ sig_f = lambda f, x, sig_x: abs(f(x + sig_x) - f(x - sig_x)) / 2
 
 # Main function for calculating O'Connell Effect
 def main(filepath="", filter_files=None, obj_name="", period=0, hjd=0, write_callback=None, cancel_event=None):
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     try:
         if cancel_event is not None and cancel_event.is_set():
@@ -45,14 +41,6 @@ def main(filepath="", filter_files=None, obj_name="", period=0, hjd=0, write_cal
         raise
 
 
-def quick_tex(thing):
-    """
-    Quick TeX formatting function.
-    """
-    plt.rcParams['text.usetex'] = True
-    plt.rcParams['text.usetex'] = False
-
-
 # Lambda function to calculate dI_phi
 dI_phi = lambda b, phase, order: 2 * sum(b[1:order + 1:] * np.sin(2 * np.pi * phase * np.arange(order + 1)[1::]))
 
@@ -62,109 +50,102 @@ def Half_Comp(filter_files, Epoch, period,
               resolution=512, offset=0.25, save=False, outName='noname_halfcomp.png',
               title=None, filter_names=None, sans_font=False,
               write_callback=None, cancel_event=None):
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
-    if cancel_event.is_set():
+    def canceled():
+        return cancel_event is not None and cancel_event.is_set()
+
+    if canceled():
         log("Task canceled.")
         return
 
-    # Setting font family if not using sans font
-    if sans_font == False:
-        plt.rcParams['font.family'] = 'serif'  # Set font family to serif if sans_font is False
-        plt.rcParams['mathtext.fontset'] = 'dejavuserif'  # Set math font to serif if sans_font is False
+    # Serif fonts unless sans_font is set. rc_context scopes the change to this
+    # plot instead of changing matplotlib's settings for the whole process.
+    font_settings = {} if sans_font else {'font.family': 'serif', 'mathtext.fontset': 'dejavuserif'}
 
-    # Calculate the number of bands
-    bands = len(filter_files)
+    with matplotlib.rc_context(font_settings):
+        # Calculate the number of bands
+        bands = len(filter_files)
 
-    # Create subplots for flux and dI
-    axs, _ = plot.multiplot(figsize=(6, 9), dpi=512, height_ratios=[7 / 3 * bands, 3])
-    flux = axs[0]  # Flux subplot
-    dI = axs[1]  # dI subplot
+        # Create subplots for flux and dI
+        fig = Figure(figsize=(6, 9), dpi=512)
+        axs, _ = plot.multiplot(height_ratios=[7 / 3 * bands, 3], fig=fig)
+        flux = axs[0]  # Flux subplot
+        dI = axs[1]  # dI subplot
 
-    colors = ['blue', 'limegreen', 'red', 'm']  # Color list for plots
-    styles = ['--', '-.', ':', '--']  # Line styles for plots
+        colors = ['blue', 'limegreen', 'red', 'm']  # Color list for plots
+        styles = ['--', '-.', ':', '--']  # Line styles for plots
 
-    R2_halves = []  # List to store R^2 values for each band
+        R2_halves = []  # List to store R^2 values for each band
 
-    # Draw horizontal line at y=0 on dI subplot
-    dI.axhline(0, linestyle='-', color='black', linewidth=1)
+        # Draw horizontal line at y=0 on dI subplot
+        dI.axhline(0, linestyle='-', color='black', linewidth=1)
 
-    # Loop over each band
-    for band in range(bands):
-        # Binning of data
-        a, b = binning.polybinner(filter_files[band], Epoch, period, sections=sections,
-                                  norm_factor='alt', section_order=section_order)[0][:2:]
+        # Loop over each band
+        for band in range(bands):
+            # Binning of data
+            a, b = binning.polybinner(filter_files[band], Epoch, period, sections=sections,
+                                      norm_factor='alt', section_order=section_order)[0][:2:]
 
-        half = int(0.5 * resolution) + 1  # Calculate half index for resolution
+            half = int(0.5 * resolution) + 1  # Calculate half index for resolution
 
-        # Compute Fourier Transform for positive and negative bins
-        FT1 = FT.FT_plotlist(a, b, FT_order, resolution)
-        FT2 = FT.FT_plotlist(a, -1 * b, FT_order, resolution)
-        FTphase1, FTflux1 = FT1[0][:half:], FT1[1][:half:]  # Positive phase and flux
-        FTphase2, FTflux2 = FT2[0][:half:], FT2[1][:half:]  # Negative phase and flux
+            # Compute Fourier Transform for positive and negative bins
+            FT1 = FT.FT_plotlist(a, b, FT_order, resolution)
+            FT2 = FT.FT_plotlist(a, -1 * b, FT_order, resolution)
+            FTphase1, FTflux1 = FT1[0][:half:], FT1[1][:half:]  # Positive phase and flux
+            FTphase2, FTflux2 = FT2[0][:half:], FT2[1][:half:]  # Negative phase and flux
 
-        # Calculate coefficient of determination (R^2) between positive and negative fluxes
-        R2_halves.append(calc.error.CoD(FTflux1, FTflux2))
-        R2_halves.append(calc.error.CoD(FTflux2, FTflux1))
+            # Calculate coefficient of determination (R^2) between positive and negative fluxes
+            R2_halves.append(calc.error.CoD(FTflux1, FTflux2))
+            R2_halves.append(calc.error.CoD(FTflux2, FTflux1))
 
-        dIlist = []  # List to store dI values
-        for phase in FTphase1:
-            dIlist.append(dI_phi(b, phase, FT_order))  # Calculate dI values
+            dIlist = []  # List to store dI values
+            for phase in FTphase1:
+                dIlist.append(dI_phi(b, phase, FT_order))  # Calculate dI values
 
-        # Adjust flux values for plotting
-        FTflux1 = np.array(FTflux1) + (1 - band) * offset
-        FTflux2 = np.array(FTflux2) + (1 - band) * offset
+            # Adjust flux values for plotting
+            FTflux1 = np.array(FTflux1) + (1 - band) * offset
+            FTflux2 = np.array(FTflux2) + (1 - band) * offset
 
-        # Plot flux and dI
-        flux.plot(FTphase1, FTflux1, linestyle=styles[band], color=colors[band])
-        flux.plot(FTphase2, FTflux2, '-', color=colors[band])
+            # Plot flux and dI
+            flux.plot(FTphase1, FTflux1, linestyle=styles[band], color=colors[band])
+            flux.plot(FTphase2, FTflux2, '-', color=colors[band])
 
-        # Add filter names to flux subplot if provided
-        if filter_names is not None:
-            if len(filter_names) == bands:
-                flux.text(-0.12, FTflux1[0], filter_names[band], fontsize=18, rotation=0)
+            # Add filter names to flux subplot if provided
+            if filter_names is not None:
+                if len(filter_names) == bands:
+                    flux.text(-0.12, FTflux1[0], filter_names[band], fontsize=18, rotation=0)
 
-        # Plot dI
-        dI.plot(FTphase1, dIlist, linestyle=styles[band], color=colors[band])
+            # Plot dI
+            dI.plot(FTphase1, dIlist, linestyle=styles[band], color=colors[band])
 
-    if cancel_event.is_set():
-        log("Task canceled.")
-        return
+        if canceled():
+            log("Task canceled.")
+            return
 
-    # Set x-axis limit for flux subplot
-    plt.xlim(-0.025, 0.525)
+        # Set x-axis limit for both subplots (they share the x-axis)
+        flux.set_xlim(-0.025, 0.525)
 
-    # Set y-axis label for flux subplot if filter_names is None
-    if filter_names is None:
-        flux.set_ylabel('Flux', fontsize=16)
+        # Set y-axis label for flux subplot if filter_names is None
+        if filter_names is None:
+            flux.set_ylabel('Flux', fontsize=16)
 
-    # Format subplots
-    plot.sm_format(flux, numbersize=15, X=0.125, x=0.025, xbottom=False, bottomspine=False, Y=None)
-    plot.sm_format(dI, numbersize=15, X=0.125, x=0.025, xtop=False, topspine=False)
-    dI.set_xlabel(r'$\Phi$', fontsize=18)  # Set x-axis label for dI subplot
-    dI.set_ylabel(r'$\Delta I(\Phi)_{\rm FT}$', fontsize=18)  # Set y-axis label for dI subplot
+        # Format subplots
+        plot.sm_format(flux, numbersize=15, X=0.125, x=0.025, xbottom=False, bottomspine=False, Y=None)
+        plot.sm_format(dI, numbersize=15, X=0.125, x=0.025, xtop=False, topspine=False)
+        dI.set_xlabel(r'$\Phi$', fontsize=18)  # Set x-axis label for dI subplot
+        dI.set_ylabel(r'$\Delta I(\Phi)_{\rm FT}$', fontsize=18)  # Set y-axis label for dI subplot
 
-    # Set title for flux subplot if title is not empty
-    if title != '':
-        flux.set_title(title, fontsize=14.4, loc='left')
+        # Set title for flux subplot if title is not empty
+        if title != '':
+            flux.set_title(title, fontsize=14.4, loc='left')
 
-    # Save figure if save is True
-    if save:
-        plt.savefig(outName, bbox_inches='tight')
-        log(outName + ' saved.')
+        # Save figure if save is True
+        if save:
+            fig.savefig(outName, bbox_inches='tight')
+            log(outName + ' saved.')
 
-    # plt.show()  # Show the plot
-
-    # Reset font settings to default
-    plt.rcParams['font.family'] = 'sans'
-    plt.rcParams['mathtext.fontset'] = 'dejavusans'
-
-    return None  # Return "Done" message
+    return None
 
 
 def OConnell_total(inputFile, Epoch, period, order, sims=1000,
@@ -177,14 +158,9 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     Approximate runtime: ~ sims/1000 minutes.
     """
 
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
-    if cancel_event.is_set():
+    if cancel_event is not None and cancel_event.is_set():
         log("Task canceled.")
         return
 
@@ -214,7 +190,7 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     for sim in tqdm(range(sims), desc='Simulating light curves', position=0):
         master_simflux.append(FT.sim_ob_flux(FTsynth, ob_fluxerr))
     # ============
-    if cancel_event.is_set():
+    if cancel_event is not None and cancel_event.is_set():
         log("Task canceled.")
         return
     # ============
@@ -273,7 +249,7 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
         dIavelist.append(OConnell.Delta_I_mean_obs_noerror(ob_phaselist, ob_fluxlist, phase_range=0.05))
     # = end sim loop =
 
-    if cancel_event.is_set():
+    if cancel_event is not None and cancel_event.is_set():
         log("Task canceled.")
         return
 
@@ -297,7 +273,7 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
         a_rat.append(ar)
         b_rat.append(br)
 
-    if cancel_event.is_set():
+    if cancel_event is not None and cancel_event.is_set():
         log("Task canceled.")
         return
 
@@ -333,10 +309,10 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     Delta_I_ave = DIave[0]
     Delta_I_ave_err = DIave[1]
 
-    # == print parameters ==
-    r = lambda x: round(x, 5)
-
-    valerr = lambda x, dx, label, PRECISION=6: print(label + ' =', round(x, PRECISION), '+/-', round(dx, PRECISION))
+    # == report parameters ==
+    # These used to go straight to print, so GUI users never saw them
+    def valerr(x, dx, label, precision=6):
+        log(f"{label} = {round(x, precision)} +/- {round(dx, precision)}")
 
     # print('\n')
     valerr(a[1], a_total_err[1], 'a1')
@@ -371,14 +347,9 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
     If plot_only is set to True, only the half-comparison plot will be generated.
     """
 
-    def log(message):
-        """Log messages to the GUI if callback provided, otherwise print"""
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
-    if cancel_event.is_set():
+    if cancel_event is not None and cancel_event.is_set():
         log("Task canceled.")
         return
 
@@ -387,7 +358,7 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
               section_order=section_order, offset=plotoff, save=save, outName=outName,
               filter_names=filterNames, write_callback=write_callback, cancel_event=cancel_event)
 
-    if cancel_event.is_set():
+    if cancel_event is not None and cancel_event.is_set():
         log("Task canceled.")
         return
 

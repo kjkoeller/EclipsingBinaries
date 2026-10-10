@@ -19,14 +19,11 @@ The sidebar lists:
 
 + **Reduce** — IRAF Reduction
 + **Comparison stars** — AIJ Comparison Star Selector
-+ **Photometry** — Multi-Aperture Photometry, and Night Filters (shown greyed out; see the
-  note in `BSUO or SARA/TESS Night Filters`_)
-+ **Analysis** — Find Minimum (shown greyed out; run ``python -m EclipsingBinaries.find_min``
-  from a terminal for now), O-C Plotting, O'Connell Effect, Color Light Curve
++ **Photometry** — Multi-Aperture Photometry, Night Filters
++ **Analysis** — Find Minimum, O-C Plotting, O'Connell Effect, Color Light Curve
 + **Archives** — TESS Search and Download, Gaia Search
 
-Resting the pointer on a greyed-out entry shows how to run it instead. To quit, use
-**File > Exit** (or the application menu on macOS).
+To quit, use **File > Exit** (or the application menu on macOS).
 
 When a program finishes, buttons for its output appear next to **Run**:
 
@@ -37,13 +34,16 @@ IRAF Reduction                     Open Output Folder (the calibrated images)
 TESS Search and Download           Open Output Folder (the downloaded sectors)
 AIJ Comparison Star Selector       Open Output Folder, View Overlay (when one was saved)
 Multi-Aperture Photometry          Open Output Folder, View Light Curves
+Night Filters                      Open Output Folder, Open Magnitude File, Find Minimum
+Find Minimum                       Open Output Folder (where the minimum files are saved)
 O-C Plotting                       Open Output Folder, View O-C Plot
 Gaia Search                        Open Output Folder, Open Results (``gaia_results.csv``)
 O'Connell Effect                   Open Output Folder, View Plot
 Color Light Curve                  Open Output Folder, View Plot
 =================================  =====================================================
 
-**View Light Curves** opens the light curve of every filter that was measured in one
+**Find Minimum** after Night Filters opens the Find Minimum panel with the combined
+magnitude file already filled in. **View Light Curves** opens the light curve of every filter that was measured in one
 window, stacked with a shared time axis, with the usual Matplotlib zoom, pan and save
 tools.
 
@@ -486,24 +486,116 @@ Flux errors use the read noise in each image's ``RDNOISE`` keyword, which the IR
 reduction writes from the camera preset. Images without one fall back to the BSUO value
 of 10.83 e⁻, or to the ``--loc`` preset when run through ``EB_pipeline``.
 
-BSUO or SARA/TESS Night Filters
----------------------------------
+Night Filters
+-------------
 
-.. note::
-    **Night Filters** is greyed out in the GUI sidebar because it isn't wired up yet. Run the
-    program from a terminal instead with ``python -m EclipsingBinaries.Night_Filters``,
-    which asks for the number of nights and each file path.
+Astro ImageJ (AIJ) saves a measurements file for each night. Night Filters combines the
+nights for one filter into a single file, sorted by time, ready for Find Minimum,
+O'Connell Effect, Color Light Curve, Peranso or PHOEBE. Run it once per filter.
 
-When using Astro ImageJ (AIJ), it produces ``.dat`` files containing magnitude and
-flux data for each night of observations. This program combines all nightly files
-into a single file per filter.
+The GUI panel accepts the following inputs:
 
-The program checks whether the ``.dat`` files contain five columns (magnitude only)
-or seven columns (magnitude and flux) and writes the combined output accordingly:
++ **Night Files** — one file per night, all for the same filter (for example
+  ``2018.09.18.APASS.B_datasubset.dat``). Add them with **Add Files...** or drag them onto
+  the list; **Remove** (or the Delete key) and **Clear** take them off again. The order
+  doesn't matter.
++ **Output Folder** — where the combined files are saved (created if missing)
++ **Output Name** — the start of the file names, for example ``NSVS_896797_B``
++ **Include BJD_TDB column** — adds BJD_TDB as the first column. Leave it off for Find
+  Minimum, O'Connell Effect and Color Light Curve, which expect HJD first.
+
+Each night needs ``HJD``, ``Source_AMag_T1`` and ``Source_AMag_Err_T1`` columns. The light
+curve CSV files Multi-Aperture Photometry saves work too. The output files are tab
+separated without a header:
+
++ ``<name>_magnitudes.txt`` — HJD, magnitude, error
++ ``<name>_flux.txt`` — HJD, relative flux, error. Only written when every night has
+  ``rel_flux_T1`` and ``rel_flux_err_T1`` columns; if only some do, the log says which
+  nights lack them.
+
+Rows with a missing or non-numeric value are skipped and counted in the log. The
+magnitude file looks like this:
 
 .. literalinclude:: ../EclipsingBinaries/examples/test_B.txt
     :language: text
     :lines: 1-15
+
+From a script:
+
+.. code-block:: python
+
+    from EclipsingBinaries.Night_Filters import combine_nights
+
+    combine_nights(["night1.dat", "night2.dat"], "combined", "NSVS_896797_B")
+
+``python -m EclipsingBinaries.Night_Filters`` asks for the files in a terminal instead and
+saves the result in the current folder.
+
+.. note::
+    Earlier versions wrote the flux values into ``_magnitudes.txt`` and the magnitudes into
+    ``_flux.txt``. Files combined with those versions have the two names swapped.
+
+Find Minimum
+------------
+
+Find Minimum measures times of minimum (ToM) with the Kwee-van Woerden method and saves
+them in the format O-C Plotting reads.
+
+The GUI panel accepts the following inputs:
+
++ **Object Name** — used to name the minimum files
++ **Number of Filters** and a **Light Curve** for each — a Night Filters magnitude file
+  (HJD, magnitude, error) or a light curve CSV from Multi-Aperture Photometry. Pick which
+  filter each file is from the dropdown.
++ **Output Folder** — where the minimum files are saved. Leave it empty to save them next
+  to the first light curve.
+
+**Open Minimum Finder** opens a window showing one night at a time, with the relative flux
+below and the Kwee-van Woerden S statistic above:
+
++ **Click** on the light curve to set the left boundary; **right-click** or **Shift-click**
+  sets the right one. Over the plot, the **a** and **d** keys do the same at the pointer.
+  The minimum is measured again every time a boundary moves.
++ Keep both boundaries on the sides of the eclipse, not out on the flat parts around it,
+  where the method can't tell one time from another.
++ **Previous Night** and **Next Night** (or the **n** and **p** keys, or the dropdown)
+  move between nights. Each night remembers its own boundaries, and starts with a guess
+  around its faintest point.
++ The **Filters** checkboxes choose which filters are fitted together. Each combination
+  saves to its own file, so for per-filter O-C files tick one filter at a time.
++ **Polynomial order**, **Pairs** and **Trial times** set the drawn polynomial, the number
+  of point pairs compared, and how many trial times are tried. The defaults are 5, 20 and
+  200.
++ **Save Minimum** (or Enter) adds the minimum to the list. Measuring the same eclipse
+  again replaces it. **Remove Selected** takes one off.
++ Scroll over the light curve to zoom; the toolbar under the plot pans, zooms and saves
+  the figure.
+
+Minima are saved straight away in ``<object>_<filters>_min.txt``, for example
+``NSVS_896797_B_min.txt``, one per line: time of minimum, number of points used, and
+error, separated by tabs. O-C Plotting reads the first and third columns. Opening the
+window again loads the minima already saved, so you can carry on another day.
+
+A minimum with no error estimate (too few points paired around it) can't be saved, since
+O-C Plotting needs the error.
+
+.. note::
+    Near either boundary there's almost nothing to reflect, so S drops towards zero there
+    whatever the light curve looks like. The lowest S is only looked for away from the
+    outer 10% of the window. Earlier versions meant to do this but didn't, and could
+    report a boundary as the minimum when the window included flat parts.
+
+``python -m EclipsingBinaries.find_min`` asks for the files in a terminal and opens the
+same window, saving minima in the current folder. For scripts:
+
+.. code-block:: python
+
+    from EclipsingBinaries.find_min import load_nights, guess_boundaries, measure_minimum
+
+    nights = load_nights(["NSVS_B_magnitudes.txt"], ["B"])
+    lb, rb = guess_boundaries(nights[0])
+    minimum = measure_minimum(nights[0], lb, rb)
+    print(minimum.hjd, minimum.error)
 
 O-C Plotting
 ------------

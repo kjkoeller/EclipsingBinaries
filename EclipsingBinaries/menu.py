@@ -48,6 +48,9 @@ from .gaia import target_star as gaia
 from .OC_plot import BSUO, TESS_OC, all_data, data_fit
 from .OConnell import main as oconnell
 from .color_light_curve import color_plot
+from .find_min import MinimumError
+from .find_min_window import MinimumFinderWindow
+from .Night_Filters import combine_nights, NightFileError
 from .gui_support import (ToolTip, SettingsStore, ScrollableFrame, make_app_icon, open_path,
                           classify_log_line)
 
@@ -551,14 +554,14 @@ class ProgramLauncher(tk.Tk):
         entry._placeholder_active = False
         entry.config(fg=FG_TEXT)
 
-    def _make_validator(self, entry, error_label, error_message, validation_func):
-        """Build and return the validate_input function for an entry field."""
+    def _make_validator(self, entry, error_label, error_message, validation_func, optional=False):
+        """Build and return the validate_input function for an entry field. Optional fields may be left empty."""
         def validate_input():
             value = self._entry_value(entry)
-            if not value:
+            if not value and not optional:
                 error_label.config(text=error_message or "This field is required.")
                 entry.config(bg=BG_ERROR)
-            elif validation_func and not validation_func(value):
+            elif value and validation_func and not validation_func(value):
                 error_label.config(text=error_message)
                 entry.config(bg=BG_ERROR)
             else:
@@ -626,7 +629,7 @@ class ProgramLauncher(tk.Tk):
 
     def create_input_field(self, parent, label_text, placeholder_text, row,
                            validation_func=None, error_message="", browse_type=None, default=None,
-                           label_widget=None, tooltip=None, wide=None, remember_as=None):
+                           label_widget=None, tooltip=None, wide=None, remember_as=None, optional=False):
         """
         Create a labeled input field with placeholder functionality, validation, and inline error message.
         Includes an optional browse button integrated into the entry field.
@@ -639,7 +642,7 @@ class ProgramLauncher(tk.Tk):
         tooltip adds a hover note to the label and the field. Path fields stretch
         with the window; pass wide to choose for any other field. The value is
         remembered between sessions under remember_as, which defaults to the
-        label text.
+        label text. Set optional for fields that may be left empty.
         """
         label = label_widget or tk.Label(parent, text=label_text, font=self.label_font, bg=BG_PANEL, fg=FG_TEXT)
         label.grid(row=row, column=0, padx=(16, 10), pady=5, sticky="e")
@@ -664,7 +667,7 @@ class ProgramLauncher(tk.Tk):
         # Kept so panels can hide or show the whole row
         entry._field_widgets = (label, entry_frame, error_label)
 
-        validate_input = self._make_validator(entry, error_label, error_message, validation_func)
+        validate_input = self._make_validator(entry, error_label, error_message, validation_func, optional)
         self._make_placeholder_bindings(entry, placeholder_text, validate_input)
         self._make_browse_button(entry_frame, entry, browse_type, validate_input)
         handler = self._make_drop_handler(entry, validate_input)
@@ -844,12 +847,10 @@ class ProgramLauncher(tk.Tk):
             ("Comparison stars", [("aij", "AIJ Comparison Star Selector", self.show_aij_comparison_selector, None)]),
             ("Photometry", [
                 ("photometry", "Multi-Aperture Photometry", self.show_multi_aperture_photometry, None),
-                ("night_filters", "Night Filters", None,
-                 "Not in the app yet. Run python -m EclipsingBinaries.Night_Filters from a terminal."),
+                ("night_filters", "Night Filters", self.show_night_filters, None),
             ]),
             ("Analysis", [
-                ("find_min", "Find Minimum", None,
-                 "Not in the app yet. Run python -m EclipsingBinaries.find_min from a terminal."),
+                ("find_min", "Find Minimum", self.show_find_minimum, None),
                 ("oc", "O-C Plotting", self.show_oc_plot, None),
                 ("oconnell", "O'Connell Effect", self.show_oconnell_effect, None),
                 ("color", "Color Light Curve", self.show_color_light_curve, None),
@@ -1095,10 +1096,12 @@ class ProgramLauncher(tk.Tk):
 
         self.right_frame.grid_rowconfigure(row, weight=1, minsize=160)
 
-    def create_run_button(self, parent, action, row, text="Run", **kwargs):
+    def create_run_button(self, parent, action, row, text="Run", cancellable=True, **kwargs):
         """
         Create the Run and Cancel buttons for a panel, with room beside them for
-        the results buttons that appear when a task finishes.
+        the results buttons that appear when a task finishes. Panels whose
+        button opens a window rather than starting a task pass cancellable=False
+        to leave out Cancel.
         """
         button_frame = tk.Frame(parent, bg=BG_PANEL)
         button_frame.grid(row=row, column=1, columnspan=2, padx=(0, 10), pady=(14, 10), sticky="w")
@@ -1110,8 +1113,9 @@ class ProgramLauncher(tk.Tk):
         self._run_button = self._button(button_frame, text, run)
         self._run_button.pack(side="left", padx=(0, 8))
 
-        self._cancel_button = self._button(button_frame, "Cancel", self.cancel_task)
-        self._cancel_button.pack(side="left")
+        if cancellable:
+            self._cancel_button = self._button(button_frame, "Cancel", self.cancel_task)
+            self._cancel_button.pack(side="left")
 
         self._results_frame = tk.Frame(button_frame, bg=BG_PANEL)
         self._results_frame.pack(side="left", padx=(16, 0))
@@ -1942,6 +1946,229 @@ class ProgramLauncher(tk.Tk):
         self._button(controls_frame, "Save & Close", save_and_close).pack(pady=20)
 
         update_snr()
+
+    # ------------------------------------------------------------------
+    # Night Filters
+    # ------------------------------------------------------------------
+    def show_night_filters(self):
+        """Display the Night Filters panel, which combines nightly AIJ files for one filter."""
+        self.clear_right_frame()
+        self._panel_title("Night Filters", "night_filters")
+
+        files_label = tk.Label(self.right_frame, text="Night Files:", font=self.label_font,
+                               bg=BG_PANEL, fg=FG_TEXT)
+        files_label.grid(row=1, column=0, padx=(16, 10), pady=5, sticky="ne")
+        self._tooltip(files_label, "One measurements file per night, all for the same filter (for example "
+                                   "2018.09.18.APASS.B_datasubset.dat). Order doesn't matter; the rows are "
+                                   "sorted by time.")
+
+        list_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
+        list_frame.grid(row=1, column=1, padx=(0, 10), pady=5, sticky="ew")
+        list_frame.columnconfigure(0, weight=1)
+        listbox = tk.Listbox(list_frame, height=6, font=self.label_font, selectmode="extended",
+                             relief="flat", borderwidth=0, highlightthickness=1,
+                             highlightbackground=BORDER, highlightcolor=ACCENT, activestyle="none")
+        listbox.grid(row=0, column=0, sticky="ew")
+        scroll = ttk.Scrollbar(list_frame, orient="vertical", command=listbox.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        listbox.configure(yscrollcommand=scroll.set)
+        self.night_files_list = listbox
+
+        def add_paths(paths):
+            existing = set(listbox.get(0, "end"))
+            for path in paths:
+                path = str(Path(path).expanduser())
+                if path not in existing and Path(path).is_file():
+                    listbox.insert("end", path)
+                    existing.add(path)
+
+        def add_files():
+            # Some Tk builds return one string of brace-quoted paths rather than a tuple
+            add_paths(self.tk.splitlist(filedialog.askopenfilenames(title="Select Night Files", parent=self)))
+
+        def remove_selected():
+            for index in reversed(listbox.curselection()):
+                listbox.delete(index)
+
+        buttons = tk.Frame(list_frame, bg=BG_PANEL)
+        buttons.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self._button(buttons, "Add Files...", add_files, style="Secondary.TButton").pack(side="left", padx=(0, 6))
+        self._button(buttons, "Remove", remove_selected, style="Secondary.TButton").pack(side="left", padx=(0, 6))
+        self._button(buttons, "Clear", lambda: listbox.delete(0, "end"),
+                     style="Secondary.TButton").pack(side="left")
+        listbox.bind("<Delete>", lambda _e: remove_selected())
+        listbox.bind("<BackSpace>", lambda _e: remove_selected())
+
+        if self.dnd_enabled:
+            def handle_drop(event):
+                add_paths(self.tk.splitlist(event.data))
+                return event.action
+            self.enable_drag_and_drop(listbox, handle_drop)
+
+        output_folder = self.create_input_field(self.right_frame, "Output Folder:", _example_path("combined"),
+                                                row=2, error_message="Please enter a folder.",
+                                                browse_type="folder",
+                                                tooltip="Where the combined files are saved.")
+        output_name = self.create_input_field(self.right_frame, "Output Name:", "e.g. NSVS_896797_B", row=3,
+                                              error_message="Please enter a name.",
+                                              tooltip="Start of the file names: <name>_magnitudes.txt, and "
+                                                      "<name>_flux.txt when the files have flux columns.")
+        include_bjd = self._remember_var("include_bjd", tk.BooleanVar(master=self, value=False))
+        self.create_checkbox(self.right_frame, "Include BJD_TDB column", include_bjd, row=4,
+                             tooltip="Add BJD_TDB as the first column. Leave off for Find Minimum, O'Connell "
+                                     "and Color Light Curve, which expect HJD first.")
+
+        self.create_run_button(self.right_frame, self.run_night_filters, row=5, text="Combine",
+                               output_folder=output_folder, output_name=output_name, include_bjd=include_bjd)
+        self._log_section(6)
+
+    def run_night_filters(self, output_folder, output_name, include_bjd):
+        """Validate the Night Filters inputs, then combine the files on a worker thread."""
+        files = list(self.night_files_list.get(0, "end"))
+        folder = self._path_value(output_folder)
+        name = self._entry_value(output_name)
+        if not files:
+            self.write_to_log("Error: Add at least one night's file.")
+            return
+        if not folder or not name:
+            self.write_to_log("Error: An output folder and name are required.")
+            return
+        with_bjd = include_bjd.get()
+
+        def combine():
+            self.write_to_log(f"Combining {len(files)} night(s)...")
+            try:
+                result = combine_nights(files, folder, name, include_bjd=with_bjd,
+                                        write_callback=self.write_to_log, cancel_event=self.cancel_event)
+            except NightFileError as e:
+                self.write_to_log(f"Error: {e}")
+                return
+            if result is None:
+                return
+            self.write_to_log("Night Filters completed successfully.")
+            mag_path = result["magnitudes"]
+            extras = [("Open Magnitude File", lambda: self._open_in_system(mag_path))]
+            if not with_bjd:
+                extras.append(("Find Minimum", lambda: self._send_to_find_minimum(mag_path)))
+            self.offer_results(folder, extras)
+
+        self.run_task(combine)
+
+    def _send_to_find_minimum(self, light_curve):
+        """Open Find Minimum with a combined light curve already filled in."""
+        self.open_panel("find_min")
+        self.find_min_filter_count.set(1)
+        self._update_find_min_rows()
+        self._set_entry_text(self.find_min_rows[0][1], light_curve)
+
+    # ------------------------------------------------------------------
+    # Find Minimum
+    # ------------------------------------------------------------------
+    def show_find_minimum(self):
+        """Display the Find Minimum panel."""
+        self.clear_right_frame()
+        self._panel_title("Find Minimum", "find_min")
+
+        obj_name = self.create_input_field(self.right_frame, "Object Name:", "e.g. NSVS 896797", row=1,
+                                           error_message="Please enter an object name.",
+                                           tooltip="Used to name the minimum files, e.g. NSVS_896797_B_min.txt.")
+
+        count_label = tk.Label(self.right_frame, text="Number of Filters:", font=self.label_font,
+                               bg=BG_PANEL, fg=FG_TEXT)
+        count_label.grid(row=2, column=0, padx=(16, 10), pady=5, sticky="e")
+        self._tooltip(count_label, "How many filters' light curves to load. In the window you can fit them "
+                                   "together or one at a time.")
+        self.find_min_filter_count = self._remember_var("filter_count",
+                                                        tk.IntVar(master=self, value=len(PHOTOMETRY_FILTERS)))
+        radio_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
+        radio_frame.grid(row=2, column=1, padx=(0, 10), pady=5, sticky="w")
+        for count in range(1, len(PHOTOMETRY_FILTERS) + 1):
+            tk.Radiobutton(radio_frame, text=f"{count} Filter{'s' if count > 1 else ''}",
+                           variable=self.find_min_filter_count, value=count, command=self._update_find_min_rows,
+                           font=self.label_font, bg=BG_PANEL, fg=FG_TEXT).pack(side="left", padx=(0, 12))
+
+        self.find_min_rows = []
+        saved = self.settings.section("find_min")
+        self._find_min_filters_picked = any(f"filter_{i}" in saved for i in range(len(PHOTOMETRY_FILTERS)))
+        for i, default_filter in enumerate(PHOTOMETRY_FILTERS):
+            label_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
+            tk.Label(label_frame, text="Light Curve (", font=self.label_font, bg=BG_PANEL,
+                     fg=FG_TEXT).pack(side="left")
+            picker_var = self._remember_var(f"filter_{i}", tk.StringVar(master=self, value=default_filter))
+            picker = ttk.Combobox(label_frame, values=PHOTOMETRY_FILTERS, state="readonly", width=3,
+                                  font=self.label_font, textvariable=picker_var)
+            picker.pack(side="left")
+            tk.Label(label_frame, text=" Filter):", font=self.label_font, bg=BG_PANEL,
+                     fg=FG_TEXT).pack(side="left")
+            entry = self.create_input_field(self.right_frame, "", _example_path(f"{picker.get()}_magnitudes.txt"),
+                                            row=3 + i, error_message="Please enter a light curve file.",
+                                            browse_type="file", label_widget=label_frame,
+                                            remember_as=f"curve_{i}",
+                                            tooltip="Light curve for this filter: a Night Filters magnitude "
+                                                    "file (HJD, magnitude, error) or a light curve CSV from "
+                                                    "Multi-Aperture Photometry.")
+            picker.bind("<<ComboboxSelected>>", lambda _e, p=picker, ent=entry: self._on_find_min_filter_picked(p, ent))
+            self.find_min_rows.append((picker, entry))
+        self._update_find_min_rows()
+
+        output_folder = self.create_input_field(self.right_frame, "Output Folder:", "Same folder as the first file",
+                                                row=6, browse_type="folder", optional=True,
+                                                tooltip="Where the minimum files are saved. Left empty, they go "
+                                                        "next to the first light curve. Minima already saved there "
+                                                        "are loaded, so you can carry on later.")
+
+        self.create_run_button(self.right_frame, self.run_find_minimum, row=7, text="Open Minimum Finder",
+                               cancellable=False, obj_name=obj_name, output_folder=output_folder)
+        self._log_section(8)
+
+    def _update_find_min_rows(self):
+        count = self.find_min_filter_count.get()
+        if not self._find_min_filters_picked:
+            for (picker, entry), filt in zip(self.find_min_rows, PHOTOMETRY_DEFAULTS[count]):
+                picker.set(filt)
+                self._set_placeholder(entry, _example_path(f"{filt}_magnitudes.txt"))
+        for i, (_picker, entry) in enumerate(self.find_min_rows):
+            self._set_field_visible(entry, i < count)
+
+    def _on_find_min_filter_picked(self, picker, entry):
+        self._find_min_filters_picked = True
+        self._set_placeholder(entry, _example_path(f"{picker.get()}_magnitudes.txt"))
+
+    def run_find_minimum(self, obj_name, output_folder):
+        """Check the inputs and open the interactive Find Minimum window."""
+        name = self._entry_value(obj_name)
+        count = self.find_min_filter_count.get()
+        choices = [(picker.get(), self._path_value(entry)) for picker, entry in self.find_min_rows[:count]]
+        labels = [label for label, _ in choices]
+        if not name:
+            self.write_to_log("Error: Object name is required.")
+            return
+        if len(set(labels)) != len(labels):
+            self.write_to_log("Error: Each filter can only be chosen once.")
+            return
+        missing = [label for label, path in choices if not path]
+        if missing:
+            self.write_to_log(f"Error: A light curve file is required for {', '.join(missing)}.")
+            return
+        not_found = [path for _label, path in choices if not Path(path).is_file()]
+        if not_found:
+            self.write_to_log(f"Error: {not_found[0]} doesn't exist.")
+            return
+        folder = self._path_value(output_folder) or str(Path(choices[0][1]).parent)
+
+        try:
+            window = MinimumFinderWindow(self, [path for _label, path in choices], labels, folder, name,
+                                         log=self.write_to_log)
+        except MinimumError as e:
+            self.write_to_log(f"Error: {e}")
+            return
+        except Exception as e:
+            self.write_to_log(f"Error: Find Minimum couldn't open: {type(e).__name__}: {e}")
+            self.write_to_log(traceback.format_exc())
+            return
+        self.write_to_log(f"Opened Find Minimum with {len(window.nights)} night(s) in "
+                          f"{', '.join(labels)}. Minima are saved in {folder}.")
+        self._show_results(self._current_panel, folder, [])
 
     # ------------------------------------------------------------------
     # O-C plotting

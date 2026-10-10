@@ -141,13 +141,9 @@ def test_every_enabled_sidebar_item_opens_its_panel(app):
         assert app._run_button is not None
 
 
-def test_disabled_sidebar_items_have_no_panel(app):
-    for key in ("night_filters", "find_min"):
-        assert key in app._nav_items
-        assert key not in app._panel_builders
-    before = app._current_panel
-    app.open_panel("night_filters")
-    assert app._current_panel == before
+def test_every_sidebar_item_has_a_panel(app):
+    assert set(app._nav_items) == set(app._panel_builders)
+    assert {"night_filters", "find_min"} <= set(app._panel_builders)
 
 
 def test_panel_switch_leaves_no_stretched_rows(app):
@@ -372,3 +368,196 @@ def test_light_curve_viewer_reports_missing_files(app, tmp_path):
     app._show_light_curves(str(tmp_path), "T", ["V"])
     app.update()
     assert "no light curve files" in app.log_area.get("1.0", "end")
+
+
+# ----------------------------------------------------------------------
+# Night Filters and Find Minimum
+# ----------------------------------------------------------------------
+from importlib.resources import files as _files  # noqa: E402
+
+EXAMPLES = _files("EclipsingBinaries.examples")
+
+
+def _aij_night(path, start):
+    import pandas as pd
+
+    pd.DataFrame({"HJD": [start + 0.01 * i for i in range(5)],
+                  "Source_AMag_T1": [12.0 + 0.05 * i for i in range(5)],
+                  "Source_AMag_Err_T1": [0.01] * 5}).to_csv(path, sep="\t", index=False)
+    return str(path)
+
+
+def test_night_filters_panel_combines_files(app, tmp_path):
+    app.open_panel("night_filters")
+    app.night_files_list.insert("end", _aij_night(tmp_path / "n2.dat", 2458380.6))
+    app.night_files_list.insert("end", _aij_night(tmp_path / "n1.dat", 2458379.6))
+    app._set_entry_text(app._panel_fields["Output Folder"], str(tmp_path / "out"))
+    app._set_entry_text(app._panel_fields["Output Name"], "T_B")
+    app._run_button.invoke()
+    _wait_for_task(app)
+    assert (tmp_path / "out" / "T_B_magnitudes.txt").exists()
+    assert "Night Filters completed successfully." in app.log_area.get("1.0", "end")
+    labels = [b.cget("text") for b in app._results_frame.winfo_children()]
+    assert labels == ["Open Output Folder", "Open Magnitude File", "Find Minimum"]
+
+    app._results_frame.winfo_children()[2].invoke()
+    assert app._current_panel == "find_min"
+    assert app.find_min_filter_count.get() == 1
+    assert app._path_value(app.find_min_rows[0][1]) == str(tmp_path / "out" / "T_B_magnitudes.txt")
+
+
+def test_night_filters_panel_reports_problems(app, tmp_path):
+    app.open_panel("night_filters")
+    app._run_button.invoke()
+    assert "Add at least one night" in app.log_area.get("1.0", "end")
+
+    bad = tmp_path / "bad.dat"
+    bad.write_text("HJD\tMag\n1\t2\n")
+    app.night_files_list.insert("end", str(bad))
+    app._set_entry_text(app._panel_fields["Output Folder"], str(tmp_path))
+    app._set_entry_text(app._panel_fields["Output Name"], "T")
+    app._run_button.invoke()
+    _wait_for_task(app)
+    assert "bad.dat is missing the column" in app.log_area.get("1.0", "end")
+    assert app._results_frame.winfo_children() == []
+
+
+def _fill_find_min(app, count, folder=None):
+    app.open_panel("find_min")
+    app.find_min_filter_count.set(count)
+    app._update_find_min_rows()
+    app._set_entry_text(app._panel_fields["Object Name"], "NSVS 896797")
+    for (picker, entry), filt in zip(app.find_min_rows[:count], "BVR"):
+        picker.set(filt)
+        app._set_entry_text(entry, str(EXAMPLES / f"test_{filt}.txt"))
+    if folder:
+        app._set_entry_text(app._panel_fields["Output Folder"], str(folder))
+    app._find_min_filters_picked = True
+
+
+def _finder(app):
+    from EclipsingBinaries.find_min_window import MinimumFinderWindow
+
+    windows = [w for w in app.winfo_children() if isinstance(w, MinimumFinderWindow)]
+    return windows[-1] if windows else None
+
+
+def test_find_minimum_panel_has_no_cancel(app):
+    app.open_panel("find_min")
+    assert app._cancel_button is None
+    assert app._run_button.cget("text") == "Open Minimum Finder"
+
+
+def test_find_minimum_output_folder_is_optional(app):
+    app.open_panel("find_min")
+    entry = app._panel_fields["Output Folder"]
+    entry.event_generate("<FocusIn>")
+    entry.event_generate("<FocusOut>")
+    app.update()
+    assert entry._field_widgets[-1].cget("text") == ""
+
+
+def test_find_minimum_opens_the_window_and_saves(app, tmp_path):
+    _fill_find_min(app, 3, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    assert window is not None
+    assert len(window.nights) == 4
+    assert window.minimum is not None
+    assert str(window.save_button.state()) != "('disabled',)"
+
+    window.save_minimum()
+    saved = tmp_path / "NSVS_896797_BVR_min.txt"
+    assert saved.exists()
+    assert len(window.table.get_children()) == 1
+    assert "Saved minimum HJD" in app.log_area.get("1.0", "end")
+
+    # Fitting one filter saves to that filter's own file
+    window.band_vars["R"].set(False)
+    window.band_vars["V"].set(False)
+    window._bands_changed()
+    window.save_minimum()
+    assert (tmp_path / "NSVS_896797_B_min.txt").exists()
+
+    window.table.selection_set(window.table.get_children()[0])
+    window.remove_selected()
+    assert window.minimum_file().entries == []
+    window.destroy()
+
+
+def test_find_minimum_window_navigation_and_boundaries(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    assert window.current == 0
+    window.step(1)
+    assert window.current == 1
+    window.step(-5)
+    assert window.current == 0
+
+    lb, rb = window.boundaries[0]
+    window.set_boundary("right", lb - 0.01)  # past the left one: they swap
+    assert window.boundaries[0] == (lb - 0.01, lb)
+    window.set_boundary("left", lb - 0.0105)
+    window.set_boundary("right", lb - 0.0104)  # far too narrow
+    assert window.minimum is None
+    assert "Widen them" in window.result_var.get()
+    assert window.save_button.instate(["disabled"])
+
+    for var in window.band_vars.values():
+        var.set(False)
+    window._bands_changed()
+    assert "Tick at least one filter" in window.result_var.get()
+    window.destroy()
+
+
+def test_find_minimum_window_keys(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+
+    class Event:
+        def __init__(self, key, x=None, inaxes=None):
+            self.key, self.xdata, self.inaxes = key, x, inaxes
+
+    window._on_key(Event("n"))
+    assert window.current == 1
+    window._on_key(Event("p"))
+    assert window.current == 0
+    lb, rb = window.boundaries[0]
+    window._on_key(Event("a", lb + 0.001, window.ax_lc))
+    assert window.boundaries[0][0] == pytest.approx(lb + 0.001)
+    window._on_key(Event("enter"))
+    assert window.minimum_file().entries
+    window.destroy()
+
+
+def test_find_minimum_validation(app, tmp_path):
+    app.open_panel("find_min")
+    app._run_button.invoke()
+    assert "Object name is required" in app.log_area.get("1.0", "end")
+
+    _fill_find_min(app, 2)
+    app.find_min_rows[1][0].set("B")
+    app._run_button.invoke()
+    assert "Each filter can only be chosen once" in app.log_area.get("1.0", "end")
+
+    _fill_find_min(app, 1)
+    app._set_entry_text(app.find_min_rows[0][1], str(tmp_path / "missing.txt"))
+    app._run_button.invoke()
+    assert "doesn't exist" in app.log_area.get("1.0", "end")
+    assert _finder(app) is None
+
+
+def test_find_minimum_defaults_to_the_light_curve_folder(app):
+    _fill_find_min(app, 1)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    from pathlib import Path
+
+    assert window.output_folder == Path(str(EXAMPLES / "test_B.txt")).parent
+    window.destroy()

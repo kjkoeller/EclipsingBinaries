@@ -1,233 +1,185 @@
 """
 Author: Kyle Koeller
 Created: 11/11/2020
-Last Updated: 07/11/2023
+Last Updated: 10/10/2026
 
-This program is meant to make the process of collecting the different filters from AIJ Excel spreadsheets faster.
-The user enters however many nights they have and the program goes through and checks those text files for the
-different columns for,HJD, Amag, and Amag error for the B and V filters.
+Combines the nightly files Astro ImageJ (AIJ) writes for one filter into a
+single file covering every night, ready for Find Minimum, O'Connell, Peranso
+or PHOEBE.
 
-There are error catching statements within the program so if the user mistypes, the program will not crash and
-close on them (hopefully)
+Each night's file needs HJD, Source_AMag_T1 and Source_AMag_Err_T1 columns.
+If every night also has rel_flux_T1 and rel_flux_err_T1, a flux file is
+written alongside the magnitude file, and BJD_TDB can be included as an extra
+first column.
 """
 
+from pathlib import Path
+
 import pandas as pd
-from os import path
+
+from ._log import make_logger
+
+# Column names in AIJ's measurement tables, and the names used in the output
+TIME_COLUMN = "HJD"
+BJD_COLUMN = "BJD_TDB"
+MAG_COLUMNS = {"Source_AMag_T1": "AMag", "Source_AMag_Err_T1": "AMag Error"}
+FLUX_COLUMNS = {"rel_flux_T1": "rel flux", "rel_flux_err_T1": "rel flux error"}
+
+# Our own photometry writes the magnitude error under this name
+COLUMN_ALIASES = {"Source_AMag_T1_Error": "Source_AMag_Err_T1"}
 
 
-def main(c):
+class NightFileError(ValueError):
+    """A night's file can't be used, with a message saying which and why."""
+
+
+def read_night(path):
     """
-    Runs the whole program but collects the number of nights that the user wants to parse through.
-
-    :param c: Number of whether the user has used the program before or not. Must be manually changed within the code
+    Read one night's AIJ file (tab or comma separated, with a header row)
+    and return it with the column names tidied up.
     """
-    # warning prompts for the user to read to make sure this program works correctly
-    print("\nFrom each night, yous should have a file that is sort of like this: 2018.09.18.APASS.B_datasubset.dat.\n"
-          "This file has 7 or 5 columns and you will only need 5 or 3 of them respectively.\n")
-    print("All of the nights that you entire MUST have the exact same column number or this program will not work.\n")
-    print(
-        "You may also type the word 'Close' in the next prompt to leave this program and return to the main menu.\n")
-    num = check_num()
-    flux_mag(num, c)
-
-
-def check_num():
-    """
-    Checks whether the user enters a real number for the number of nights
-
-    :return: returns the entered number
-    """
-    while True:
-        num = input("Number of nights you have: ")
-        if num.isnumeric():
-            if int(num) > 0:
-                break
-            else:
-                print("You have entered an invalid number. Please try again.\n")
-        elif num.lower() == "close":
-            exit()
-        else:
-            print("You have not entered a number or the word 'Close', please try again.\n")
-    return int(num)
-
-
-def file_path(i):
-    """
-    Checks whether the user enters a real file path
-
-    :param i: the number of the night
-
-    :return: returns the entered file path
-    """
-    while True:
-        file = input("Enter night %d file path: " % (i + 1))
-        if path.exists(file):
-            break
-        else:
-            print("You have entered an invalid file path. Please try again.\n")
-    df = pd.read_csv(file, delimiter="\t")
-
+    path = Path(path)
+    try:
+        df = pd.read_csv(path, sep=None, engine="python")
+    except (OSError, pd.errors.ParserError, UnicodeDecodeError) as e:
+        raise NightFileError(f"{path.name} couldn't be read: {e}") from e
+    df.columns = [str(c).strip() for c in df.columns]
+    df = df.rename(columns=COLUMN_ALIASES)
+    required = [TIME_COLUMN, *MAG_COLUMNS]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise NightFileError(f"{path.name} is missing the column(s) {', '.join(missing)}. "
+                             "Use the measurements file AIJ saves for each night.")
     return df
 
 
-def flux_mag(night, num):
+def combine_nights(files, output_folder, output_name, include_bjd=False,
+                   write_callback=None, cancel_event=None):
     """
-    Finds the flux and magnitude columns from the file
+    Combine nightly AIJ files for one filter into a single file.
 
-    :param night: the number of the nights
-    :param num: which filter is used
+    Parameters
+    ----------
+    files : list of str or Path
+        One file per night, all for the same filter.
+    output_folder : str or Path
+        Where to save the combined files. Created if needed.
+    output_name : str
+        Start of the output file names, for example "NSVS_B".
+    include_bjd : bool
+        Add BJD_TDB as the first column. Every night needs a BJD_TDB column.
+    write_callback : callable, optional
+        Where log messages go (the GUI's log, or print).
+    cancel_event : threading.Event, optional
+        Stops the work between files when set.
 
-    :return:
+    Returns
+    -------
+    dict or None
+        "magnitudes" and "flux" (None when not every night has flux) file
+        paths and the number of "rows" written, or None if canceled.
+
+    The files are tab separated without a header: (BJD_TDB,) HJD, magnitude,
+    error in <output_name>_magnitudes.txt, and (BJD_TDB,) HJD, relative flux,
+    error in <output_name>_flux.txt. Rows are sorted by time.
     """
+    log = make_logger(write_callback)
+    files = [Path(f) for f in files]
+    if not files:
+        raise NightFileError("Add at least one night's file.")
+    output_name = str(output_name).strip()
+    if not output_name:
+        raise NightFileError("An output name is required.")
 
-    total_hjd = []
-    total_bjd = []
-    total_amag = []
-    total_amag_err = []
-    total_flux = []
-    total_flux_err = []
+    nights = []
+    for path in files:
+        if cancel_event is not None and cancel_event.is_set():
+            log("Night Filters was canceled.")
+            return None
+        if not path.is_file():
+            raise NightFileError(f"{path} doesn't exist.")
+        df = read_night(path)
+        if include_bjd and BJD_COLUMN not in df.columns:
+            raise NightFileError(f"{path.name} has no {BJD_COLUMN} column. "
+                                 "Turn off the BJD option or re-export it from AIJ with BJD.")
+        log(f"Read {len(df)} rows from {path.name}")
+        nights.append(df)
 
-    for i in range(night):
-        df = file_path(i)
-        if len(df.columns) == 7:
-            # set parameters to lists from the file by the column header
-            hjd = []
-            bjd = []
-            amag = []
-            amag_err = []
-            flux = []
-            flux_err = []
-            try:
-                if num == 0:
-                    hjd = list(df["HJD"])
-                elif num == 1:
-                    bjd = list(df["BJD_TDB"])
-                    hjd = list(df["HJD"])
-                amag = list(df["Source_AMag_T1"])
-                amag_err = list(df["Source_AMag_Err_T1"])
-                flux = list(df["rel_flux_T1"])
-                flux_err = list(df["rel_flux_err_T1"])
-            except KeyError:
-                print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
-                      "Please re-enter the file path and make sure its the correct file.\n")
-                main(0)
+    with_flux = [all(c in df.columns for c in FLUX_COLUMNS) for df in nights]
+    write_flux = all(with_flux)
+    if any(with_flux) and not write_flux:
+        lacking = ", ".join(p.name for p, has in zip(files, with_flux) if not has)
+        log(f"Warning: no flux columns in {lacking}, so only the magnitude file is written.")
 
-            if num == 0:
-                total_hjd.append(hjd)
-            elif num == 1:
-                total_bjd.append(bjd)
-                total_hjd.append(hjd)
-                new_bjd = [item for elem in total_bjd for item in elem]
+    time_cols = ([BJD_COLUMN] if include_bjd else []) + [TIME_COLUMN]
+    keep = time_cols + list(MAG_COLUMNS) + (list(FLUX_COLUMNS) if write_flux else [])
+    combined = pd.concat([df[keep] for df in nights], ignore_index=True)
+    combined = combined.apply(pd.to_numeric, errors="coerce")
 
-            total_amag.append(amag)
-            total_amag_err.append(amag_err)
-            total_flux.append(flux)
-            total_flux_err.append(flux_err)
+    bad = combined.isna().any(axis=1)
+    if bad.any():
+        log(f"Warning: skipped {int(bad.sum())} row(s) with missing or non-numeric values.")
+        combined = combined[~bad]
+    combined = combined.sort_values(TIME_COLUMN, kind="stable").reset_index(drop=True)
+    if combined.empty:
+        raise NightFileError("None of the rows had usable values.")
 
-            # converts the Dataframe embedded lists into a normal flat list
-            new_hjd = [item for elem in total_hjd for item in elem]
-            new_amag = [item for elem in total_amag for item in elem]
-            new_amag_err = [item for elem in total_amag_err for item in elem]
-            new_flux = [item for elem in total_flux for item in elem]
-            new_flux_err = [item for elem in total_flux_err for item in elem]
+    folder = Path(output_folder).expanduser()
+    folder.mkdir(parents=True, exist_ok=True)
 
-            data_amount = 2
-        elif len(df.columns == 5):
-            # set parameters to lists from the file by the column header
-            hjd = []
-            amag = []
-            amag_err = []
-            try:
-                if num == 0:
-                    hjd = list(df["HJD"])
-                elif num == 1:
-                    bjd = list(df["BJD_TDB"])
-                    hjd = list(df["HJD"])
-                amag = list(df["Source_AMag_T1"])
-                amag_err = list(df["Source_AMag_Err_T1"])
-            except KeyError:
-                print("\nThe file you entered does not have the columns of HJD, Source_AMag_T1, or Source_AMag_Err_T1. "
-                      "Please re-enter the file path and make sure its the correct file.\n")
-                c = 1
-                main(c)
+    mag_path = folder / f"{output_name}_magnitudes.txt"
+    combined[time_cols + list(MAG_COLUMNS)].rename(columns=MAG_COLUMNS).to_csv(
+        mag_path, index=False, header=False, sep="\t")
+    log(f"Saved {len(combined)} rows of magnitudes from {len(files)} night(s) to {mag_path}")
 
-            if num == 0:
-                total_hjd.append(hjd)
-            elif num == 1:
-                total_bjd.append(bjd)
-                total_hjd.append(hjd)
+    flux_path = None
+    if write_flux:
+        flux_path = folder / f"{output_name}_flux.txt"
+        combined[time_cols + list(FLUX_COLUMNS)].rename(columns=FLUX_COLUMNS).to_csv(
+            flux_path, index=False, header=False, sep="\t")
+        log(f"Saved {len(combined)} rows of relative flux to {flux_path}")
 
-            total_amag.append(amag)
-            total_amag_err.append(amag_err)
+    return {"magnitudes": str(mag_path), "flux": str(flux_path) if flux_path else None,
+            "rows": len(combined)}
 
-            # converts the Dataframe embedded lists into a normal flat list
-            new_bjd = [item for elem in total_bjd for item in elem]
-            new_hjd = [item for elem in total_hjd for item in elem]
-            new_amag = [item for elem in total_amag for item in elem]
-            new_amag_err = [item for elem in total_amag_err for item in elem]
-            data_amount = 1
-        else:
-            print("\nThe file you entered does not have the correct amount of columns.\n")
-            main(0)
 
-    if data_amount == 1:
-        if num == 0:
-            data2 = pd.DataFrame({
-                "HJD": new_hjd,
-                "AMag": new_amag,
-                "AMag Error": new_amag_err
-            })
-        elif num == 1:
-            data2 = pd.DataFrame({
-                "BJD_TDB": new_bjd,
-                "HJD": new_hjd,
-                "AMag": new_amag,
-                "AMag Error": new_amag_err
-            })
+def _ask(prompt):
+    answer = input(prompt).strip()
+    if answer.lower() == "close":
+        raise SystemExit(0)
+    return answer
 
-        print("")
-        output = input("What is the file output name (WITHOUT any file extension): ")
 
-        # output the text files with a designation of magnitude or flux
-        data2.to_csv(output + "_magnitudes.txt", index=False, header=False, sep="\t")
-        print("")
-        print("Fished saving the file to the same location as this program.\n\n")
-    elif data_amount == 2:
-        # outputs the new file to dataframe and then into a text file for use in Peranso or PHOEBE
-        if num == 0:
-            data1 = pd.DataFrame({
-                "HJD": new_hjd,
-                "rel flux": new_flux,
-                "rel flux error": new_flux_err
-            })
+def main(include_bjd=False):
+    """
+    Ask for the nightly files in the terminal and combine them. The combined
+    files are saved in the current folder. Type 'Close' at any prompt to stop.
+    """
+    print("\nEach night should have a file like 2018.09.18.APASS.B_datasubset.dat, all for the "
+          "same filter.\nType 'Close' at any prompt to stop.\n")
+    while True:
+        count = _ask("Number of nights you have: ")
+        if count.isdigit() and int(count) > 0:
+            break
+        print("Enter a whole number above zero, or 'Close'.\n")
 
-            data2 = pd.DataFrame({
-                "HJD": new_hjd,
-                "AMag": new_amag,
-                "AMag Error": new_amag_err
-            })
-        elif num == 1:
-            data1 = pd.DataFrame({
-                "BJD_TDB": new_bjd,
-                "HJD": new_hjd,
-                "rel flux": new_flux,
-                "rel flux error": new_flux_err
-            })
+    files = []
+    for night in range(int(count)):
+        while True:
+            path = Path(_ask(f"Night {night + 1} file path: ").strip('"')).expanduser()
+            if path.is_file():
+                files.append(path)
+                break
+            print("That file doesn't exist. Try again.\n")
 
-            data2 = pd.DataFrame({
-                "BJD_TDB": new_bjd,
-                "HJD": new_hjd,
-                "AMag": new_amag,
-                "AMag Error": new_amag_err
-            })
-
-        output = input("What is the file output name (WITHOUT any file extension): ")
-
-        # output both text files with a designation of magnitude or flux
-        data1.to_csv(output + "_magnitudes.txt", index=False, header=False, sep="\t")
-        data2.to_csv(output + "_flux.txt", index=False, header=False, sep="\t")
-        print("")
+    name = _ask("Output name, without a file extension: ")
+    try:
+        combine_nights(files, Path.cwd(), name, include_bjd=bool(include_bjd))
+    except NightFileError as e:
+        print(f"\nError: {e}\n")
+        return 1
+    return 0
 
 
 if __name__ == '__main__':
-    main(0)
+    main()

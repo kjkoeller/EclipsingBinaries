@@ -524,3 +524,176 @@ def test_multiple_ap_errors_are_raised(tmp_path):
     with pytest.raises(Exception):
         multiple_AP(["missing.fits"], tmp_path, "V", obj_name="T",
                     radec_file=str(tmp_path / "missing.radec"), write_callback=lambda _m: None)
+
+
+# ===========================================================================
+# Comparison stars that run off the image
+# ===========================================================================
+SIZE = 200
+OUTER = 15  # outer annulus radius used in these tests
+
+
+def _drifting_frames(folder, stars, shifts, nan_box=None, nan_frame=None):
+    """
+    Write frames whose pointing drifts, so stars move across the detector.
+
+    stars: list of (x, y, flux, catalog_mag) in frame-0 pixels, target first.
+    shifts: per-frame (dx, dy) applied to every star's pixel position.
+    nan_box: (x0, x1, y0, y1) filled with NaN in frame nan_frame.
+    Returns the frame names and a RADEC writer that takes a list of star indices.
+    """
+    from astropy.io import fits
+    from astropy.wcs import WCS
+
+    base = WCS(naxis=2)
+    base.wcs.crpix = [SIZE / 2, SIZE / 2]
+    base.wcs.crval = [15.0, 30.0]
+    base.wcs.cdelt = [-1 / 3600, 1 / 3600]
+    base.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+    sky = base.pixel_to_world([s[0] for s in stars], [s[1] for s in stars])
+
+    yy, xx = np.mgrid[:SIZE, :SIZE]
+    names = []
+    for i, (dx, dy) in enumerate(shifts):
+        wcs = base.deepcopy()
+        wcs.wcs.crpix = [SIZE / 2 + dx + 1, SIZE / 2 + dy + 1]  # FITS crpix is 1-based
+        image = np.full((SIZE, SIZE), 100.0)
+        for x, y, flux, _ in stars:
+            px, py = x + dx, y + dy
+            image += flux * np.exp(-((xx - px) ** 2 + (yy - py) ** 2) / (2 * 2.0 ** 2))
+        if nan_box is not None and i == nan_frame:
+            x0, x1, y0, y1 = nan_box
+            image[y0:y1, x0:x1] = np.nan
+        header = wcs.to_header()
+        header.update(IMAGETYP="LIGHT", FILTER="V", RDNOISE=6.0,
+                      HJD=2460000.5 + i * 0.01, BJD_TDB=2460000.6 + i * 0.01)
+        name = f"frame{i}.fits"
+        fits.writeto(folder / name, image, header, overwrite=True)
+        names.append(name)
+
+    def write_radec(path, keep):
+        lines = ["#"] * 7
+        for k in keep:
+            mag = 99.999 if k == 0 else stars[k][3]
+            lines.append(f"{sky[k].ra.hour:.10f}, {sky[k].dec.deg:.10f}, 0, 1, {mag}")
+        path.write_text("\n".join(lines) + "\n")
+        return path
+
+    return names, write_radec
+
+
+def _run(folder, names, radec, messages=None):
+    from EclipsingBinaries.multi_aperture_photometry import multiple_AP
+    log = messages.append if messages is not None else (lambda _m: None)
+    multiple_AP(names, folder, "V", obj_name="T", radec_file=str(radec),
+                write_callback=log, aperture_radius=6, annulus_radii=(10, OUTER))
+    return pd.read_csv(folder / "T_V_data.csv")
+
+
+# Target in the middle; A, B and C are comparison stars. C sits near the right edge.
+STARS = [(100, 100, 20000.0, 99.999), (60, 100, 30000.0, 11.0),
+         (100, 60, 25000.0, 11.2), (170, 140, 28000.0, 11.1)]
+
+
+def test_off_image_star_is_dropped_and_analysis_starts_over(tmp_path):
+    # Frame 2 drifts 20 px right, which pushes C's annulus off the edge.
+    # The finished light curve must be exactly what you'd get by leaving C
+    # out of the RADEC file from the start: every frame uses A and B only.
+    names, write_radec = _drifting_frames(tmp_path, STARS, [(0, 0), (5, 0), (20, 0), (0, 0)])
+    messages = []
+    restarted = _run(tmp_path, names, write_radec(tmp_path / "all.radec", [0, 1, 2, 3]), messages)
+    fresh = _run(tmp_path, names, write_radec(tmp_path / "no_c.radec", [0, 1, 2]))
+
+    assert len(restarted) == 4
+    pd.testing.assert_frame_equal(restarted, fresh)
+    assert sum("[REMOVED] Comparison star #3" in m for m in messages) == 1
+    assert sum("Starting V photometry over" in m for m in messages) == 1
+    assert any("2 comparison star(s) (#1, #2)" in m for m in messages)
+
+
+def test_all_stars_off_in_one_image_are_dropped_in_one_restart(tmp_path):
+    # Frame 1 drifts up and left so both A (x=60) and B (y=60) hang off the edges
+    stars = [(100, 100, 20000.0, 99.999), (60, 100, 30000.0, 11.0),
+             (100, 60, 25000.0, 11.2), (120, 130, 28000.0, 11.1), (130, 110, 26000.0, 11.3)]
+    names, write_radec = _drifting_frames(tmp_path, stars, [(0, 0), (-50, -50), (0, 0)])
+    messages = []
+    _run(tmp_path, names, write_radec(tmp_path / "s.radec", range(5)), messages)
+
+    removed = [m for m in messages if m.startswith("[REMOVED]")]
+    assert len(removed) == 2
+    assert sum("Starting V photometry over" in m for m in messages) == 1
+
+
+def test_annulus_poking_half_a_pixel_off_is_caught(tmp_path):
+    # C's outer annulus reaches 0.2 px past the right edge (x + 15 = 199.7 > 199.5).
+    # The old check only required x < width - radius, so it kept this star.
+    stars = STARS[:3] + [(184.7, 140, 28000.0, 11.1)]
+    names, write_radec = _drifting_frames(tmp_path, stars, [(0, 0), (0, 0)])
+    messages = []
+    _run(tmp_path, names, write_radec(tmp_path / "s.radec", range(4)), messages)
+    assert any("[REMOVED] Comparison star #3" in m and "off the edge" in m for m in messages)
+
+
+def test_star_over_missing_data_is_dropped(tmp_path):
+    # A NaN patch in frame 1 overlaps A's annulus but stays well inside the image
+    names, write_radec = _drifting_frames(tmp_path, STARS, [(0, 0), (0, 0), (0, 0)],
+                                          nan_box=(68, 80, 95, 105), nan_frame=1)
+    messages = []
+    out = _run(tmp_path, names, write_radec(tmp_path / "s.radec", range(4)), messages)
+    assert any("[REMOVED] Comparison star #1" in m and "no data" in m for m in messages)
+    assert out["Source_AMag_T1"].notna().all()
+
+
+def test_frame_where_target_is_off_is_skipped_not_used_to_drop_stars(tmp_path):
+    # In frame 1 the pointing jumps so far that the target itself is off the image.
+    # That frame is skipped; the comparison stars aren't judged on it.
+    names, write_radec = _drifting_frames(tmp_path, STARS, [(0, 0), (95, 0), (0, 0)])
+    messages = []
+    out = _run(tmp_path, names, write_radec(tmp_path / "s.radec", range(4)), messages)
+
+    assert len(out) == 2
+    assert list(out["HJD"]) == pytest.approx([2460000.5, 2460000.52])
+    assert any(m.startswith("[SKIPPED] frame1.fits") for m in messages)
+    assert not any(m.startswith("[REMOVED]") for m in messages)
+
+
+def test_error_when_every_comparison_star_is_dropped(tmp_path):
+    stars = [(100, 100, 20000.0, 99.999), (190, 100, 30000.0, 11.0)]
+    names, write_radec = _drifting_frames(tmp_path, stars, [(0, 0)])
+    with pytest.raises(RuntimeError, match="All comparison stars have been removed"):
+        _run(tmp_path, names, write_radec(tmp_path / "s.radec", [0, 1]))
+
+
+def test_error_when_target_never_fits(tmp_path):
+    stars = [(195, 100, 20000.0, 99.999), (60, 100, 30000.0, 11.0)]
+    names, write_radec = _drifting_frames(tmp_path, stars, [(0, 0), (0, 0)])
+    with pytest.raises(RuntimeError, match="couldn't be measured in any"):
+        _run(tmp_path, names, write_radec(tmp_path / "s.radec", [0, 1]))
+
+
+@pytest.mark.parametrize("x, y, expected", [
+    (100.0, 100.0, None),
+    (14.5, 100.0, None),            # touches the left edge exactly
+    (14.4, 100.0, "off the edge"),
+    (184.5, 100.0, None),           # touches the right edge exactly
+    (184.6, 100.0, "off the edge"),
+    (100.0, 184.6, "off the edge"),
+    (float("nan"), 100.0, "WCS"),
+])
+def test_footprint_problem_edges(x, y, expected):
+    from EclipsingBinaries.multi_aperture_photometry import footprint_problem
+    result = footprint_problem(x, y, OUTER, np.zeros((SIZE, SIZE)))
+    if expected is None:
+        assert result is None
+    else:
+        assert expected in result
+
+
+def test_footprint_problem_nan_inside_and_outside():
+    from EclipsingBinaries.multi_aperture_photometry import footprint_problem
+    image = np.zeros((SIZE, SIZE))
+    image[100, 114] = np.nan                       # inside a radius-15 circle around (100, 100)
+    assert "no data" in footprint_problem(100.0, 100.0, OUTER, image)
+    image = np.zeros((SIZE, SIZE))
+    image[100, 120] = np.inf                       # well outside it
+    assert footprint_problem(100.0, 100.0, OUTER, image) is None

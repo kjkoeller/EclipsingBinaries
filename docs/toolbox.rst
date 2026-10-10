@@ -357,6 +357,27 @@ Images are grouped by the ``FILTER`` keyword. ``Empty/B`` and ``B`` style names 
 of the box; other names need a ``filter_config.json`` as described in
 :ref:`custom-filter-mapping`.
 
+Stars Near the Edge
+^^^^^^^^^^^^^^^^^^^
+
+Every star's aperture and annulus has to sit wholly on real image data in every image.
+Before measuring an image, each star's position is worked out from that image's WCS, so
+pointing drift during the night is taken into account. A comparison star fails the check
+when any part of its outer annulus is off the edge of the image, or covers pixels with no
+data (NaN or infinite values, as on the padded edges of TESS cutouts or aligned frames).
+
+When comparison stars fail in an image, all of them are removed from the list at once and
+the photometry for that filter starts over from the first image with the smaller set. This
+repeats until one set of comparison stars fits in every image, so every magnitude in the
+light curve comes from the same ensemble. The result is the same as if those stars had
+been left out of the RADEC file from the start.
+
+If the target's own annulus doesn't fit in an image, that image is skipped instead, and the
+comparison stars aren't judged on it. The output log lists each removed star with its
+pixel position and the reason, each skipped image, and which comparison stars were used
+in the end. Photometry stops with an error if every comparison star is removed or the
+target doesn't fit in any image.
+
 Optimize Radii
 ^^^^^^^^^^^^^^
 

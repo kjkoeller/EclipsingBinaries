@@ -304,6 +304,36 @@ def read_noise_from_header(header, fallback):
     return value if value >= 0 else fallback
 
 
+def footprint_problem(x, y, radius, image_data):
+    """
+    Check whether a circle of the given radius around pixel (x, y) can be measured
+    on this image. Returns a short reason when it can't, or None when it can.
+
+    A circle can't be measured when any part of it is off the edge of the image,
+    or when it covers pixels with no data (NaN or infinite values, such as the
+    padded edges of TESS cutouts or aligned frames).
+    """
+    height, width = image_data.shape
+    if not (np.isfinite(x) and np.isfinite(y)):
+        return "its position couldn't be worked out from the image WCS"
+
+    # Pixel centres sit on whole numbers, so the image covers -0.5 to width - 0.5
+    if (x - radius < -0.5 or x + radius > width - 0.5
+            or y - radius < -0.5 or y + radius > height - 0.5):
+        return "part of its annulus is off the edge of the image"
+
+    # Any pixel the circle touches, including ones it only clips at a corner
+    reach = radius + np.sqrt(0.5)
+    x0, x1 = max(int(np.floor(x - reach)), 0), min(int(np.ceil(x + reach)) + 1, width)
+    y0, y1 = max(int(np.floor(y - reach)), 0), min(int(np.ceil(y + reach)) + 1, height)
+    yy, xx = np.mgrid[y0:y1, x0:x1]
+    touched = (xx - x) ** 2 + (yy - y) ** 2 <= reach ** 2
+    if not np.all(np.isfinite(image_data[y0:y1, x0:x1][touched])):
+        return "its annulus covers pixels with no data (NaN or infinite values)"
+
+    return None
+
+
 class _IntOffsetFormatter(ScalarFormatter):
     """Show the axis offset as a whole number, e.g. +2460000 rather than 1e6 notation."""
 
@@ -317,9 +347,16 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                 write_callback=None, cancel_event=None, aperture_radius=20, annulus_radii=(30, 50),
                 read_noise=None):
     """
-    Perform aperture photometry on all images for a single filter. Comparison stars
-    that fall outside the image bounds are automatically removed and the process
-    restarts from the first image until a stable set of comparison stars is found.
+    Perform aperture photometry on all images for a single filter.
+
+    If any comparison star's aperture or annulus runs off the edge of an image, or
+    over pixels with no data, every such star in that image is dropped and the
+    whole filter starts over from the first image with the smaller set. This
+    repeats until one set of comparison stars works in every image, so all the
+    magnitudes in the output come from the same ensemble.
+
+    Images where the target's own annulus doesn't fit are skipped, since there is
+    nothing to measure, and the comparison stars are left alone for them.
 
     Parameters
     ----------
@@ -407,12 +444,24 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
         # with the reduced set. This continues until all remaining comparison stars
         # are within bounds for every image in the list.
         # ---------------------------------------------------------------------------
+        # The largest circle drawn around any star; this is what has to fit on the image
+        outer_radius = max(float(aperture_radius), float(annulus_radii[1]))
+        removed_stars = []
+        pass_number = 0
+
         restart = True
         while restart:
             restart = False
+            pass_number += 1
 
             if not valid_comp_indices:
                 raise RuntimeError("All comparison stars have been removed. Cannot continue photometry.")
+
+            if pass_number > 1:
+                log(f"Starting {filt} photometry over from the first image with "
+                    f"{len(valid_comp_indices)} comparison star(s) (pass {pass_number}).")
+
+            skipped_frames = []
 
             # Slice coordinate and magnitude arrays down to currently valid stars
             cur_comp_ra = comp_ra_all[valid_comp_indices]
@@ -466,39 +515,44 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                 comp_y = np.array(comp_pixels[1], dtype=float)
 
                 # ---------------------------------------------------------------------------
-                # Bounds check: verify every comparison star's aperture and annulus fit
-                # entirely within the image. The outer annulus radius is used as the margin
-                # so that background estimation is never computed from partial data.
+                # Every star's aperture and annulus must sit wholly on real image data,
+                # otherwise its flux or background would come from a partial circle.
+                # The target is checked first: if it doesn't fit, the image is skipped
+                # and the comparison stars aren't judged on it.
                 # ---------------------------------------------------------------------------
-                margin = annulus_radii[1]
-                out_of_bounds_idx = None
+                target_problem = footprint_problem(*target_position, outer_radius, image_data)
+                if target_problem:
+                    log(f"[SKIPPED] {image_file}: the target can't be measured because {target_problem} "
+                        f"(x={target_position[0]:.1f}, y={target_position[1]:.1f}, "
+                        f"image {img_width}x{img_height}).", pbar)
+                    skipped_frames.append(image_file)
+                    continue
 
+                bad_stars = []
                 for i, (cx, cy) in enumerate(zip(comp_x, comp_y)):
-                    x_in_bounds = margin <= cx < (img_width - margin)
-                    y_in_bounds = margin <= cy < (img_height - margin)
-                    if not x_in_bounds or not y_in_bounds:
-                        out_of_bounds_idx = i
-                        break
+                    problem = footprint_problem(cx, cy, outer_radius, image_data)
+                    if problem:
+                        bad_stars.append((i, problem))
 
-                if out_of_bounds_idx is not None:
-                    # Record which original star (1-based, relative to the RADEC file) was removed
-                    orig_idx = valid_comp_indices[out_of_bounds_idx]
-                    log(
-                        f"\n[REMOVED] Comparison star #{orig_idx + 1} "
-                        f"(RA={cur_comp_ra[out_of_bounds_idx]}, Dec={cur_comp_dec[out_of_bounds_idx]}) "
-                        f"is out of bounds in '{image_file}'.\n"
-                        f"  Pixel position: x={comp_x[out_of_bounds_idx]:.1f}, "
-                        f"y={comp_y[out_of_bounds_idx]:.1f} | "
-                        f"Image size: {img_width}x{img_height} | "
-                        f"Required margin: {margin}px\n"
-                        f"  Restarting photometry without this star...",
-                        pbar
-                    )
-                    valid_comp_indices.pop(out_of_bounds_idx)
+                if bad_stars:
+                    # Drop every star that failed in this image at once, then start
+                    # the whole filter over so all images use the same ensemble
+                    for i, problem in bad_stars:
+                        orig_idx = valid_comp_indices[i]
+                        removed_stars.append((orig_idx + 1, image_file, problem))
+                        log(
+                            f"[REMOVED] Comparison star #{orig_idx + 1} "
+                            f"(RA={cur_comp_ra[i]}, Dec={cur_comp_dec[i]}) in '{image_file}': {problem}. "
+                            f"Pixel position x={comp_x[i]:.1f}, y={comp_y[i]:.1f}; "
+                            f"image {img_width}x{img_height}; outer radius {outer_radius:g}px.",
+                            pbar
+                        )
+                    drop = {i for i, _ in bad_stars}
+                    valid_comp_indices = [idx for k, idx in enumerate(valid_comp_indices) if k not in drop]
                     if use_tqdm:
                         image_iter.close()
                     restart = True
-                    break  # Exit image loop and re-enter the while loop
+                    break  # Leave the image loop and start the filter over
 
                 # Build the list of (x, y) positions for all active comparison stars
                 comparison_positions = list(zip(comp_x, comp_y))
@@ -600,6 +654,19 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
 
                 magnitudes.append(float(target_magnitude))
                 mag_err.append(float(target_magnitude_error))
+
+        if not magnitudes:
+            raise RuntimeError(f"The target couldn't be measured in any {filt} image.")
+
+        used = ", ".join(f"#{idx + 1}" for idx in valid_comp_indices)
+        log(f"{filt}: measured {len(magnitudes)} image(s) with {len(valid_comp_indices)} "
+            f"comparison star(s) ({used}).")
+        if removed_stars:
+            log(f"{filt}: removed {len(removed_stars)} comparison star(s) that didn't fit on every image "
+                f"and started over {pass_number - 1} time(s).")
+        if skipped_frames:
+            log(f"{filt}: skipped {len(skipped_frames)} image(s) where the target didn't fit: "
+                + ", ".join(skipped_frames))
 
         # ---------------------------------------------------------------------------
         # Plot the resulting light curve with error bars and save it to disk

@@ -433,7 +433,7 @@ def _fill_find_min(app, count, folder=None):
         app._set_entry_text(entry, str(EXAMPLES / f"test_{filt}.txt"))
     if folder:
         app._set_entry_text(app._panel_fields["Output Folder"], str(folder))
-    app._find_min_filters_picked = True
+    app.find_min_curves.picked = True
 
 
 def _finder(app):
@@ -588,3 +588,132 @@ def test_window_creation_retries_the_windows_tcl_fault(monkeypatch):
     monkeypatch.setenv("EB_REQUIRE_GUI", "1")
     with pytest.raises(tk.TclError):
         gui_helpers.open_launcher(types.SimpleNamespace(ProgramLauncher=broken))
+
+
+# ----------------------------------------------------------------------
+# Period Search
+# ----------------------------------------------------------------------
+def _open_period(app, tmp_path, count=3, method="ANOVA"):
+    app.open_panel("period")
+    app.period_curves.count.set(count)
+    app.period_curves.update()
+    app.period_curves.picked = True
+    app._set_entry_text(app._panel_fields["Object Name"], "NSVS 896797")
+    for (picker, entry), filt in zip(app.period_curves.rows[:count], "BVR"):
+        picker.set(filt)
+        app._set_entry_text(entry, str(EXAMPLES / f"test_{filt}.txt"))
+    app._set_entry_text(app._panel_fields["Output Folder"], str(tmp_path))
+    app.period_method.set(method)
+    app._run_button.invoke()
+    from EclipsingBinaries.period_window import PeriodWindow
+
+    windows = [w for w in app.winfo_children() if isinstance(w, PeriodWindow)]
+    assert windows, app.log_area.get("1.0", "end")
+    window = windows[-1]
+    _finish_search(window)
+    return window
+
+
+def _finish_search(window, timeout=30):
+    end = time.time() + timeout
+    while window._job is not None and time.time() < end:
+        window.update()
+        time.sleep(0.05)
+    window.update()
+
+
+def test_period_search_finds_the_period_and_sends_it(app, tmp_path):
+    window = _open_period(app, tmp_path)
+    assert app._cancel_button is None
+    assert window.period == pytest.approx(0.31741, abs=3e-4)
+    assert "double the peak" in window.status_var.get()
+    assert window.save_button.instate(["!disabled"])
+
+    window.save()
+    saved = tmp_path / "NSVS_896797_period.txt"
+    assert saved.exists()
+    from EclipsingBinaries.period import read_ephemeris
+
+    assert read_ephemeris(saved)[0] == pytest.approx(window.period, abs=1e-7)
+
+    window.send_to("oc")
+    assert app._current_panel == "oc"
+    assert float(app._entry_value(app._panel_fields["Period (days)"])) == pytest.approx(window.period, abs=1e-6)
+    assert float(app._entry_value(app._panel_fields["Epoch (T0)"])) == pytest.approx(window.epoch, abs=1e-5)
+    assert app.oc_has_epoch_var.get()
+    window.send_to("oconnell")
+    assert app._entry_value(app._panel_fields["HJD"]) == f"{window.epoch:.6f}"
+    window.send_to("color")
+    assert app._entry_value(app._panel_fields["Period (days)"]) == f"{window.period:.7f}"
+    window.destroy()
+
+
+def test_period_window_controls(app, tmp_path):
+    window = _open_period(app, tmp_path, count=1)
+    period, epoch = window.period, window.epoch
+    window.set_period(period * 2)
+    assert window.period == pytest.approx(2 * period)
+    window.set_period(period)
+    window.swap_eclipses()
+    assert window.epoch == pytest.approx(epoch + period / 2)
+    window.epoch_at_faintest()
+    offset = ((window.epoch - epoch) / period) % 1  # the same eclipse, perhaps a whole cycle away
+    assert min(offset, 1 - offset) < 0.05
+
+    window.period_var.set("0.3175")
+    window._typed_period()
+    assert window.period == pytest.approx(0.3175)
+    window.refine_here()
+    assert window.period == pytest.approx(0.31741, abs=3e-4)
+
+    class Event:
+        def __init__(self, key=None, x=None, inaxes=None):
+            self.key, self.xdata, self.inaxes = key, x, inaxes
+
+    before = window.period
+    window._on_key(Event("right"))
+    assert window.period > before
+
+    window._on_click(Event(x=0.1587, inaxes=window.ax_power))
+    assert window.period == pytest.approx(0.15871, abs=2e-4)
+
+    minima = tmp_path / "m_min.txt"
+    minima.write_text("2458379.700000\t50\t0.000100000\n")
+    window.epoch_from_file(str(minima))
+    assert window.epoch == pytest.approx(2458379.7)
+    window.destroy()
+
+
+def test_period_window_reports_problems(app, tmp_path):
+    window = _open_period(app, tmp_path)
+    window.max_var.set("500")
+    window.start_search()
+    _finish_search(window)
+    assert "longer than the observations" in window.status_var.get()
+    window.min_var.set("abc")
+    window.start_search()
+    assert "two numbers" in window.status_var.get()
+    for var in window.band_vars.values():
+        var.set(False)
+    window.min_var.set("0.1")
+    window.max_var.set("1")
+    window.start_search()
+    assert "Tick at least one filter" in window.status_var.get()
+    window.destroy()
+
+
+@pytest.mark.parametrize("method", ["Multi-harmonic", "Lomb-Scargle"])
+def test_period_search_other_methods(app, tmp_path, method):
+    window = _open_period(app, tmp_path, count=1, method=method)
+    assert window.period == pytest.approx(0.31741, abs=5e-4)
+    window.destroy()
+
+
+def test_period_search_validation(app, tmp_path):
+    app.open_panel("period")
+    app._run_button.invoke()
+    assert "Object name is required" in app.log_area.get("1.0", "end")
+    app._set_entry_text(app._panel_fields["Object Name"], "T")
+    app._set_entry_text(app._panel_fields["Shortest Period (d)"], "x")
+    app._run_button.invoke()
+    assert "must be numbers" in app.log_area.get("1.0", "end")

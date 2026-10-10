@@ -4,8 +4,13 @@ Tests for OC_plot.py
 
 """
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import pytest
-from EclipsingBinaries.OC_plot import calculate_oc
+from numpy.polynomial import Polynomial
+
+from EclipsingBinaries.OC_plot import calculate_oc, data_fit, residuals
 
 
 # ===========================================================================
@@ -86,3 +91,45 @@ def test_calculate_oc_five_decimal_places():
     _, OC, OC_err, _, _ = calculate_oc(15.0, 0.1, 5.0, 0.1, 2.0)
     assert len(OC.split(".")[-1]) == 5
     assert len(OC_err.split(".")[-1]) == 5
+
+
+# ===========================================================================
+# data_fit and residuals
+# ===========================================================================
+def _write_oc_table(path, slope=2e-5):
+    # Primaries on whole epochs, secondaries on half epochs, with a small
+    # linear drift so the fit has a period correction to find
+    rng = np.random.default_rng(0)
+    epochs = np.arange(0, 200, 0.5)
+    oc = slope * epochs + rng.normal(0, 1e-5, epochs.size)
+    pd.DataFrame({"Epoch": epochs, "O-C": oc, "O-C_Error": np.full(epochs.size, 1e-4)}).to_csv(
+        path, sep="\t", index=False)
+
+
+def test_data_fit_writes_plot_and_tables(tmp_path):
+    table = tmp_path / "oc.txt"
+    _write_oc_table(table)
+
+    new_period = data_fit(str(table), 0.3, write_callback=lambda _m: None)
+
+    # The linear term of the fit is the period correction
+    assert new_period == pytest.approx(0.3 + 2e-5, abs=2e-6)
+    assert (tmp_path / "oc.png").stat().st_size > 0
+    assert "tabular" in (tmp_path / "oc.tex").read_text()
+
+
+def test_plotting_leaves_no_pyplot_figures_open(tmp_path):
+    # Plots are built on Figure objects, so nothing piles up in pyplot's
+    # global figure list when tasks run back to back
+    plt.close("all")
+    table = tmp_path / "oc.txt"
+    _write_oc_table(table)
+    data_fit(str(table), 0.3, write_callback=lambda _m: None)
+
+    x = np.arange(10.0)
+    model = Polynomial([0.0, 1.0])
+    residuals(x, x + 0.01, "Epoch", "O-C", 1, model, x,
+              output_path=str(tmp_path / "resid.png"), write_callback=lambda _m: None)
+
+    assert (tmp_path / "resid.png").stat().st_size > 0
+    assert plt.get_fignums() == []

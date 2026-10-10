@@ -10,8 +10,8 @@ Last Updated: 04/27/2026
 import numpy as np
 import pandas as pd
 from pathlib import Path
-import matplotlib.pyplot as plt
-import matplotlib
+from matplotlib.figure import Figure
+from matplotlib.ticker import ScalarFormatter
 import warnings
 from tqdm import tqdm
 
@@ -24,12 +24,11 @@ from astropy.wcs import WCS
 import astropy.units as u
 import json
 from astropy import wcs
+from ._log import make_logger
 
 # Suppress FITS header standards-compliance warnings that are not actionable
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
-# Use non-interactive backend so plots can be saved without a display
-matplotlib.use('Agg')
 
 _config_loaded_attempted = False
 _loaded_config = None
@@ -224,11 +223,7 @@ def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=N
     _config_log_printed = False
     _loaded_config = None
 
-    def log(message):
-        if write_callback:
-            write_callback(message)
-        else:
-            print(message)
+    log = make_logger(write_callback)
 
     try:
         images_path = Path(path)
@@ -279,6 +274,15 @@ def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=N
     except Exception as e:
         log(f"An error occurred in Multi-Aperture Photometry: {e}")
         raise
+
+
+class _IntOffsetFormatter(ScalarFormatter):
+    """Show the axis offset as a whole number, e.g. +2460000 rather than 1e6 notation."""
+
+    def get_offset(self):
+        if len(self.locs) == 0 or self.offset == 0:
+            return ''
+        return f"+{int(self.offset)}"
 
 
 def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file="",
@@ -562,7 +566,8 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
         # ---------------------------------------------------------------------------
         # Plot the resulting light curve with error bars and save it to disk
         # ---------------------------------------------------------------------------
-        _, ax = plt.subplots(figsize=(11, 8))
+        fig = Figure(figsize=(11, 8))
+        ax = fig.subplots()
         filter_letter = filt.split("/")[-1]
         target_display_name = f"{obj_name} - {filter_letter}" if obj_name else f"Target - {filter_letter}"
 
@@ -576,22 +581,13 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
         ax.set_ylabel(f'Magnitude ({filter_letter})', fontsize=fontsize)
 
         # Format HJD offset as an integer instead of scientific notation
-        from matplotlib.ticker import ScalarFormatter
-        class IntOffsetFormatter(ScalarFormatter):
-            def get_offset(self):
-                if len(self.locs) == 0 or self.offset == 0:
-                    return ''
-                return f"+{int(self.offset)}"
-
-        ax.xaxis.set_major_formatter(IntOffsetFormatter(useOffset=True))
+        ax.xaxis.set_major_formatter(_IntOffsetFormatter(useOffset=True))
         ax.invert_yaxis()  # Magnitudes increase downward by convention
         ax.grid()
-        ax.legend(loc="upper right", fontsize=fontsize).set_draggable(True)
+        ax.legend(loc="upper right", fontsize=fontsize)
         ax.tick_params(axis='both', which='major', labelsize=fontsize)
 
-        filter_letter = filt.split("/")[-1]
-        plt.savefig(path / f"{obj_name}_{filter_letter}_figure.jpg")
-        plt.close()
+        fig.savefig(path / f"{obj_name}_{filter_letter}_figure.jpg")
 
         # ---------------------------------------------------------------------------
         # Save the light curve data to a CSV file
@@ -630,6 +626,9 @@ def im_plot(image_data, target_aperture, comparison_apertures, target_annulus, c
     comparison_annuli : list of CircularAnnulus
         Background annuli for each comparison star.
     """
+    # Interactive window, so this one does go through pyplot
+    import matplotlib.pyplot as plt
+
     plt.figure(figsize=(8, 8))
 
     # Display the image with a percentile stretch to avoid saturation dominating the scale

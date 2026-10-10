@@ -28,12 +28,17 @@ The list of OS’s and Python versions listed below have been tested to be able 
 
 The minimum working Python version is 3.12 and as of right now no versions lower work with all aspects of this package.
 
-For MacOS HomeBrew users, you will need to be built against TK 8.6 since TK 9.0 breaks drag and drop extension.
-For Ubuntu/Debian users, install the system tkinter package before starting the app:
+The GUI uses tkinter, which some Python installs leave out:
+
+- macOS with Homebrew Python: `brew install python-tk@3.12` (match your Python version). The python.org installer already includes it.
+- Windows: the python.org installer includes it as long as "tcl/tk and IDLE" stays checked.
+- Ubuntu/Debian: install the system package before starting the app:
 
 ```
 sudo apt install python3-tk
 ```
+
+Drag and drop works with both Tk 8.6 and Tk 9. If it can't load (for example an Intel Mac running Tk 9), the app still starts and the Browse buttons work as usual.
 
 -----
 
@@ -51,8 +56,9 @@ Once installed, in the command line type the following:
 EclipsingBinaries
 ```
 
-This will run the `menu.py` file and will initiate all other programs for usage.
-Once installed using pip, you can just go to a command line and type `EclipsingBinaries` to start the program each time.
+This opens the GUI, which has every program in one window. Programs run in the background
+with a Cancel button, and file and folder fields accept drag and drop. See
+[Running EclipsingBinaries](https://eclipsingbinaries.readthedocs.io/en/latest/EB.html) for details.
 
 To check the version you have,
 
@@ -76,7 +82,14 @@ To use the pipeline functionality type the following:
 EB_pipeline -h
 ```
 
-This will print out all the options that are available to edit and change. The `-i` and the `-o` are required for the script to run. Otherwise, the script will crash.
+This prints every available option. A typical run looks like:
+
+```
+EB_pipeline raw_images/ reduced_images/ --ra 00:28:27.96 --dec 78:57:42.65 --name NSVS_254037 --loc BSUO
+```
+
+The input and output folders and `--ra`, `--dec` and `--name` are required. See the
+[pipeline docs](https://eclipsingbinaries.readthedocs.io/en/latest/pipeline.html) for the rest.
 
 -----
 
@@ -86,19 +99,38 @@ This will print out all the options that are available to edit and change. The `
 - astropy>=6.0
 - astroquery>=0.4.6
 - ccdproc>=2.4.0
-- matplotlib>=3.7.1
+- matplotlib>=3.8.0
 - numpy>=1.26
-- pandas>=2.1.0
+- pandas>=2.1.1
 - PyAstronomy>=0.18.1
 - scipy>=1.11.2
 - statsmodels>=0.14
 - tqdm>=4.64.1
-- numba>=0.59.0
-- seaborn>=0.12.2
 - pyia>=1.4
 - photutils>=1.8.0
-- tkinterdnd2>=0.4.3
-- tkmacosx>=1.0.4 (macOS only)
-- python3-tk (Ubuntu/Debian system package)
+- tkinterdnd2>=0.6.1
+- tkinter for the GUI (see the notes above)
+
+pip installs everything except tkinter. `pyproject.toml` has the authoritative list.
 
 -----
+
+## Development
+
+```
+git clone https://github.com/kjkoeller/EclipsingBinaries.git
+cd EclipsingBinaries
+pip install -e ".[test,docs]"
+pytest
+```
+
+The tests run without an internet connection. See the
+[contributing guide](https://eclipsingbinaries.readthedocs.io/en/latest/contributing.html) for more.
+
+-----
+
+## License
+
+EclipsingBinaries is released under the
+[Creative Commons Attribution-NonCommercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/)
+license. See [LICENSE](LICENSE) for the full text.

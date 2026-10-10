@@ -37,7 +37,8 @@ from photutils.aperture import CircularAperture, CircularAnnulus
 from .IRAF_Reduction import run_reduction, site_config
 from .tess_data_search import run_tess_search
 from .apass import comparison_selector
-from .multi_aperture_photometry import main as multi_ap, auto_optimize_radii, calculate_target_snr
+from .multi_aperture_photometry import (main as multi_ap, auto_optimize_radii, calculate_target_snr,
+                                        DEFAULT_READ_NOISE, read_noise_from_header)
 from .gaia import target_star as gaia
 from .OC_plot import BSUO, TESS_OC, all_data, data_fit
 from .OConnell import main as oconnell
@@ -852,7 +853,7 @@ class ProgramLauncher(tk.Tk):
                                                 error_message="Please enter a file pathway.",
                                                 browse_type="folder")
 
-        download_all_var = tk.BooleanVar(value=False)
+        single_sector_var = tk.BooleanVar(value=False)
 
         # Placeholders for widgets that appear when a specific sector is wanted
         self.sector_dropdown = None
@@ -860,15 +861,15 @@ class ProgramLauncher(tk.Tk):
         self.sector_label = None
 
         tk.Checkbutton(
-            self.right_frame, text="Download Specific Sector", variable=download_all_var,
+            self.right_frame, text="Download Specific Sector", variable=single_sector_var,
             font=self.label_font, bg=BG_PANEL,
-            command=lambda: self.toggle_sector_options(download_all_var, system_name)
+            command=lambda: self.toggle_sector_options(single_sector_var, system_name)
         ).grid(row=3, column=0, columnspan=2, pady=5)
 
         self.create_run_button(self.right_frame, self.run_tess_search, row=6,
                                system_name=system_name,
                                download_path=download_path,
-                               download_all_var=download_all_var)
+                               single_sector_var=single_sector_var)
 
         self._log_section(7)
 
@@ -902,9 +903,9 @@ class ProgramLauncher(tk.Tk):
             self.sector_dropdown.set("Select a Sector")
             self.write_to_log("Sectors successfully retrieved.")
 
-    def toggle_sector_options(self, download_all_var, system_name):
+    def toggle_sector_options(self, single_sector_var, system_name):
         """Show or hide the sector dropdown, 'Select Specific Sector' label, and Retrieve Sectors button."""
-        if download_all_var.get():
+        if single_sector_var.get():
             if not self.sector_label:
                 self.sector_label = tk.Label(self.right_frame, text="Select Specific Sector:",
                                              font=self.label_font, bg=BG_PANEL)
@@ -934,14 +935,14 @@ class ProgramLauncher(tk.Tk):
                 self.retrieve_button.destroy()
                 self.retrieve_button = None
 
-    def run_tess_search(self, system_name, download_path, download_all_var):
+    def run_tess_search(self, system_name, download_path, single_sector_var):
         """Validate the TESS inputs, then run the search and download on a worker thread."""
         system_name_value = self._entry_value(system_name)
         download_path_value = self._path_value(download_path)
-        download_all = download_all_var.get()
+        single_sector = single_sector_var.get()
 
         specific_sector_value = None
-        if download_all:  # Specific sector mode
+        if single_sector:
             selected = self.sector_dropdown.get() if self.sector_dropdown else ""
             if not selected.isdigit():
                 self.write_to_log("Error: Please select a valid sector.")
@@ -958,12 +959,13 @@ class ProgramLauncher(tk.Tk):
         def search_task():
             self.write_to_log(f"System Name: {system_name_value}")
             self.write_to_log(f"Download Path: {download_path_value}")
-            self.write_to_log(f"Download All Sectors: {'Yes' if download_all else 'No'}")
-            if specific_sector_value is not None:
-                self.write_to_log(f"Specific Sector: {specific_sector_value}")
+            if single_sector:
+                self.write_to_log(f"Sector: {specific_sector_value}")
+            else:
+                self.write_to_log("Sectors: all available")
             try:
                 run_tess_search(
-                    system_name=system_name_value, download_all=download_all,
+                    system_name=system_name_value, single_sector=single_sector,
                     specific_sector=specific_sector_value, download_path=download_path_value,
                     write_callback=self.write_to_log, cancel_event=self.cancel_event
                 )
@@ -1209,18 +1211,21 @@ class ProgramLauncher(tk.Tk):
                 target_pixel = WCS(header).world_to_pixel(target_sky)
                 target_position = (float(target_pixel[0]), float(target_pixel[1]))
 
-                fwhm, best_aperture, (best_inner, best_outer) = auto_optimize_radii(image_data, target_position)
+                read_noise = read_noise_from_header(header, DEFAULT_READ_NOISE)
+                fwhm, best_aperture, (best_inner, best_outer) = auto_optimize_radii(
+                    image_data, target_position, read_noise)
             except Exception as e:
                 self.write_to_log(f"Error launching interactive optimizer: {e}")
                 self.write_to_log(traceback.format_exc())
                 return
 
             self.call_in_ui(self._open_radii_optimizer, image_data, target_position,
-                            fwhm, best_aperture, best_inner, best_outer)
+                            fwhm, best_aperture, best_inner, best_outer, read_noise)
 
         self.run_task(prepare)
 
-    def _open_radii_optimizer(self, image_data, target_position, fwhm, best_aperture, best_inner, best_outer):
+    def _open_radii_optimizer(self, image_data, target_position, fwhm, best_aperture, best_inner, best_outer,
+                              read_noise=DEFAULT_READ_NOISE):
         """Interactive window for adjusting the aperture and annulus with a live SNR readout."""
         opt_window = tk.Toplevel(self)
         opt_window.title("Interactive Radii Optimizer")
@@ -1281,7 +1286,7 @@ class ProgramLauncher(tk.Tk):
             area_factor_label.config(text=f"Annulus Area: {area_factor:.1f}x Aperture Area")
 
             try:
-                snr, _, _, _ = calculate_target_snr(image_data, target_position, ap, (inn, out))
+                snr, _, _, _ = calculate_target_snr(image_data, target_position, ap, (inn, out), read_noise)
                 snr_label.config(text=f"SNR: {snr:.2f}")
             except Exception:
                 snr_label.config(text="SNR: unavailable")

@@ -17,22 +17,32 @@ from astropy import units as u
 from importlib import resources as pkg_resources
 
 
-def run_tess_search(system_name, download_all, specific_sector, download_path, write_callback, cancel_event):
+def run_tess_search(system_name, single_sector, specific_sector, download_path,
+                    write_callback=None, cancel_event=None):
     """
-    Search for TESS data and download the specified sectors with cancel functionality.
+    Search for TESS data and download either every available sector or one chosen sector.
 
     Parameters
     ----------
     system_name : str
         The TIC ID or system name.
-    download_all : bool
-        Whether to download all available sectors.
+    single_sector : bool
+        True to download only ``specific_sector``; False to download every sector.
+        This argument used to be called ``download_all``, although True has always
+        meant a single sector.
     specific_sector : int, optional
-        The specific sector to download if `download_all` is False.
-    download_path : str, optional
+        The sector to download when ``single_sector`` is True.
+    download_path : str
         The directory to save downloaded files.
     write_callback : function, optional
         Callback to log progress or errors to the GUI.
+    cancel_event : threading.Event, optional
+        Set it to stop between sectors.
+
+    Raises
+    ------
+    Any error from the search or download, after logging it, so callers
+    such as the GUI don't report success when nothing was downloaded.
     """
 
     log = make_logger(write_callback)
@@ -96,8 +106,7 @@ def run_tess_search(system_name, download_all, specific_sector, download_path, w
         formatted_table = "\n".join(sector_table.pformat(show_name=True, max_width=-1, align="^"))
         log("Sector Table:\n" + formatted_table)
 
-        # Check specific_sector logic
-        if not download_all:
+        if not single_sector:
             log("Downloading all available sectors.")
             for sector in sector_table["sector"]:
                 if cancel_event is not None and cancel_event.is_set():
@@ -115,6 +124,7 @@ def run_tess_search(system_name, download_all, specific_sector, download_path, w
         log("Finished downloading all sector data related to " + system_name + "\n")
     except Exception as e:
         log(f"An error occurred during TESS Database Search: {e}")
+        raise
 
 
 def download_sector(system_name, sector, download_path, write_callback, cancel_event):

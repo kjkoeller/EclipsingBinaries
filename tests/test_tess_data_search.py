@@ -230,6 +230,12 @@ def test_download_sector_uses_outprefix_with_system_name():
 # ===========================================================================
 # run_tess_search — network mocked
 # ===========================================================================
+def _gain_table_mock():
+    # One row per output slice: camera 1 / CCD 1 has four slices, each with its own gain
+    columns = {0: [1, 1, 1, 1], 1: [1, 1, 1, 1], 2: [1, 2, 3, 4], 3: [1.5, 1.6, 1.7, 1.8]}
+    return MagicMock(__getitem__=lambda self, key: columns[key])
+
+
 def test_run_tess_search_logs_on_cancel_before_start():
     from EclipsingBinaries.tess_data_search import run_tess_search
     cancel = MagicMock()
@@ -245,7 +251,9 @@ def test_run_tess_search_logs_error_on_no_data():
     cancel.is_set.return_value = False
     messages = []
     with patch("EclipsingBinaries.tess_data_search.Tesscut.get_sectors", return_value=[]):
-        run_tess_search("TIC 000", False, None, "/tmp", messages.append, cancel)
+        # Errors are raised as well as logged so the GUI doesn't report success
+        with pytest.raises(ValueError):
+            run_tess_search("TIC 000", False, None, "/tmp", messages.append, cancel)
     assert any("error" in m.lower() or "no tess" in m.lower() for m in messages)
 
 
@@ -256,11 +264,8 @@ def test_run_tess_search_calls_get_sectors_with_system_name():
     mock_table = Table({"sector": [1], "camera": [1], "ccd": [1]})
     messages = []
     with patch("EclipsingBinaries.tess_data_search.Tesscut.get_sectors", return_value=mock_table) as mock_gs, \
-         patch("EclipsingBinaries.tess_data_search.pd.read_csv") as mock_csv, \
+         patch("EclipsingBinaries.tess_data_search.pd.read_csv", return_value=_gain_table_mock()), \
          patch("EclipsingBinaries.tess_data_search.download_sector"):
-        mock_csv.return_value = MagicMock(
-            __getitem__=lambda self, key: {0: [1], 1: [1], 2: [1], 3: [1.5, 1.5, 1.5, 1.5]}[key]
-        )
         run_tess_search("TIC 999", False, None, "/tmp", messages.append, cancel)
     mock_gs.assert_called_once_with(objectname="TIC 999")
 
@@ -276,9 +281,32 @@ def test_run_tess_search_specific_sector_missing_logs_error():
         mock_csv.return_value = MagicMock(
             __getitem__=lambda self, key: {0: [1], 1: [1], 2: [1], 3: [1.5, 1.5, 1.5, 1.5]}[key]
         )
-        # download_all=True but specific_sector=None → should log error
-        run_tess_search("TIC 999", True, None, "/tmp", messages.append, cancel)
+        # single_sector=True but no sector given
+        with pytest.raises(ValueError):
+            run_tess_search("TIC 999", True, None, "/tmp", messages.append, cancel)
     assert any("error" in m.lower() or "not specified" in m.lower() for m in messages)
+
+
+def test_run_tess_search_download_failure_is_raised():
+    # Used to be logged and swallowed, after which the GUI said "completed successfully"
+    from EclipsingBinaries.tess_data_search import run_tess_search
+    mock_table = Table({"sector": [1], "camera": [1], "ccd": [1]})
+    with patch("EclipsingBinaries.tess_data_search.Tesscut.get_sectors", return_value=mock_table), \
+         patch("EclipsingBinaries.tess_data_search.pd.read_csv", return_value=_gain_table_mock()), \
+         patch("EclipsingBinaries.tess_data_search.download_sector", side_effect=OSError("MAST is down")):
+        with pytest.raises(OSError, match="MAST is down"):
+            run_tess_search("TIC 999", False, None, "/tmp", lambda _m: None)
+
+
+@pytest.mark.parametrize("single_sector, sector, expected", [(False, None, [7, 9]), (True, 9, [9])])
+def test_run_tess_search_single_sector_flag(single_sector, sector, expected):
+    from EclipsingBinaries.tess_data_search import run_tess_search
+    mock_table = Table({"sector": [7, 9], "camera": [1, 1], "ccd": [1, 1]})
+    with patch("EclipsingBinaries.tess_data_search.Tesscut.get_sectors", return_value=mock_table), \
+         patch("EclipsingBinaries.tess_data_search.pd.read_csv", return_value=_gain_table_mock()), \
+         patch("EclipsingBinaries.tess_data_search.download_sector") as download:
+        run_tess_search("TIC 999", single_sector, sector, "/tmp", lambda _m: None)
+    assert [c.args[1] for c in download.call_args_list] == expected
 
 
 # ===========================================================================

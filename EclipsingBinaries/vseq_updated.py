@@ -73,24 +73,18 @@ def splitter(a):
     :param a:
     :return:
     """
-    # makes the coordinate string into a decimal number from the text file
-    step = []
+    # The sign is read from the text rather than the degrees field, because
+    # int("-00") is 0 and the old version turned "-00:30:00" into +0.5.
+    # Seconds keep their fraction; they used to be cut to whole seconds,
+    # which moved RA by up to 15 arcsec.
     final = []
     for i in a:
-        new = i.split(":")
-        num1 = int(new[0])
-        if num1 < 0:
-            num2 = -int(new[1])
-            num3 = -int(float(new[2]))
-            b = num1 + ((num2 + (num3 / 60)) / 60)
-        else:
-            num2 = int(new[1])
-            num3 = int(float(new[2]))
-            b = num1 + ((num2 + (num3 / 60)) / 60)
-        step.append(format(b, ".7f"))
-
-    for i in step:
-        final.append(float(format(i)))
+        text = str(i).strip()
+        sign = -1.0 if text.startswith("-") else 1.0
+        parts = [float(part) for part in text.lstrip("+-").split(":")]
+        parts += [0.0] * (3 - len(parts))
+        value = sign * (parts[0] + parts[1] / 60 + parts[2] / 3600)
+        final.append(round(value, 7))
     return final
 
 

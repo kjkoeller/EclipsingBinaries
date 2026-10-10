@@ -336,7 +336,9 @@ def data_fit(input_file, period, write_callback=None, cancel_event=None):
 
     # Output paths derived from input file location
     base = Path(input_file)
-    tex_path = str(base.with_suffix(".tex"))
+    # all_data() already writes its LaTeX O-C table to [name].tex, so the
+    # regression tables get their own name instead of overwriting it
+    tex_path = str(base.with_name(base.stem + "_regression.tex"))
     plot_path = str(base.with_suffix(".png"))
 
     beginningtex = "\\documentclass{report}\n\\usepackage{booktabs}\n\\begin{document}\n"

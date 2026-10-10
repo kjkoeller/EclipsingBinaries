@@ -154,3 +154,18 @@ def test_di_phi_finite_across_phases():
 def test_di_phi_numpy_b_array():
     b = np.array([0.0, 0.3, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001, 0.0005, 0.0002])
     assert np.isfinite(dI_phi(b, 0.25, 10))
+
+def test_table_name_keeps_trailing_letters(tmp_path):
+    # rstrip(".pdf") used to clip any trailing p, d, f or . characters,
+    # so "Lapd.pdf" produced "La.txt"
+    from pathlib import Path
+    from EclipsingBinaries.OConnell import multi_OConnell_total
+
+    examples = Path(__file__).resolve().parent.parent / "EclipsingBinaries" / "examples"
+    out = tmp_path / "Lapd.pdf"
+    multi_OConnell_total([str(examples / "test_B.txt")], 2458403.58763, 0.3175, order=10, sims=5,
+                         save=True, outName=str(out), write_callback=lambda _m: None)
+
+    assert (tmp_path / "Lapd.txt").exists()
+    assert not (tmp_path / "La.txt").exists()
+    assert out.exists()

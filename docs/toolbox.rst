@@ -216,6 +216,14 @@ When **Download Specific Sector** is checked, a **Retrieve Sectors** button appe
 Clicking it queries TESS for available sectors and populates a dropdown for the user
 to select from. The sector table is also printed to the output log.
 
+If the search or a download fails, the error is shown in the log and the task ends with an
+error rather than a success message.
+
+From Python, ``run_tess_search(system_name, single_sector, specific_sector, download_path)``
+downloads every sector when ``single_sector`` is ``False``, or only ``specific_sector``
+when it is ``True``. That argument used to be called ``download_all``, although ``True``
+always meant a single sector.
+
 Searching TESS
 ^^^^^^^^^^^^^^
 
@@ -372,6 +380,14 @@ For each filter, two files are written to the reduced images folder:
   ``Source_AMag_T1_Error``
 + ``[name]_[filter]_figure.jpg`` — the light curve with error bars
 
+The times come from each image header: ``HJD`` from ``HJD-OBS`` (written by AstroImageJ),
+``HJD`` or ``HJD_UTC`` (written by this package's reduction), and ``BJD`` from ``BJD-OBS``
+or ``BJD_TDB``. A frame with none of them gets an empty time and a warning in the log.
+
+Flux errors use the read noise in each image's ``RDNOISE`` keyword, which the IRAF
+reduction writes from the camera preset. Images without one fall back to the BSUO value
+of 10.83 e⁻, or to the ``--loc`` preset when run through ``EB_pipeline``.
+
 BSUO or SARA/TESS Night Filters
 ---------------------------------
 
@@ -469,7 +485,9 @@ least squares fit. Output files written to the output folder:
 
 + ``[mode]_OC.txt`` — the O-C data table
 + ``[mode]_OC.png`` — the O-C plot with linear and quadratic fits
-+ ``[mode]_OC.tex`` — regression tables formatted for LaTeX
++ ``[mode]_OC_regression.tex`` — regression tables formatted for LaTeX
+
+In All Data mode, ``all_data_OC.tex`` also holds the LaTeX O-C table described above.
 
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
    :pyobject: data_fit
@@ -496,20 +514,26 @@ The GUI panel accepts the following inputs:
 + **Declination (DEC)** — format ``DD:MM:SS.SSSS`` or ``-DD:MM:SS.SSSS``
 + **Output Folder** — folder where ``gaia_results.csv`` will be saved
 
-The query returns the top four matches within a 5 arcsecond search cone and saves
-the following parameters:
+The RA and DEC are taken as J2000. Gaia DR3 positions are at epoch 2016, so each Gaia
+source near the target is moved back to J2000 using its own proper motion before the
+separation is measured. Up to four sources within 5 arcseconds are saved, closest first,
+so the first row is the best match for your target.
 
-+ Parallax and error
-+ Distance (lower, central, upper)
-+ Effective temperature (lower, central, upper)
-+ Gaia G, BP, and RP magnitudes
-+ Radial velocity and error
+``gaia_results.csv`` is a comma-separated file with these columns:
+
++ ``Source_ID`` — Gaia DR3 source identifier
++ ``Separation(arcsec)`` — distance from the entered position at J2000
++ ``Parallax(mas)`` and ``Parallax_err(mas)``
++ ``Distance_lower(pc)``, ``Distance(pc)``, ``Distance_higher(pc)`` — GSP-Phot distance
+  and its lower and upper bounds
++ ``T_eff_lower(K)``, ``T_eff(K)``, ``T_eff_higher(K)``
++ ``G_Mag``, ``G_BP_Mag``, ``G_RP_Mag``
++ ``Radial_velocity(km/s)`` and ``Radial_velocity_err(km/s)``
+
+If nothing lies within 5 arcseconds, the file has only the header row and the log says so.
 
 .. literalinclude:: ../EclipsingBinaries/gaia.py
    :pyobject: target_star
-
-.. literalinclude:: ../EclipsingBinaries/examples/Gaia_output.txt
-    :language: text
 
 .. note::
     Parameters with a value of ``1e+20`` indicate that Gaia does not have data for

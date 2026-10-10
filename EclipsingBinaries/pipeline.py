@@ -402,7 +402,7 @@ def monitor_directory_cli(argv=None):
 
         _run_stage("Aperture Photometry", multiple_AP, summary, log, cancel_event,
                    path=args.output, pipeline=True, radec_list=radec_files, obj_name=args.name,
-                   write_callback=stage_log, cancel_event=cancel_event)
+                   read_noise=cfg.rdnoise, write_callback=stage_log, cancel_event=cancel_event)
         if cancel_event.is_set():
             summary.add_warning("Stopped during Aperture Photometry.")
             return 0

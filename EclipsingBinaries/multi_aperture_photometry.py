@@ -30,6 +30,15 @@ from ._log import make_logger
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
 
+# Read noise used when an image has no RDNOISE keyword (the BSUO camera value)
+DEFAULT_READ_NOISE = 10.83
+
+# Header keywords tried, in order, for each timestamp. AstroImageJ writes the
+# -OBS names; this package's own reduction writes HJD and BJD_TDB.
+HJD_KEYS = ("HJD-OBS", "HJD", "HJD_UTC")
+BJD_KEYS = ("BJD-OBS", "BJD_TDB")
+
+
 _config_loaded_attempted = False
 _loaded_config = None
 _config_path_used = None
@@ -59,7 +68,8 @@ def load_filter_config(radec_dir):
                 continue
     return None, None
 
-def calculate_target_snr(image_data, target_position, aperture_radius, annulus_radii, read_noise=10.83):
+def calculate_target_snr(image_data, target_position, aperture_radius, annulus_radii,
+                         read_noise=DEFAULT_READ_NOISE):
     """Calculate the Signal-to-Noise Ratio (SNR) for the target star."""
     target_aperture = CircularAperture(target_position, r=aperture_radius)
     target_annulus = CircularAnnulus(target_position, *annulus_radii)
@@ -84,7 +94,7 @@ def calculate_target_snr(image_data, target_position, aperture_radius, annulus_r
     return snr, target_flx, target_flux_err, target_bkg_mean
 
 
-def auto_optimize_radii(image_data, target_position):
+def auto_optimize_radii(image_data, target_position, read_noise=DEFAULT_READ_NOISE):
     """Auto-suggest optimized aperture and annulus radii based on FWHM and SNR maximization."""
     from astropy.modeling import models, fitting
 
@@ -144,7 +154,7 @@ def auto_optimize_radii(image_data, target_position):
         ann_area = 10.0 * np.pi * ap**2
         out = np.sqrt(ann_area / np.pi + inn**2)
 
-        snr, _, _, _ = calculate_target_snr(image_data, target_position, ap, (inn, out))
+        snr, _, _, _ = calculate_target_snr(image_data, target_position, ap, (inn, out), read_noise)
         if snr > best_snr:
             best_snr = snr
             best_aperture = ap
@@ -198,7 +208,7 @@ def resolve_filter(header, radec_dir=None, log=print):
     return filter_val
 
 def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=None, cancel_event=None,
-         aperture_radius=20, annulus_radii=(30, 50)):
+         aperture_radius=20, annulus_radii=(30, 50), read_noise=None):
     """
     Entry point for multi-aperture photometry. Iterates over each filter and its
     corresponding RADEC file, dispatching to multiple_AP for the actual photometry.
@@ -268,12 +278,30 @@ def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=N
                 write_callback=write_callback,
                 cancel_event=cancel_event,
                 aperture_radius=aperture_radius,
-                annulus_radii=annulus_radii
+                annulus_radii=annulus_radii,
+                read_noise=read_noise,
             )
 
     except Exception as e:
         log(f"An error occurred in Multi-Aperture Photometry: {e}")
         raise
+
+
+def _header_time(header, keys):
+    """First of keys present in the header, or None."""
+    for key in keys:
+        if key in header:
+            return header[key]
+    return None
+
+
+def read_noise_from_header(header, fallback):
+    """Read noise from the image's RDNOISE keyword, or fallback when it's missing or not a number."""
+    try:
+        value = float(header["RDNOISE"])
+    except (KeyError, TypeError, ValueError):
+        return fallback
+    return value if value >= 0 else fallback
 
 
 class _IntOffsetFormatter(ScalarFormatter):
@@ -286,7 +314,8 @@ class _IntOffsetFormatter(ScalarFormatter):
 
 
 def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file="",
-                write_callback=None, cancel_event=None, aperture_radius=20, annulus_radii=(30, 50)):
+                write_callback=None, cancel_event=None, aperture_radius=20, annulus_radii=(30, 50),
+                read_noise=None):
     """
     Perform aperture photometry on all images for a single filter. Comparison stars
     that fall outside the image bounds are automatically removed and the process
@@ -330,8 +359,11 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
         log("Task canceled during photometry.")
         return
 
-    # Read noise from the detector, used in flux error calculations
-    read_noise = 10.83  # electrons, sourced from FITS headers
+    # Read noise for the flux errors. Each image's RDNOISE keyword wins when it
+    # has one; this value is only the fallback. It used to be fixed at the
+    # BSUO value even for KPNO, CTIO and La Palma data.
+    fallback_read_noise = DEFAULT_READ_NOISE if read_noise is None else float(read_noise)
+    warned_missing_time = False
 
     try:
         # ---------------------------------------------------------------------------
@@ -380,8 +412,7 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
             restart = False
 
             if not valid_comp_indices:
-                log("ERROR: All comparison stars have been removed. Cannot continue photometry.")
-                return
+                raise RuntimeError("All comparison stars have been removed. Cannot continue photometry.")
 
             # Slice coordinate and magnitude arrays down to currently valid stars
             cur_comp_ra = comp_ra_all[valid_comp_indices]
@@ -418,6 +449,7 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                 # Load the image data and header
                 image_data, header = fits.getdata(path / image_file, header=True)
                 img_height, img_width = image_data.shape
+                read_noise = read_noise_from_header(header, fallback_read_noise)
 
                 # Build the WCS from the image header for sky-to-pixel conversion
                 wcs_ = WCS(header)
@@ -472,8 +504,14 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
                 comparison_positions = list(zip(comp_x, comp_y))
 
                 # Record the timestamps from the header for this image
-                hjd.append(header['HJD-OBS'])
-                bjd.append(header['BJD-OBS'])
+                hjd_value = _header_time(header, HJD_KEYS)
+                bjd_value = _header_time(header, BJD_KEYS)
+                if (hjd_value is None or bjd_value is None) and not warned_missing_time:
+                    log(f"WARNING: {image_file} has no HJD or BJD keyword "
+                        f"(looked for {', '.join(HJD_KEYS + BJD_KEYS)}); writing NaN for missing times.", pbar)
+                    warned_missing_time = True
+                hjd.append(np.nan if hjd_value is None else hjd_value)
+                bjd.append(np.nan if bjd_value is None else bjd_value)
 
                 # ---------------------------------------------------------------------------
                 # Define apertures and annuli for each comparison star
@@ -604,7 +642,9 @@ def multiple_AP(image_list, path, filt, pipeline=False, obj_name="", radec_file=
         log(f"Saved light curve data for {filt} to {output_file}")
 
     except Exception as e:
+        # Raised as well as logged so the GUI and pipeline don't report success
         log(f"Error during photometry for {filt}: {e}")
+        raise
 
 
 def im_plot(image_data, target_aperture, comparison_apertures, target_annulus, comparison_annuli):

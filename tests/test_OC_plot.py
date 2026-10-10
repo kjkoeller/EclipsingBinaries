@@ -115,7 +115,7 @@ def test_data_fit_writes_plot_and_tables(tmp_path):
     # The linear term of the fit is the period correction
     assert new_period == pytest.approx(0.3 + 2e-5, abs=2e-6)
     assert (tmp_path / "oc.png").stat().st_size > 0
-    assert "tabular" in (tmp_path / "oc.tex").read_text()
+    assert "tabular" in (tmp_path / "oc_regression.tex").read_text()
 
 
 def test_plotting_leaves_no_pyplot_figures_open(tmp_path):
@@ -133,3 +133,17 @@ def test_plotting_leaves_no_pyplot_figures_open(tmp_path):
 
     assert (tmp_path / "resid.png").stat().st_size > 0
     assert plt.get_fignums() == []
+
+
+def test_data_fit_keeps_all_data_latex_table(tmp_path):
+    # all_data() writes all_data_OC.tex; the regression tables used to be
+    # written to the same name and replaced it
+    table = tmp_path / "all_data_OC.txt"
+    _write_oc_table(table)
+    latex_table = tmp_path / "all_data_OC.tex"
+    latex_table.write_text("O-C table from all_data\n")
+
+    data_fit(str(table), 0.3, write_callback=lambda _m: None)
+
+    assert latex_table.read_text() == "O-C table from all_data\n"
+    assert (tmp_path / "all_data_OC_regression.tex").exists()

@@ -6,6 +6,7 @@ Tests for multi_aperture_photometry.py
 
 import pytest
 import numpy as np
+import pandas as pd
 
 
 # ===========================================================================
@@ -418,3 +419,108 @@ def test_auto_optimize_radii():
     assert best_ap > 0
     assert best_in > best_ap
     assert best_out > best_in
+
+
+# ===========================================================================
+# multiple_AP on synthetic frames shaped like this package's reduction output
+# ===========================================================================
+def _write_synthetic_frames(folder, n_frames=2, rdnoise=6.0, time_keys=("HJD", "BJD_TDB")):
+    """
+    Write small FITS frames with a WCS, a target and two comparison stars, plus
+    a matching RADEC file. Headers carry HJD and BJD_TDB the way the package's
+    header correction writes them, not AstroImageJ's HJD-OBS and BJD-OBS.
+    """
+    from astropy.io import fits
+    from astropy.wcs import WCS
+
+    size = 200
+    wcs = WCS(naxis=2)
+    wcs.wcs.crpix = [size / 2, size / 2]
+    wcs.wcs.crval = [15.0, 30.0]          # RA 1h, Dec +30
+    wcs.wcs.cdelt = [-1 / 3600, 1 / 3600]  # 1 arcsec pixels
+    wcs.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+
+    stars = [(100, 100, 20000.0), (60, 100, 30000.0), (140, 100, 25000.0)]  # target first
+    yy, xx = np.mgrid[:size, :size]
+    names = []
+    for i in range(n_frames):
+        image = np.full((size, size), 100.0)
+        for x, y, amp in stars:
+            image += amp * np.exp(-((xx - x + 1) ** 2 + (yy - y + 1) ** 2) / (2 * 2.0 ** 2))
+        header = wcs.to_header()
+        header["IMAGETYP"] = "LIGHT"
+        header["FILTER"] = "V"
+        header["RDNOISE"] = rdnoise
+        if "HJD" in time_keys:
+            header["HJD"] = 2460000.5 + i * 0.01
+        if "BJD_TDB" in time_keys:
+            header["BJD_TDB"] = 2460000.6 + i * 0.01
+        name = f"frame{i}.fits"
+        fits.writeto(folder / name, image, header, overwrite=True)
+        names.append(name)
+
+    sky = wcs.pixel_to_world([s[0] - 1 for s in stars], [s[1] - 1 for s in stars])
+    lines = ["#RA in decimal or sexagesimal HOURS"] + ["#"] * 6
+    for coord, mag in zip(sky, [99.999, 11.0, 11.2]):
+        lines.append(f"{coord.ra.hour:.8f}, {coord.dec.deg:.8f}, 0, 1, {mag}")
+    radec = folder / "V.radec"
+    radec.write_text("\n".join(lines) + "\n")
+    return names, radec
+
+
+def test_multiple_ap_reads_package_time_keywords(tmp_path):
+    from EclipsingBinaries.multi_aperture_photometry import multiple_AP
+
+    names, radec = _write_synthetic_frames(tmp_path)
+    multiple_AP(names, tmp_path, "V", obj_name="T", radec_file=str(radec),
+                write_callback=lambda _m: None, aperture_radius=6, annulus_radii=(10, 15))
+
+    out = pd.read_csv(tmp_path / "T_V_data.csv")
+    assert list(out["HJD"]) == pytest.approx([2460000.5, 2460000.51])
+    assert list(out["BJD"]) == pytest.approx([2460000.6, 2460000.61])
+    assert out["Source_AMag_T1"].notna().all()
+
+
+def test_multiple_ap_uses_read_noise_from_header(tmp_path):
+    from EclipsingBinaries.multi_aperture_photometry import multiple_AP
+
+    errors = {}
+    for rdnoise in (2.0, 60.0):
+        folder = tmp_path / str(rdnoise)
+        folder.mkdir()
+        names, radec = _write_synthetic_frames(folder, n_frames=1, rdnoise=rdnoise)
+        multiple_AP(names, folder, "V", obj_name="T", radec_file=str(radec),
+                    write_callback=lambda _m: None, aperture_radius=6, annulus_radii=(10, 15))
+        errors[rdnoise] = pd.read_csv(folder / "T_V_data.csv")["Source_AMag_T1_Error"].iloc[0]
+
+    # With the old fixed 10.83 e- both runs gave the same error
+    assert errors[60.0] > errors[2.0]
+
+
+def test_read_noise_from_header_falls_back():
+    from EclipsingBinaries.multi_aperture_photometry import read_noise_from_header
+    assert read_noise_from_header({"RDNOISE": 6.3}, 10.83) == 6.3
+    assert read_noise_from_header({}, 9.7) == 9.7
+    assert read_noise_from_header({"RDNOISE": "n/a"}, 9.7) == 9.7
+
+
+def test_multiple_ap_missing_times_become_nan_with_warning(tmp_path):
+    from EclipsingBinaries.multi_aperture_photometry import multiple_AP
+
+    names, radec = _write_synthetic_frames(tmp_path, time_keys=())
+    messages = []
+    multiple_AP(names, tmp_path, "V", obj_name="T", radec_file=str(radec),
+                write_callback=messages.append, aperture_radius=6, annulus_radii=(10, 15))
+
+    out = pd.read_csv(tmp_path / "T_V_data.csv")
+    assert out["HJD"].isna().all()
+    assert sum("no HJD or BJD keyword" in m for m in messages) == 1
+
+
+def test_multiple_ap_errors_are_raised(tmp_path):
+    # Used to be logged and swallowed, so the GUI and pipeline reported success
+    from EclipsingBinaries.multi_aperture_photometry import multiple_AP
+
+    with pytest.raises(Exception):
+        multiple_AP(["missing.fits"], tmp_path, "V", obj_name="T",
+                    radec_file=str(tmp_path / "missing.radec"), write_callback=lambda _m: None)

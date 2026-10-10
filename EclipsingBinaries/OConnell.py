@@ -454,9 +454,11 @@ def multi_OConnell_total(filter_files, Epoch, period, order=10,
 
         # print(output)  # Output LaTeX table to console
         # outputfile = input("Please enter an output file name without the extension: ")
-        outputfile = outName.rstrip(".pdf")
-        file = open(outputfile + ".txt", "w")
-        file.write(output)  # Write LaTeX table to file
-        file.close()
+        # Swap the .pdf extension for .txt. rstrip(".pdf") used to strip any
+        # trailing p, d, f or . characters, so a name like "Lapd" became "La".
+        base = Path(outName)
+        outputfile = base.with_suffix("") if base.suffix.lower() == ".pdf" else base
+        with open(f"{outputfile}.txt", "w") as file:
+            file.write(output)  # Write LaTeX table to file
 
     return 'nada'

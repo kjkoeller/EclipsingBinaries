@@ -412,9 +412,9 @@ def plot_obs(filter_files, day=0, lb=None, rb=None, order=5, resolution=200,
         # totalerr = np.sqrt(sigt_kw ** 2 + kweeer ** 2)
         if sigt_kw != float(sigt_kw):
             MIN.axvline(t_kw, color='blue',
-                        label=r'$T_{\mathrm{KW}}=' + str(round(intday * 0 + t_kw, 6)) + '\pm$' + 'ERROR')
+                        label=r'$T_{\mathrm{KW}}=' + str(round(intday * 0 + t_kw, 6)) + r'\pm$' + 'ERROR')
         else:
-            MIN.axvline(t_kw, color='blue', label=r'T_{\mathrm{KW}}=' + str(round(intday * 0 + t_kw, 6)) + '\pm' + str(
+            MIN.axvline(t_kw, color='blue', label=r'$T_{\mathrm{KW}}=' + str(round(intday * 0 + t_kw, 6)) + r'\pm' + str(
                 round(sigt_kw, 6)) + '$')
             print('err_kw:   ' + str(round(sigt_kw, 16)))
         print('')

@@ -25,6 +25,48 @@ import time
 from .vseq_updated import splitter
 from ._log import make_logger
 
+# Gaia sources within this distance of the target (after moving them back to
+# J2000 with their own proper motion) count as matches
+TARGET_MATCH_ARCSEC = 5.0
+# The cone queried around the target is wider than the match radius so that a
+# star which has moved since J2000 is still returned by the query
+TARGET_QUERY_ARCSEC = 30.0
+# Gaia DR3 positions are given at epoch 2016.0; the coordinates entered are J2000
+GAIA_DR3_EPOCH = 2016.0
+INPUT_EPOCH = 2000.0
+MAX_TARGET_ROWS = 4
+
+
+def _rank_by_separation(g, ra_deg, dec_deg):
+    """
+    Order Gaia results by distance from the target and keep the close ones.
+
+    Each source is moved from Gaia's 2016 epoch back to J2000 using its own
+    proper motion before measuring the separation, so fast-moving stars still
+    match the J2000 coordinates the user entered.
+
+    :return: (indices into g, separations in arcsec), closest first
+    """
+    def finite_or_zero(values):
+        values = np.ma.filled(np.ma.asarray(values, dtype=float), np.nan)
+        return np.where(np.isfinite(values) & (np.abs(values) < 1e10), values, 0.0)
+
+    years = GAIA_DR3_EPOCH - INPUT_EPOCH
+    ra_gaia = np.asarray(g.ra.to_value(u.deg), dtype=float)
+    dec_gaia = np.asarray(g.dec.to_value(u.deg), dtype=float)
+    pmra = finite_or_zero(g.pmra.to_value(u.mas / u.yr))  # already includes cos(dec)
+    pmdec = finite_or_zero(g.pmdec.to_value(u.mas / u.yr))
+
+    dec_j2000 = dec_gaia - pmdec * years / 3.6e6
+    ra_j2000 = ra_gaia - pmra * years / 3.6e6 / np.cos(np.radians(dec_gaia))
+
+    target = SkyCoord(ra_deg * u.deg, dec_deg * u.deg)
+    separation = target.separation(SkyCoord(ra_j2000 * u.deg, dec_j2000 * u.deg)).arcsec
+
+    order = np.argsort(separation)
+    order = order[separation[order] <= TARGET_MATCH_ARCSEC][:MAX_TARGET_ROWS]
+    return order, separation[order]
+
 def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_event=None):
     """
     This queries Gaia DR3 all the parameters below, but I only outputted the specific parameters that are (at the moment)
@@ -46,8 +88,11 @@ def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_ev
         ra = ra_input2[0] * 15
         dec = dec_input2[0]
 
+        # A plain cone around the entered position. This used to call
+        # EPOCH_PROP_POS with one particular star's parallax and proper motion
+        # written into the query, which shifted every target by that star's motion.
         g = GaiaData.from_query("""
-        SELECT TOP 2000 
+        SELECT TOP 2000
         gaia_source.source_id,gaia_source.ra,gaia_source.dec,gaia_source.parallax,gaia_source.parallax_error,
         gaia_source.pmra,gaia_source.pmdec,gaia_source.ruwe,gaia_source.phot_g_mean_mag,gaia_source.bp_rp,
         gaia_source.radial_velocity,gaia_source.radial_velocity_error,gaia_source.rv_method_used,
@@ -58,41 +103,45 @@ def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_ev
         gaia_source.mh_gspphot,gaia_source.distance_gspphot,gaia_source.distance_gspphot_lower,
         gaia_source.distance_gspphot_upper,gaia_source.azero_gspphot,gaia_source.ag_gspphot,
         gaia_source.ebpminrp_gspphot,gaia_source.phot_g_mean_mag,gaia_source.phot_bp_mean_mag,gaia_source.phot_rp_mean_mag
-        FROM gaiadr3.gaia_source 
-        WHERE 
+        FROM gaiadr3.gaia_source
+        WHERE
         CONTAINS(
-            POINT('ICRS',gaiadr3.gaia_source.ra,gaiadr3.gaia_source.dec),
-            CIRCLE(
-                'ICRS',
-                COORD1(EPOCH_PROP_POS({}, {},4.7516,48.8840,-24.1470,0,2000,2016.0)),
-                COORD2(EPOCH_PROP_POS({}, {},4.7516,48.8840,-24.1470,0,2000,2016.0)),
-                0.001388888888888889)
-        )=1""".format(ra, dec, ra, dec))
+            POINT('ICRS', gaiadr3.gaia_source.ra, gaiadr3.gaia_source.dec),
+            CIRCLE('ICRS', {}, {}, {})
+        )=1""".format(ra, dec, TARGET_QUERY_ARCSEC / 3600))
 
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
-        # to add parameters to the output file, add them here and the format for the parameter is 'g.[param name from above]'
+        order, separation = _rank_by_separation(g, ra, dec)
+        if len(order) == 0:
+            log(f"No Gaia DR3 source found within {TARGET_MATCH_ARCSEC:g} arcsec of the target.")
+        g = g[order]
+
+        # Closest source first. To add parameters to the output file, add them
+        # here as 'g.[param name from the query above]'
         df = pd.DataFrame({
-            "Parallax(mas)": g.parallax[:4],
-            "Parallax_err(mas)": g.parallax_error[:4],
-            "Distance_lower(pc)": g.distance_gspphot_lower[:4],
-            "Distance(pc)": g.distance_gspphot_upper[:4],
-            "Distance_higher(pc)": g.distance_gspphot[:4],
-            "T_eff_lower(K)": g.teff_gspphot_lower[:4],
-            "T_eff(K)": g.teff_gspphot[:4],
-            "T_eff_higher(K)": g.teff_gspphot_upper[:4],
-            "G_Mag": g.phot_g_mean_mag[:4],
-            "G_BP_Mag": g.phot_bp_mean_mag[:4],
-            "G_RP_Mag": g.phot_rp_mean_mag[:4],
-            "Radial_velocity(km/s)": g.radial_velocity[:4],
-            "Radial_velocity_err(km/s)": g.radial_velocity_error[:4],
+            "Source_ID": np.asarray(g.source_id),
+            "Separation(arcsec)": np.round(separation, 3),
+            "Parallax(mas)": g.parallax,
+            "Parallax_err(mas)": g.parallax_error,
+            "Distance_lower(pc)": g.distance_gspphot_lower,
+            "Distance(pc)": g.distance_gspphot,
+            "Distance_higher(pc)": g.distance_gspphot_upper,
+            "T_eff_lower(K)": g.teff_gspphot_lower,
+            "T_eff(K)": g.teff_gspphot,
+            "T_eff_higher(K)": g.teff_gspphot_upper,
+            "G_Mag": g.phot_g_mean_mag,
+            "G_BP_Mag": g.phot_bp_mean_mag,
+            "G_RP_Mag": g.phot_rp_mean_mag,
+            "Radial_velocity(km/s)": g.radial_velocity,
+            "Radial_velocity_err(km/s)": g.radial_velocity_error,
         })
 
         output_file = os.path.join(output_path, "gaia_results.csv")
-
-        df.to_csv(output_file, sep="\t")
+        df.to_csv(output_file, index=False)
+        log(f"Saved {len(df)} Gaia DR3 source(s), closest first, to {output_file}")
 
         log("\n For more information on each of the output parameters please reference this webpage: "
               "https://gea.esac.esa.int/archive/documentation/GDR3/Gaia_archive/chap_datamodel/sec_dm_main_source_catalogue/ssec_dm_gaia_source.html")

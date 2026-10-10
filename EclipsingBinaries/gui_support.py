@@ -170,11 +170,12 @@ class ScrollableFrame(tk.Frame):
         self.canvas.yview_moveto(0)
 
     def _bind_wheel(self, _event=None):
+        # Tk 8.6 on Linux reports the wheel as buttons 4 and 5; Tk 9 sends
+        # MouseWheel everywhere, so Linux gets both
         if sys.platform.startswith("linux"):
             self.bind_all("<Button-4>", self._on_wheel, add="+")
             self.bind_all("<Button-5>", self._on_wheel, add="+")
-        else:
-            self.bind_all("<MouseWheel>", self._on_wheel, add="+")
+        self.bind_all("<MouseWheel>", self._on_wheel, add="+")
 
     def _unbind_wheel(self, _event=None):
         for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
@@ -190,8 +191,8 @@ class ScrollableFrame(tk.Frame):
             steps = -1
         elif getattr(event, "num", None) == 5:
             steps = 1
-        elif sys.platform == "darwin":
-            steps = -event.delta
+        elif sys.platform == "darwin" and abs(event.delta) < 120:
+            steps = -event.delta  # Tk 8.6 on macOS: small steps, one per notch or trackpad tick
         else:
             steps = -int(event.delta / 120) or (-1 if event.delta > 0 else 1)
         self.canvas.yview_scroll(steps, "units")

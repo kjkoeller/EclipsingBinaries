@@ -819,6 +819,7 @@ class ProgramLauncher(tk.Tk):
             file_menu.add_separator()
             file_menu.add_command(label="Exit", accelerator="Ctrl+Q", command=self.quit_program)
             self.bind_all("<Control-q>", lambda e: self.quit_program())
+            self.bind_all("<Control-Q>", lambda e: self.quit_program())  # with Caps Lock on
         menubar.add_cascade(label="File", menu=file_menu)
 
         help_menu = tk.Menu(menubar, name="help", tearoff=0)

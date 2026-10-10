@@ -6,6 +6,7 @@ These open the real Tk window, so they're skipped where tkinter or a display
 isn't available (for example a headless Linux machine without Xvfb).
 """
 
+import os
 import time
 from unittest.mock import patch
 
@@ -26,6 +27,8 @@ def app(tmp_path, monkeypatch):
     try:
         window = menu.ProgramLauncher()
     except tk.TclError as exc:
+        if os.environ.get("EB_REQUIRE_GUI"):
+            raise  # CI sets this so a broken display fails instead of skipping
         pytest.skip(f"No display available: {exc}")
     window.withdraw()
     window.show_multi_aperture_photometry()

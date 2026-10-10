@@ -7,8 +7,9 @@ on:
     branches: [ "main" ]
 
 env:
-  SETUP_XVFB: True  # avoid issues if mpl tries to open a GUI window
   TOXARGS: '-v'
+  # Run the GUI tests everywhere: fail instead of skipping when Tk can't open a window
+  EB_REQUIRE_GUI: '1'
 
 jobs:
   ci-tests:
@@ -62,14 +63,25 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install tox wheel setuptools
 
-    - name: Print Python, pip, setuptools, and tox versions
+    - name: Install a virtual display (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y xvfb
+
+    - name: Print Python, pip, setuptools, tox and Tk versions
       run: |
         python -c "import sys; print(f'Python {sys.version}')"
         python -c "import pip; print(f'pip {pip.__version__}')"
         python -c "import setuptools; print(f'setuptools {setuptools.__version__}')"
         python -c "import tox; print(f'tox {tox.__version__}')"
+        python -c "import tkinter; print('Tk', tkinter.Tcl().eval('info patchlevel'))"
+
+    - name: Run tests (Linux, under Xvfb)
+      if: runner.os == 'Linux'
+      run: |
+        xvfb-run -a -s "-screen 0 1600x1000x24" tox -e ${{ matrix.tox_env }} -- ${{ matrix.toxposargs }}
 
     - name: Run tests
+      if: runner.os != 'Linux'
       run: |
         tox -e ${{ matrix.tox_env }} -- ${{ matrix.toxposargs }}
 

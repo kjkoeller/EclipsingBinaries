@@ -218,6 +218,37 @@ back to ``BSU`` instead. To add your own site:
 
 ``correct_headers_batch`` does the same for a list of files.
 
+Correcting Headers from the Command Line
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``EB_HCorr`` runs the same corrections on images outside a reduction, changing the files
+in place::
+
+    EB_HCorr raw_images/                      # every .fits, .fit and .fts file in the folder
+    EB_HCorr -r data/                         # and in the folders inside it
+    EB_HCorr image1.fits image2.fits --observatory SARA-KP
+
+Each correction can be turned off with ``--no-jd``, ``--no-hjd``, ``--no-bjd``,
+``--no-sidereal``, ``--no-eairmass`` or ``--no-radec-format``, and ``--filter-parse``
+replaces spaces in ``FILTER`` with underscores. ``--observatory`` sets the site used when
+``OBSERVAT`` is missing or unknown (``BSU`` unless given). ``-q`` prints only warnings and
+the summary. ``EB_HCorr -h`` lists everything.
+
+It prints how many keywords each file got, any warnings, and a summary, and exits with
+``0`` when every file was corrected without warnings, ``1`` when any had warnings, and
+``2`` for bad arguments.
+
+Some cameras need care, and the corrections handle these:
+
++ ``DATE-OBS`` holding only the date, with the time in ``TIME-OBS``, ``UT`` or ``UTSTART``,
+  is joined into one time. Without any of those the exposure is taken to start at midnight
+  UT, with a warning.
++ The coordinate frame comes from ``EQUINOX``, written as 2000, ``J2000`` or ``J2000.0``.
+  (Earlier versions skipped HJD and BJD when ``EPOCH`` held the observation date.)
++ Running it twice keeps the camera's original ``SECZ`` in ``SECZ_ORG``.
++ If the target comes out below the horizon, ``SECZ`` and ``EAIRMASS`` are left alone and
+  a warning suggests checking ``OBSERVAT``, ``DATE-OBS`` and RA/DEC.
+
 TESS Search and Download
 -------------------------
 

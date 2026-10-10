@@ -49,8 +49,9 @@ To install EclipsingBinaries with `pip <https://pip.pypa.io/en/latest/>`_, simpl
 
     pip install EclipsingBinaries
 
-This installs two commands: ``EclipsingBinaries`` for the GUI (see :ref:`EB`) and
-``EB_pipeline`` for automated reductions (see :ref:`pipeline`).
+This installs three commands: ``EclipsingBinaries`` for the GUI (see :ref:`EB`),
+``EB_pipeline`` for automated reductions (see :ref:`pipeline`), and ``EB_HCorr`` for
+correcting FITS headers (see :ref:`toolbox`).
 
 To check which version you have::
 

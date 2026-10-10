@@ -230,7 +230,8 @@ def main(path="", pipeline=False, radec_list=None, obj_name="", write_callback=N
     pipeline : bool
         Kept for compatibility. Photometry never prompts.
     radec_list : list
-        RADEC file paths for B, V and R, in that order.
+        RADEC file paths for B, V and R, in that order. Use None (or leave the
+        list shorter) for a filter you don't have, e.g. [None, "V.radec"] for V only.
     obj_name : str
         Name of the target object, used for output file naming.
     write_callback : callable

@@ -69,6 +69,11 @@ ACCENT_DISABLED = "#8a9bb0"
 # still imports when tkinterdnd2 can't load.
 DND_FILES = "DND_Files"
 
+# Filters the photometry panel offers, in the order photometry's main expects them
+PHOTOMETRY_FILTERS = ("B", "V", "R")
+# Filters suggested for each number of filters until the user picks their own
+PHOTOMETRY_DEFAULTS = {1: ("V",), 2: ("B", "V"), 3: ("B", "V", "R")}
+
 # How often the main thread checks for log lines and other updates queued
 # by worker threads, in milliseconds.
 UI_POLL_MS = 50
@@ -405,9 +410,11 @@ class ProgramLauncher(tk.Tk):
 
     def _make_placeholder_bindings(self, entry, placeholder_text, validate_input):
         """Bind focus-in, focus-out, and placeholder behaviour to an entry field."""
+        entry._placeholder_text = placeholder_text
+
         def show_placeholder():
             entry.delete(0, "end")
-            entry.insert(0, placeholder_text)
+            entry.insert(0, entry._placeholder_text)
             entry._placeholder_active = True
             entry.config(fg=FG_PLACEHOLDER)
 
@@ -460,15 +467,18 @@ class ProgramLauncher(tk.Tk):
         return handle_drop
 
     def create_input_field(self, parent, label_text, placeholder_text, row,
-                           validation_func=None, error_message="", browse_type=None, default=None):
+                           validation_func=None, error_message="", browse_type=None, default=None,
+                           label_widget=None):
         """
         Create a labeled input field with placeholder functionality, validation, and inline error message.
         Includes an optional browse button integrated into the entry field.
 
         The placeholder is only a hint and is never read back as a value. Pass
         default for fields where leaving them empty should mean a specific value.
+        Pass label_widget (already created inside parent) to use it in place of a
+        plain text label, for example a label with a dropdown in it.
         """
-        label = tk.Label(parent, text=label_text, font=self.label_font, bg=BG_PANEL)
+        label = label_widget or tk.Label(parent, text=label_text, font=self.label_font, bg=BG_PANEL)
         label.grid(row=row, column=0, padx=10, pady=5, sticky="e")
 
         entry_frame = tk.Frame(parent, bg=BG_PANEL, highlightthickness=1, highlightbackground="#cccccc")
@@ -505,6 +515,14 @@ class ProgramLauncher(tk.Tk):
             return
         widget.drop_target_register(DND_FILES)
         widget.dnd_bind("<<Drop>>", callback)
+
+    @staticmethod
+    def _set_placeholder(entry, text):
+        """Change a field's placeholder hint, updating it on screen if it's showing."""
+        entry._placeholder_text = text
+        if getattr(entry, "_placeholder_active", False):
+            entry.delete(0, "end")
+            entry.insert(0, text)
 
     @staticmethod
     def _set_field_visible(entry, visible):
@@ -1063,58 +1081,101 @@ class ProgramLauncher(tk.Tk):
                                                       error_message="Please enter a file pathway.",
                                                       browse_type="folder")
 
-        radec_b_file = self.create_input_field(self.right_frame, "RADEC File (B Filter):",
-                                               _example_path("B.radec"), row=3,
-                                               error_message="Please enter a file pathway with file name",
-                                               browse_type="file")
+        # Number of filters, chosen the same way as in the O'Connell Effect panel
+        tk.Label(self.right_frame, text="Number of Filters:", font=self.label_font, bg=BG_PANEL).grid(
+            row=3, column=0, padx=10, pady=5, sticky="e")
+        self.photometry_filter_count = tk.IntVar(value=len(PHOTOMETRY_FILTERS))
+        radio_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
+        radio_frame.grid(row=3, column=1, padx=10, pady=5, sticky="w")
+        for count in range(1, len(PHOTOMETRY_FILTERS) + 1):
+            tk.Radiobutton(radio_frame, text=f"{count} Filter{'s' if count > 1 else ''}",
+                           variable=self.photometry_filter_count, value=count,
+                           command=self._update_photometry_filter_rows,
+                           font=self.label_font, bg=BG_PANEL).pack(side="left", padx=5)
 
-        radec_v_file = self.create_input_field(self.right_frame, "RADEC File (V Filter):",
-                                               _example_path("V.radec"), row=4,
-                                               error_message="Please enter a file pathway with file name.",
-                                               browse_type="file")
+        # One row per filter: a B/V/R picker and that filter's RADEC file
+        self.photometry_filter_rows = []
+        self._photometry_filters_picked = False
+        for i, default_filter in enumerate(PHOTOMETRY_FILTERS):
+            label_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
+            tk.Label(label_frame, text="RADEC File (", font=self.label_font, bg=BG_PANEL).pack(side="left")
+            picker = ttk.Combobox(label_frame, values=PHOTOMETRY_FILTERS, state="readonly", width=3,
+                                  font=self.label_font)
+            picker.set(default_filter)
+            picker.pack(side="left")
+            tk.Label(label_frame, text=" Filter):", font=self.label_font, bg=BG_PANEL).pack(side="left")
 
-        radec_r_file = self.create_input_field(self.right_frame, "RADEC File (R Filter):",
-                                               _example_path("R.radec"), row=5,
-                                               error_message="Please enter a file pathway with file name.",
-                                               browse_type="file")
+            entry = self.create_input_field(self.right_frame, "", _example_path(f"{default_filter}.radec"),
+                                            row=4 + i, error_message="Please enter a RADEC file.",
+                                            browse_type="file", label_widget=label_frame)
+            picker.bind("<<ComboboxSelected>>",
+                        lambda _e, p=picker, ent=entry: self._on_photometry_filter_picked(p, ent))
+            self.photometry_filter_rows.append((picker, entry))
+        self._update_photometry_filter_rows()
 
         self.aperture_radius_var = self.create_input_field(self.right_frame, "Aperture Radius (px):",
-                                                           "20", row=6, validation_func=_is_float,
+                                                           "20", row=7, validation_func=_is_float,
                                                            error_message="Please enter a numeric radius.",
                                                            default="20")
 
         self.annulus_inner_var = self.create_input_field(self.right_frame, "Inner Annulus Radius (px):",
-                                                         "30", row=7, validation_func=_is_float,
+                                                         "30", row=8, validation_func=_is_float,
                                                          error_message="Please enter a numeric inner radius.",
                                                          default="30")
 
         self.annulus_outer_var = self.create_input_field(self.right_frame, "Outer Annulus Radius (px):",
-                                                         "50", row=8, validation_func=_is_float,
+                                                         "50", row=9, validation_func=_is_float,
                                                          error_message="Please enter a numeric outer radius.",
                                                          default="50")
 
         self._button(self.right_frame, "Optimize Radii",
-                     lambda: self.run_radii_optimizer(reduced_images_path, radec_b_file,
-                                                      radec_v_file, radec_r_file),
-                     action=True).grid(row=9, column=0, columnspan=2, pady=10)
+                     lambda: self.run_radii_optimizer(reduced_images_path),
+                     action=True).grid(row=10, column=0, columnspan=2, pady=10)
 
-        self.create_run_button(self.right_frame, self.run_multi_aperture_photometry, row=10,
+        self.create_run_button(self.right_frame, self.run_multi_aperture_photometry, row=11,
                                obj_name=obj_name,
-                               reduced_images_path=reduced_images_path,
-                               radec_b_file=radec_b_file,
-                               radec_v_file=radec_v_file,
-                               radec_r_file=radec_r_file)
+                               reduced_images_path=reduced_images_path)
 
-        self._log_section(11)
+        self._log_section(12)
 
-    def run_multi_aperture_photometry(self, obj_name, reduced_images_path,
-                                      radec_b_file, radec_v_file, radec_r_file):
+    def _update_photometry_filter_rows(self):
+        """Show one RADEC row per chosen filter and hide the rest, keeping what was typed."""
+        count = self.photometry_filter_count.get()
+        if not self._photometry_filters_picked:
+            # Until someone picks filters by hand, suggest the usual ones for this count
+            for (picker, entry), filt in zip(self.photometry_filter_rows, PHOTOMETRY_DEFAULTS[count]):
+                picker.set(filt)
+                self._set_placeholder(entry, _example_path(f"{filt}.radec"))
+        for i, (_picker, entry) in enumerate(self.photometry_filter_rows):
+            self._set_field_visible(entry, i < count)
+
+    def _on_photometry_filter_picked(self, picker, entry):
+        self._photometry_filters_picked = True
+        self._set_placeholder(entry, _example_path(f"{picker.get()}.radec"))
+
+    def _photometry_radec_choices(self):
+        """
+        Filter and RADEC path for each visible row.
+
+        :return: list of (filter, path) pairs, or None after logging the problem
+        """
+        count = self.photometry_filter_count.get()
+        choices = [(picker.get(), self._path_value(entry))
+                   for picker, entry in self.photometry_filter_rows[:count]]
+        picked = [filt for filt, _ in choices]
+        if len(set(picked)) != len(picked):
+            self.write_to_log("Error: Each filter can only be chosen once.")
+            return None
+        missing = [filt for filt, path in choices if not path]
+        if missing:
+            self.write_to_log(f"Error: A RADEC file is required for {', '.join(missing)}.")
+            return None
+        return choices
+
+    def run_multi_aperture_photometry(self, obj_name, reduced_images_path):
         """Validate the photometry inputs, then run it on a worker thread."""
         obj_name_value = self._entry_value(obj_name)
         reduced_path_value = self._path_value(reduced_images_path)
-        radec_b_path = self._path_value(radec_b_file)
-        radec_v_path = self._path_value(radec_v_file)
-        radec_r_path = self._path_value(radec_r_file)
 
         try:
             aperture_radius = float(self._entry_value(self.aperture_radius_var))
@@ -1127,20 +1188,24 @@ class ProgramLauncher(tk.Tk):
         if not reduced_path_value:
             self.write_to_log("Error: Reduced images path is required.")
             return
-        if not (radec_b_path and radec_v_path and radec_r_path):
-            self.write_to_log("Error: RADEC files for all filters are required.")
+        choices = self._photometry_radec_choices()
+        if choices is None:
             return
+
+        # main takes the RADEC files in B, V, R order, with None for a filter not in use
+        chosen = dict(choices)
+        radec_list = [chosen.get(filt) for filt in PHOTOMETRY_FILTERS]
 
         def photometry_task():
             self.write_to_log(f"Object Name: {obj_name_value}")
             self.write_to_log(f"Reduced Images Path: {reduced_path_value}")
-            self.write_to_log(f"RADEC File (B Filter): {radec_b_path}")
-            self.write_to_log(f"RADEC File (V Filter): {radec_v_path}")
-            self.write_to_log(f"RADEC File (R Filter): {radec_r_path}")
+            for filt in PHOTOMETRY_FILTERS:
+                if filt in chosen:
+                    self.write_to_log(f"RADEC File ({filt} Filter): {chosen[filt]}")
             try:
                 multi_ap(
                     path=reduced_path_value, pipeline=False,
-                    radec_list=[radec_b_path, radec_v_path, radec_r_path],
+                    radec_list=radec_list,
                     obj_name=obj_name_value,
                     write_callback=self.write_to_log, cancel_event=self.cancel_event,
                     aperture_radius=aperture_radius,
@@ -1157,20 +1222,18 @@ class ProgramLauncher(tk.Tk):
 
         self.run_task(photometry_task)
 
-    def run_radii_optimizer(self, reduced_images_path, radec_b_file, radec_v_file, radec_r_file):
+    def run_radii_optimizer(self, reduced_images_path):
         """
         Load the first LIGHT frame and find starting radii on a worker thread,
         then open the interactive optimizer window back on the main thread.
         """
         reduced_path = self._path_value(reduced_images_path)
 
-        # Pick the first provided RADEC file
-        radec_file = None
-        for entry in (radec_b_file, radec_v_file, radec_r_file):
-            value = self._path_value(entry)
-            if value:
-                radec_file = value
-                break
+        # Use the first RADEC file given among the filters in use
+        count = self.photometry_filter_count.get()
+        radec_file = next((path for path in (self._path_value(entry)
+                                             for _picker, entry in self.photometry_filter_rows[:count])
+                           if path), None)
 
         if not reduced_path or not radec_file:
             self.write_to_log("Error: Reduced Images Path and at least one RADEC file are required for optimization.")

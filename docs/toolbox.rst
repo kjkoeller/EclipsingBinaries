@@ -348,8 +348,13 @@ The GUI panel accepts the following inputs:
 
 + **Object Name** — used for output file naming
 + **Reduced Images Path** — folder of calibrated ``LIGHT`` frames
-+ **RADEC File (B/V/R Filter)** — one RADEC file per filter. The first row is the target
-  and the rest are comparison stars.
++ **Number of Filters** — radio buttons for 1, 2 or 3 filters, the same as in the
+  O'Connell Effect panel. That many RADEC rows are shown.
++ **RADEC File** — one row per filter, each with a dropdown to pick which filter it is
+  (B, V or R) and that filter's RADEC file. The first row of a RADEC file is the target
+  and the rest are comparison stars. The dropdowns start at V for one filter, B and V for
+  two, and B, V and R for three; once you pick a filter yourself, changing the number of
+  filters keeps your choice. Each filter can only be picked once.
 + **Aperture Radius**, **Inner Annulus Radius**, **Outer Annulus Radius** — in pixels.
   Leave them empty for 20, 30 and 50.
 
@@ -385,7 +390,16 @@ with the reason, each skipped image, and the comparison stars used in the end.
 Photometry stops with an error, and writes no light curves, if every comparison star is
 removed or the target doesn't fit in any image of a filter.
 
-If one filter has no images, the other filters still run and share their comparison stars.
+Only the filters you choose are used, and they share comparison stars with each other.
+If a chosen filter has no images, the others still run.
+
+From Python, pass ``None`` in ``radec_list`` for a filter you don't have:
+
+.. code-block:: python
+
+    from EclipsingBinaries.multi_aperture_photometry import main
+
+    main(path="reduced_images", radec_list=[None, "NSVS_V.radec", None], obj_name="NSVS_896797")
 
 Optimize Radii
 ^^^^^^^^^^^^^^

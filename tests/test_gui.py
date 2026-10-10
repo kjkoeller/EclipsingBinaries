@@ -7,8 +7,8 @@ The helpers in gui_support that don't need a window are tested everywhere; the
 rest open the real Tk window and are skipped where no display is available.
 """
 
-import os
 import threading
+from pathlib import Path
 import time
 from unittest.mock import patch
 
@@ -17,6 +17,8 @@ import pytest
 tk = pytest.importorskip("tkinter")
 
 from EclipsingBinaries.gui_support import SettingsStore, classify_log_line, open_path  # noqa: E402
+
+from .gui_helpers import open_launcher  # noqa: E402
 
 
 # ----------------------------------------------------------------------
@@ -92,12 +94,7 @@ def make_app(settings_path, monkeypatch):
     windows = []
 
     def factory():
-        try:
-            window = menu.ProgramLauncher()
-        except tk.TclError as exc:
-            if os.environ.get("EB_REQUIRE_GUI"):
-                raise  # CI sets this so a broken display fails instead of skipping
-            pytest.skip(f"No display available: {exc}")
+        window = open_launcher(menu)
         window.withdraw()
         windows.append(window)
         return window
@@ -163,15 +160,16 @@ def test_fields_are_remembered_across_panels_and_restarts(make_app, settings_pat
     first = make_app()
     first.open_panel("gaia")
     key, entry = next(iter(first._panel_fields.items()))
+    typed = str(Path("/data/gaia_out"))  # the app keeps paths in the system's own form
     first._set_entry_text(entry, "/data/gaia_out")
     first.open_panel("oc")
     first.open_panel("gaia")
-    assert first._path_value(first._panel_fields[key]) == "/data/gaia_out"
+    assert first._path_value(first._panel_fields[key]) == typed
     first._save_panel_settings()
 
     second = make_app()
     assert second._current_panel == "gaia"
-    assert second._path_value(second._panel_fields[key]) == "/data/gaia_out"
+    assert second._path_value(second._panel_fields[key]) == typed
 
 
 def test_photometry_filter_choices_are_remembered(make_app):
@@ -564,3 +562,29 @@ def test_find_minimum_defaults_to_the_light_curve_folder(app):
 
     assert window.output_folder == Path(str(EXAMPLES / "test_B.txt")).parent
     window.destroy()
+
+
+def test_window_creation_retries_the_windows_tcl_fault(monkeypatch):
+    """Windows sometimes can't read init.tcl when many windows are opened in a row."""
+    import types
+
+    from . import gui_helpers
+
+    monkeypatch.setattr(gui_helpers.time, "sleep", lambda _s: None)
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise tk.TclError("Can't find a usable init.tcl in the following directories: ...")
+        return "window"
+
+    assert gui_helpers.open_launcher(types.SimpleNamespace(ProgramLauncher=flaky)) == "window"
+    assert len(calls) == 2
+
+    def broken():
+        raise tk.TclError("no display name and no $DISPLAY environment variable")
+
+    monkeypatch.setenv("EB_REQUIRE_GUI", "1")
+    with pytest.raises(tk.TclError):
+        gui_helpers.open_launcher(types.SimpleNamespace(ProgramLauncher=broken))

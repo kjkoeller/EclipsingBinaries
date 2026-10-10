@@ -6,13 +6,20 @@ These open the real Tk window, so they're skipped where tkinter or a display
 isn't available (for example a headless Linux machine without Xvfb).
 """
 
-import os
 import time
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 tk = pytest.importorskip("tkinter")
+
+from .gui_helpers import open_launcher  # noqa: E402
+
+
+def _native(path):
+    """A typed path the way the app hands it on: in the system's own form (backslashes on Windows)."""
+    return str(Path(path))
 
 
 @pytest.fixture
@@ -24,12 +31,7 @@ def app(tmp_path, monkeypatch):
     # Keep the tests away from the real remembered settings
     monkeypatch.setattr(menu, "SETTINGS_PATH", tmp_path / "gui_settings.json")
 
-    try:
-        window = menu.ProgramLauncher()
-    except tk.TclError as exc:
-        if os.environ.get("EB_REQUIRE_GUI"):
-            raise  # CI sets this so a broken display fails instead of skipping
-        pytest.skip(f"No display available: {exc}")
+    window = open_launcher(menu)
     window.withdraw()
     window.show_multi_aperture_photometry()
     yield window
@@ -88,7 +90,7 @@ def test_count_shows_that_many_rows_with_usual_filters(app, count, expected):
 def test_single_v_filter_passes_only_v_to_photometry(app):
     _set_count(app, 1)
     multi_ap, _ = _fill_and_run(app, ["/data/V.radec"])
-    assert multi_ap.call_args.kwargs["radec_list"] == [None, "/data/V.radec", None]
+    assert multi_ap.call_args.kwargs["radec_list"] == [None, _native("/data/V.radec"), None]
 
 
 def test_two_filters_keep_b_v_r_order(app):
@@ -97,7 +99,7 @@ def test_two_filters_keep_b_v_r_order(app):
     app.photometry_filter_rows[1][0].set("B")
     app._photometry_filters_picked = True
     multi_ap, _ = _fill_and_run(app, ["/data/R.radec", "/data/B.radec"])
-    assert multi_ap.call_args.kwargs["radec_list"] == ["/data/B.radec", None, "/data/R.radec"]
+    assert multi_ap.call_args.kwargs["radec_list"] == [_native("/data/B.radec"), None, _native("/data/R.radec")]
 
 
 def test_hand_picked_filter_survives_count_changes(app):
@@ -117,7 +119,7 @@ def test_typed_paths_survive_hiding_a_row(app):
     app._set_entry_text(app.photometry_filter_rows[2][1], "/data/R.radec")
     _set_count(app, 1)
     _set_count(app, 3)
-    assert app._path_value(app.photometry_filter_rows[2][1]) == "/data/R.radec"
+    assert app._path_value(app.photometry_filter_rows[2][1]) == _native("/data/R.radec")
 
 
 def test_same_filter_twice_is_refused(app):

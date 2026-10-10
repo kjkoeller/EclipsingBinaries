@@ -1,0 +1,374 @@
+# -*- coding: utf-8 -*-
+"""
+Tests for the GUI's shared pieces: remembered settings, the status bar, result
+buttons, the coloured log, sidebar navigation and keyboard shortcuts.
+
+The helpers in gui_support that don't need a window are tested everywhere; the
+rest open the real Tk window and are skipped where no display is available.
+"""
+
+import threading
+import time
+from unittest.mock import patch
+
+import pytest
+
+tk = pytest.importorskip("tkinter")
+
+from EclipsingBinaries.gui_support import SettingsStore, classify_log_line, open_path  # noqa: E402
+
+
+# ----------------------------------------------------------------------
+# Helpers that need no window
+# ----------------------------------------------------------------------
+def test_settings_round_trip(tmp_path):
+    path = tmp_path / "sub" / "settings.json"
+    store = SettingsStore(path)
+    store.update_section("iraf", {"Raw Images Path": "/data/raw", "Location": "", "Use Dark Frames": True})
+    store.set("last_panel", "iraf")
+    store.save()
+
+    again = SettingsStore(path)
+    assert again.get("last_panel") == "iraf"
+    assert again.section("iraf") == {"Raw Images Path": "/data/raw", "Use Dark Frames": True}
+    assert again.section("missing") == {}
+
+
+def test_settings_survive_a_damaged_file(tmp_path):
+    path = tmp_path / "settings.json"
+    path.write_text("{not json", encoding="utf-8")
+    store = SettingsStore(path)
+    assert store.data == {}
+    store.set("last_panel", "gaia")
+    store.save()
+    assert SettingsStore(path).get("last_panel") == "gaia"
+
+
+def test_settings_clear_removes_the_file(tmp_path):
+    path = tmp_path / "settings.json"
+    store = SettingsStore(path)
+    store.set("last_panel", "oc")
+    store.save()
+    store.clear()
+    assert not path.exists()
+    assert store.data == {}
+
+
+@pytest.mark.parametrize("line, kind", [
+    ("An error occurred in Multi-Aperture Photometry: boom", "error"),
+    ("Traceback (most recent call last):", "error"),
+    ("Warning: no RDNOISE keyword, using 10 e-", "warning"),
+    ("[REMOVED] Comparison star #3 is off the image", "warning"),
+    ("Task cancellation requested...", "warning"),
+    ("Multi-Aperture Photometry completed successfully.", "success"),
+    ("Saved light curve data for V to /data/T_V_data.csv", "success"),
+    ("Processing 3 images for V filter.", None),
+])
+def test_log_lines_are_classified(line, kind):
+    assert classify_log_line(line) == kind
+
+
+def test_open_path_refuses_missing_paths(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        open_path(tmp_path / "nope")
+
+
+# ----------------------------------------------------------------------
+# The real window
+# ----------------------------------------------------------------------
+@pytest.fixture
+def settings_path(tmp_path):
+    return tmp_path / "gui_settings.json"
+
+
+@pytest.fixture
+def make_app(settings_path, monkeypatch):
+    import matplotlib
+    matplotlib.use("Agg")
+    from EclipsingBinaries import menu
+
+    monkeypatch.setattr(menu, "SETTINGS_PATH", settings_path)
+    windows = []
+
+    def factory():
+        try:
+            window = menu.ProgramLauncher()
+        except tk.TclError as exc:
+            pytest.skip(f"No display available: {exc}")
+        window.withdraw()
+        windows.append(window)
+        return window
+
+    yield factory
+    for window in windows:
+        window._task_running = False
+        try:
+            window.destroy()
+        except tk.TclError:
+            pass
+
+
+@pytest.fixture
+def app(make_app):
+    return make_app()
+
+
+def _pump(window, seconds=0.3):
+    end = time.time() + seconds
+    while time.time() < end:
+        window.update()
+        time.sleep(0.02)
+
+
+def _wait_for_task(window, timeout=5):
+    end = time.time() + timeout
+    while window._task_running and time.time() < end:
+        window.update()
+        time.sleep(0.02)
+    window.update()
+
+
+def test_opens_on_iraf_the_first_time(app):
+    assert app._current_panel == "iraf"
+    assert app._status_label.cget("text") == "Ready"
+
+
+def test_every_enabled_sidebar_item_opens_its_panel(app):
+    for key in app._panel_builders:
+        app.open_panel(key)
+        app.update()
+        assert app._current_panel == key
+        assert app._run_button is not None
+
+
+def test_disabled_sidebar_items_have_no_panel(app):
+    for key in ("night_filters", "find_min"):
+        assert key in app._nav_items
+        assert key not in app._panel_builders
+    before = app._current_panel
+    app.open_panel("night_filters")
+    assert app._current_panel == before
+
+
+def test_panel_switch_leaves_no_stretched_rows(app):
+    app.open_panel("iraf")
+    app.open_panel("photometry")
+    app.update()
+    log_row = app.log_area.master.grid_info()["row"]
+    cols, rows = app.right_frame.grid_size()
+    stretched = [r for r in range(rows) if int(app.right_frame.grid_rowconfigure(r)["weight"])]
+    assert stretched == [log_row]
+
+
+def test_fields_are_remembered_across_panels_and_restarts(make_app, settings_path):
+    first = make_app()
+    first.open_panel("gaia")
+    key, entry = next(iter(first._panel_fields.items()))
+    first._set_entry_text(entry, "/data/gaia_out")
+    first.open_panel("oc")
+    first.open_panel("gaia")
+    assert first._path_value(first._panel_fields[key]) == "/data/gaia_out"
+    first._save_panel_settings()
+
+    second = make_app()
+    assert second._current_panel == "gaia"
+    assert second._path_value(second._panel_fields[key]) == "/data/gaia_out"
+
+
+def test_photometry_filter_choices_are_remembered(make_app):
+    first = make_app()
+    first.open_panel("photometry")
+    first.photometry_filter_count.set(1)
+    first._update_photometry_filter_rows()
+    first.photometry_filter_rows[0][0].set("R")
+    first._photometry_filters_picked = True
+    first._save_panel_settings()
+
+    second = make_app()
+    second.open_panel("photometry")
+    assert second.photometry_filter_count.get() == 1
+    assert second.photometry_filter_rows[0][0].get() == "R"
+
+
+def test_clear_saved_settings_forgets_everything(app, settings_path):
+    app.open_panel("gaia")
+    key, entry = next(iter(app._panel_fields.items()))
+    app._set_entry_text(entry, "/data/somewhere")
+    app._save_panel_settings()
+    with patch("EclipsingBinaries.menu.messagebox.askyesno", return_value=True):
+        app.clear_saved_settings()
+    assert app._path_value(app._panel_fields[key]) == ""
+    assert app.settings.section("gaia") == {}
+
+
+def test_status_bar_reports_a_finished_task(app):
+    app.open_panel("gaia")
+    started = threading.Event()
+    release = threading.Event()
+
+    def job():
+        started.set()
+        release.wait(5)
+
+    app.run_task(job)
+    assert started.wait(5)
+    app.update()
+    assert app._status_label.cget("text") == "Running Gaia Search"
+    assert app._run_button.instate(["disabled"])
+    release.set()
+    _wait_for_task(app)
+    assert app._status_label.cget("text").startswith("Finished Gaia Search in 0:0")
+    assert app._run_button.instate(["!disabled"])
+
+
+def test_status_bar_reports_an_error(app):
+    app.open_panel("gaia")
+
+    def job():
+        raise ValueError("bad catalog")
+
+    app.run_task(job)
+    _wait_for_task(app)
+    assert "stopped with an error" in app._status_label.cget("text")
+    assert "error" in app.log_area.tag_names("1.0")
+
+
+def test_status_bar_reports_a_cancel(app):
+    app.open_panel("gaia")
+    release = threading.Event()
+    app.run_task(lambda: release.wait(5))
+    app.cancel_event.set()
+    release.set()
+    _wait_for_task(app)
+    assert app._status_label.cget("text").startswith("Canceled Gaia Search")
+
+
+def test_result_buttons_appear_after_a_task(app, tmp_path):
+    app.open_panel("gaia")
+    opened = []
+
+    def job():
+        app.offer_results(str(tmp_path), [("Open Results", lambda: opened.append(True))])
+
+    app.run_task(job)
+    _wait_for_task(app)
+    labels = [b.cget("text") for b in app._results_frame.winfo_children()]
+    assert labels == ["Open Output Folder", "Open Results"]
+    app._results_frame.winfo_children()[1].invoke()
+    assert opened == [True]
+
+    with patch("EclipsingBinaries.menu.open_path") as fake_open:
+        app._results_frame.winfo_children()[0].invoke()
+    fake_open.assert_called_once_with(str(tmp_path))
+
+
+def test_result_buttons_skip_a_panel_the_user_left(app, tmp_path):
+    app.open_panel("gaia")
+    release = threading.Event()
+
+    def job():
+        release.wait(5)
+        app.offer_results(str(tmp_path))
+
+    app.run_task(job)
+    app.open_panel("oc")
+    release.set()
+    _wait_for_task(app)
+    assert app._results_frame.winfo_children() == []
+
+
+def test_new_run_clears_old_result_buttons(app, tmp_path):
+    app.open_panel("gaia")
+    app.run_task(lambda: app.offer_results(str(tmp_path)))
+    _wait_for_task(app)
+    assert app._results_frame.winfo_children()
+    release = threading.Event()
+    app.run_task(lambda: release.wait(5))
+    app.update()
+    assert app._results_frame.winfo_children() == []
+    release.set()
+    _wait_for_task(app)
+
+
+def test_log_lines_are_coloured(app):
+    app._append_log("Processing 3 images for V filter.")
+    app._append_log("Error: A RADEC file is required for V.")
+    app._append_log("Multi-Aperture Photometry completed successfully.")
+    assert app.log_area.tag_names("1.0") == ()
+    assert "error" in app.log_area.tag_names("2.0")
+    assert "success" in app.log_area.tag_names("3.0")
+
+
+def test_save_and_clear_log(app, tmp_path):
+    app.open_panel("gaia")
+    app._append_log("first line")
+    target = tmp_path / "log.txt"
+    with patch("EclipsingBinaries.menu.filedialog.asksaveasfilename", return_value=str(target)) as ask:
+        app._save_log()
+    assert ask.call_args.kwargs["initialfile"].startswith("gaia_log_")
+    assert target.read_text(encoding="utf-8").startswith("first line")
+    app._clear_log()
+    assert app.log_area.get("1.0", "end-1c") == ""
+
+
+def test_enter_runs_the_open_panel(app):
+    app.open_panel("gaia")
+    entry = next(iter(app._panel_fields.values()))
+    with patch.object(app._run_button, "invoke") as run:
+        result = app._on_return_key(type("E", (), {"widget": entry})())
+    assert result == "break"
+    run.assert_called_once()
+
+
+def test_enter_is_ignored_in_the_log(app):
+    app.open_panel("gaia")
+    with patch.object(app._run_button, "invoke") as run:
+        result = app._on_return_key(type("E", (), {"widget": app.log_area})())
+    assert result is None
+    run.assert_not_called()
+
+
+def test_escape_cancels_a_running_task(app):
+    app.open_panel("gaia")
+    release = threading.Event()
+    app.run_task(lambda: release.wait(5))
+    with patch("EclipsingBinaries.menu.messagebox.askyesno", return_value=True):
+        result = app._on_escape_key(type("E", (), {"widget": app.log_area})())
+    assert result == "break"
+    assert app.cancel_event.is_set()
+    release.set()
+    _wait_for_task(app)
+
+
+def test_help_and_about_open(app):
+    app.open_help_window()
+    app.show_about()
+    app.update()
+    dialogs = [w for w in app.winfo_children() if isinstance(w, tk.Toplevel)]
+    assert len(dialogs) >= 2
+    for dialog in dialogs:
+        dialog.destroy()
+
+
+def test_light_curve_viewer_plots_each_filter(app, tmp_path):
+    import numpy as np
+    import pandas as pd
+
+    hjd = 2460000 + np.linspace(0, 0.3, 40)
+    for filt in ("B", "V"):
+        pd.DataFrame({"HJD": hjd, "BJD": hjd, "Source_AMag_T1": 12 + 0.3 * np.sin(hjd * 40),
+                      "Source_AMag_T1_Error": np.full(40, 0.01)}).to_csv(tmp_path / f"T_{filt}_data.csv", index=False)
+    before = {str(w) for w in app.winfo_children()}
+    app._show_light_curves(str(tmp_path), "T", ["B", "V", "R"])
+    app.update()
+    new = [w for w in app.winfo_children() if str(w) not in before and isinstance(w, tk.Toplevel)]
+    assert len(new) == 1
+    assert new[0].title() == "T light curves"
+    new[0].destroy()
+
+
+def test_light_curve_viewer_reports_missing_files(app, tmp_path):
+    app.open_panel("photometry")
+    app._show_light_curves(str(tmp_path), "T", ["V"])
+    app.update()
+    assert "no light curve files" in app.log_area.get("1.0", "end")

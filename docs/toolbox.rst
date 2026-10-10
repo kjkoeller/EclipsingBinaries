@@ -11,23 +11,41 @@ Menu
 ----
 
 After launching EclipsingBinaries as described in :ref:`EB`,
-the user is presented with a GUI that centralizes all available tools. The left panel
-contains the program menu and the right panel displays the inputs and output log for
-the selected program.
+the user is presented with a GUI that centralizes all available tools. The sidebar on the
+left lists the programs, grouped in the order they're usually used, and the right side
+displays the inputs and output log for the selected program.
 
-The available programs are:
+The sidebar lists:
 
-+ IRAF Reduction
-+ Find Minimum (work in progress; run ``python -m EclipsingBinaries.find_min`` from a terminal for now)
-+ TESS Database Search/Download
-+ AIJ Comparison Star Selector
-+ Multi-Aperture Calculation
-+ BSUO or SARA/TESS Night Filters (see the note in that section)
-+ O-C Plotting
-+ Gaia Search
-+ O'Connell Effect
-+ Color Light Curve
-+ Close Program
++ **Reduce** — IRAF Reduction
++ **Comparison stars** — AIJ Comparison Star Selector
++ **Photometry** — Multi-Aperture Photometry, and Night Filters (shown greyed out; see the
+  note in `BSUO or SARA/TESS Night Filters`_)
++ **Analysis** — Find Minimum (shown greyed out; run ``python -m EclipsingBinaries.find_min``
+  from a terminal for now), O-C Plotting, O'Connell Effect, Color Light Curve
++ **Archives** — TESS Search and Download, Gaia Search
+
+Resting the pointer on a greyed-out entry shows how to run it instead. To quit, use
+**File > Exit** (or the application menu on macOS).
+
+When a program finishes, buttons for its output appear next to **Run**:
+
+=================================  =====================================================
+Program                            Buttons
+=================================  =====================================================
+IRAF Reduction                     Open Output Folder (the calibrated images)
+TESS Search and Download           Open Output Folder (the downloaded sectors)
+AIJ Comparison Star Selector       Open Output Folder, View Overlay (when one was saved)
+Multi-Aperture Photometry          Open Output Folder, View Light Curves
+O-C Plotting                       Open Output Folder, View O-C Plot
+Gaia Search                        Open Output Folder, Open Results (``gaia_results.csv``)
+O'Connell Effect                   Open Output Folder, View Plot
+Color Light Curve                  Open Output Folder, View Plot
+=================================  =====================================================
+
+**View Light Curves** opens the light curve of every filter that was measured in one
+window, stacked with a shared time axis, with the usual Matplotlib zoom, pan and save
+tools.
 
 IRAF Reduction
 --------------
@@ -200,8 +218,8 @@ back to ``BSU`` instead. To add your own site:
 
 ``correct_headers_batch`` does the same for a list of files.
 
-TESS Database Search/Download
-------------------------------
+TESS Search and Download
+-------------------------
 
 TESS is a valuable resource for eclipsing binary research — if a target is in the
 database it typically has weeks to months of continuous photometry available.
@@ -335,8 +353,8 @@ with circles and index numbers marking each star:
 
 .. image:: ../EclipsingBinaries/examples/overlay_example.png
 
-Multi-Aperture Calculation
---------------------------
+Multi-Aperture Photometry
+-------------------------
 
 Runs aperture photometry on reduced science images for Johnson B, V and Cousins R, using
 the target and comparison stars from the RADEC files made by the
@@ -441,7 +459,7 @@ BSUO or SARA/TESS Night Filters
 ---------------------------------
 
 .. note::
-    The **BSUO or SARA/TESS Night Filters** button in the GUI isn't wired up yet. Run the
+    **Night Filters** is greyed out in the GUI sidebar because it isn't wired up yet. Run the
     program from a terminal instead with ``python -m EclipsingBinaries.Night_Filters``,
     which asks for the number of nights and each file path.
 

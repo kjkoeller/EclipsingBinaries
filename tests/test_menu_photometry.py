@@ -15,10 +15,13 @@ tk = pytest.importorskip("tkinter")
 
 
 @pytest.fixture
-def app():
+def app(tmp_path, monkeypatch):
     import matplotlib
     matplotlib.use("Agg")
     from EclipsingBinaries import menu
+
+    # Keep the tests away from the real remembered settings
+    monkeypatch.setattr(menu, "SETTINGS_PATH", tmp_path / "gui_settings.json")
 
     try:
         window = menu.ProgramLauncher()

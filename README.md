@@ -57,7 +57,9 @@ EclipsingBinaries
 ```
 
 This opens the GUI, which has every program in one window. Programs run in the background
-with a Cancel button, and file and folder fields accept drag and drop. See
+with a Cancel button and a status bar, each program remembers the folders and files you
+used last, and finished runs offer buttons to open the output folder or view the results.
+File and folder fields accept drag and drop. See
 [Running EclipsingBinaries](https://eclipsingbinaries.readthedocs.io/en/latest/EB.html) for details.
 
 To check the version you have,

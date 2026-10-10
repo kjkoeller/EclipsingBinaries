@@ -92,6 +92,8 @@ The pipeline writes the following files to ``OUTPUT_DIR`` at the end of a succes
 - Reduced FITS images from the IRAF reduction stage
 - RADEC comparison star files for each filter
 - Light curve CSV files and plots for each filter
+- ``[name]_comparison_stars.csv`` — the comparison stars shared by all filters, and why any
+  others were left out
 - ``[name]_pipeline_summary.txt`` — a summary of the run including total runtime,
   per-stage duration, and any warnings encountered
 

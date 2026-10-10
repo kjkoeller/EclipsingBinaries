@@ -303,54 +303,43 @@ def test_main_logs_error_on_bad_path():
     assert any("error" in m.lower() for m in messages)
 
 
-def test_main_processes_each_filter():
+def test_main_hands_every_filter_to_one_shared_run():
+    # All three filters go to a single run_photometry call, in B, V, R order,
+    # so they can share one list of comparison stars
     from EclipsingBinaries.multi_aperture_photometry import main
     from unittest.mock import MagicMock, patch
 
-    cancel = MagicMock()
-    cancel.is_set.return_value = False
+    mock_collection = MagicMock()
+    mock_collection.headers.return_value = [({"FILTER": "R"}, "img3.fits"), ({"FILTER": "B"}, "img1.fits"),
+                                            ({"FILTER": "V"}, "img2.fits")]
+
+    with patch("EclipsingBinaries.multi_aperture_photometry.ccdp.ImageFileCollection",
+               return_value=mock_collection), \
+         patch("EclipsingBinaries.multi_aperture_photometry.run_photometry") as mock_run:
+        main(path="/tmp", pipeline=True, radec_list=["b.radec", "v.radec", "r.radec"],
+             obj_name="test", write_callback=lambda _m: None)
+
+    assert mock_run.call_count == 1
+    jobs = mock_run.call_args.args[0]
+    assert jobs == [("B", ["img1.fits"], "b.radec"), ("V", ["img2.fits"], "v.radec"),
+                    ("R", ["img3.fits"], "r.radec")]
+
+
+def test_main_skips_a_filter_with_no_images():
+    from EclipsingBinaries.multi_aperture_photometry import main
+    from unittest.mock import MagicMock, patch
+
+    mock_collection = MagicMock()
+    mock_collection.headers.return_value = [({"FILTER": "B"}, "img1.fits"), ({"FILTER": "V"}, "img2.fits")]
     messages = []
-
-    mock_collection = MagicMock()
-    h1 = {"FILTER": "B"}
-    h2 = {"FILTER": "V"}
-    h3 = {"FILTER": "R"}
-    mock_collection.headers.return_value = [(h1, "img1.fits"), (h2, "img2.fits"), (h3, "img3.fits")]
-
     with patch("EclipsingBinaries.multi_aperture_photometry.ccdp.ImageFileCollection",
                return_value=mock_collection), \
-         patch("EclipsingBinaries.multi_aperture_photometry.multiple_AP") as mock_ap:
-        main(path="/tmp", pipeline=True,
-             radec_list=["b.radec", "v.radec", "r.radec"],
-             obj_name="test", write_callback=messages.append, cancel_event=cancel)
+         patch("EclipsingBinaries.multi_aperture_photometry.run_photometry") as mock_run:
+        main(path="/tmp", radec_list=["b.radec", "v.radec", "r.radec"], obj_name="test",
+             write_callback=messages.append)
 
-    assert mock_ap.call_count == 3
-
-
-def test_main_passes_correct_filter_to_multiple_ap():
-    from EclipsingBinaries.multi_aperture_photometry import main
-    from unittest.mock import MagicMock, patch
-
-    cancel = MagicMock()
-    cancel.is_set.return_value = False
-
-    mock_collection = MagicMock()
-    h1 = {"FILTER": "B"}
-    h2 = {"FILTER": "V"}
-    h3 = {"FILTER": "R"}
-    mock_collection.headers.return_value = [(h1, "img1.fits"), (h2, "img2.fits"), (h3, "img3.fits")]
-
-    with patch("EclipsingBinaries.multi_aperture_photometry.ccdp.ImageFileCollection",
-               return_value=mock_collection), \
-         patch("EclipsingBinaries.multi_aperture_photometry.multiple_AP") as mock_ap:
-        main(path="/tmp", pipeline=True,
-             radec_list=["b.radec", "v.radec", "r.radec"],
-             obj_name="test", write_callback=None, cancel_event=cancel)
-
-    filters_used = [c.kwargs["filt"] for c in mock_ap.call_args_list]
-    assert "B" in filters_used
-    assert "V" in filters_used
-    assert "R" in filters_used
+    assert [job[0] for job in mock_run.call_args.args[0]] == ["B", "V"]
+    assert any("No R images found" in m for m in messages)
 
 
 # ===========================================================================
@@ -533,7 +522,7 @@ SIZE = 200
 OUTER = 15  # outer annulus radius used in these tests
 
 
-def _drifting_frames(folder, stars, shifts, nan_box=None, nan_frame=None):
+def _drifting_frames(folder, stars, shifts, nan_box=None, nan_frame=None, filt="V", prefix="frame"):
     """
     Write frames whose pointing drifts, so stars move across the detector.
 
@@ -565,16 +554,17 @@ def _drifting_frames(folder, stars, shifts, nan_box=None, nan_frame=None):
             x0, x1, y0, y1 = nan_box
             image[y0:y1, x0:x1] = np.nan
         header = wcs.to_header()
-        header.update(IMAGETYP="LIGHT", FILTER="V", RDNOISE=6.0,
+        header.update(IMAGETYP="LIGHT", FILTER=filt, RDNOISE=6.0,
                       HJD=2460000.5 + i * 0.01, BJD_TDB=2460000.6 + i * 0.01)
-        name = f"frame{i}.fits"
+        name = f"{prefix}{i}.fits"
         fits.writeto(folder / name, image, header, overwrite=True)
         names.append(name)
 
-    def write_radec(path, keep):
+    def write_radec(path, keep, mags=None):
+        # mags can override a star's catalog magnitude by its index in stars
         lines = ["#"] * 7
         for k in keep:
-            mag = 99.999 if k == 0 else stars[k][3]
+            mag = 99.999 if k == 0 else (mags or {}).get(k, stars[k][3])
             lines.append(f"{sky[k].ra.hour:.10f}, {sky[k].dec.deg:.10f}, 0, 1, {mag}")
         path.write_text("\n".join(lines) + "\n")
         return path
@@ -607,8 +597,8 @@ def test_off_image_star_is_dropped_and_analysis_starts_over(tmp_path):
     assert len(restarted) == 4
     pd.testing.assert_frame_equal(restarted, fresh)
     assert sum("[REMOVED] Comparison star #3" in m for m in messages) == 1
-    assert sum("Starting V photometry over" in m for m in messages) == 1
-    assert any("2 comparison star(s) (#1, #2)" in m for m in messages)
+    assert sum("Starting photometry over" in m for m in messages) == 1
+    assert any("Used the same 2 comparison star(s) in V: #1, #2." in m for m in messages)
 
 
 def test_all_stars_off_in_one_image_are_dropped_in_one_restart(tmp_path):
@@ -621,7 +611,7 @@ def test_all_stars_off_in_one_image_are_dropped_in_one_restart(tmp_path):
 
     removed = [m for m in messages if m.startswith("[REMOVED]")]
     assert len(removed) == 2
-    assert sum("Starting V photometry over" in m for m in messages) == 1
+    assert sum("Starting photometry over" in m for m in messages) == 1
 
 
 def test_annulus_poking_half_a_pixel_off_is_caught(tmp_path):
@@ -697,3 +687,137 @@ def test_footprint_problem_nan_inside_and_outside():
     image = np.zeros((SIZE, SIZE))
     image[100, 120] = np.inf                       # well outside it
     assert footprint_problem(100.0, 100.0, OUTER, image) is None
+
+
+# ===========================================================================
+# One set of comparison stars shared by B, V and R
+# ===========================================================================
+def _three_filters(folder, stars, shifts_by_filter, mags_by_filter=None, keep_by_filter=None):
+    """
+    Write B, V and R frames (each filter can drift differently) and one RADEC
+    file per filter. Returns the jobs list run_photometry takes.
+    """
+    jobs = []
+    for filt in ("B", "V", "R"):
+        names, write_radec = _drifting_frames(folder, stars, shifts_by_filter[filt], filt=filt,
+                                              prefix=f"{filt}_frame")
+        keep = (keep_by_filter or {}).get(filt, range(len(stars)))
+        radec = write_radec(folder / f"{filt}.radec", keep, (mags_by_filter or {}).get(filt))
+        jobs.append((filt, names, str(radec)))
+    return jobs
+
+
+def _run_shared(folder, jobs, messages=None):
+    from EclipsingBinaries.multi_aperture_photometry import run_photometry
+    log = messages.append if messages is not None else (lambda _m: None)
+    used = run_photometry(jobs, folder, obj_name="T", write_callback=log,
+                          aperture_radius=6, annulus_radii=(10, OUTER))
+    curves = {f: pd.read_csv(folder / f"T_{f}_data.csv") for f in ("B", "V", "R") if (folder / f"T_{f}_data.csv").exists()}
+    return used, curves
+
+
+STILL = [(0, 0), (0, 0), (0, 0)]
+
+
+def test_star_off_in_one_filter_is_dropped_from_all_filters(tmp_path):
+    # Only the second R image drifts far enough to push C off the edge.
+    # C must then be left out of B and V as well, and every light curve must
+    # match a fresh run where C was never in any RADEC file.
+    shifts = {"B": STILL, "V": STILL, "R": [(0, 0), (20, 0), (0, 0)]}
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir(); b.mkdir()
+    messages = []
+    used, restarted = _run_shared(a, _three_filters(a, STARS, shifts), messages)
+    _, fresh = _run_shared(b, _three_filters(b, STARS, shifts,
+                                             keep_by_filter={f: [0, 1, 2] for f in "BVR"}))
+
+    assert [s.number for s in used] == [1, 2]
+    for f in "BVR":
+        pd.testing.assert_frame_equal(restarted[f], fresh[f])
+    assert any("[REMOVED] Comparison star #3" in m and "R image" in m and "every filter" in m for m in messages)
+    assert any("Used the same 2 comparison star(s) in B, V, R: #1, #2." in m for m in messages)
+
+
+def test_restart_goes_back_to_the_first_filter(tmp_path):
+    shifts = {"B": STILL, "V": STILL, "R": [(0, 0), (20, 0), (0, 0)]}
+    messages = []
+    _run_shared(tmp_path, _three_filters(tmp_path, STARS, shifts), messages)
+
+    removed_at = next(i for i, m in enumerate(messages) if m.startswith("[REMOVED]"))
+    after = messages[removed_at:]
+    assert any("Starting photometry over from the first B image with 2 comparison star(s) (pass 2)" in m
+               for m in after)
+    # B and V are measured again on the second pass
+    assert any(m == "Processing 3 images for B filter." for m in after)
+    assert any(m == "Processing 3 images for V filter." for m in after)
+
+
+def test_star_missing_a_magnitude_in_one_filter_is_left_out_of_all(tmp_path):
+    # Star A has no catalog B magnitude. It used to be used in V and R anyway.
+    jobs = _three_filters(tmp_path, STARS, {f: STILL for f in "BVR"}, mags_by_filter={"B": {1: 99.999}})
+    messages = []
+    used, _ = _run_shared(tmp_path, jobs, messages)
+
+    assert [s.number for s in used] == [2, 3]
+    assert any("[EXCLUDED] Comparison star #1" in m and "no catalog magnitude in B" in m for m in messages)
+
+
+def test_star_missing_from_one_radec_file_is_left_out_of_all(tmp_path):
+    jobs = _three_filters(tmp_path, STARS, {f: STILL for f in "BVR"}, keep_by_filter={"V": [0, 1, 3]})
+    messages = []
+    used, _ = _run_shared(tmp_path, jobs, messages)
+
+    assert [s.number for s in used] == [1, 3]
+    assert any("[EXCLUDED] Comparison star #2" in m and "isn't in the V RADEC file" in m for m in messages)
+
+
+def test_stars_are_matched_by_position_not_row(tmp_path):
+    # The R file lists the comparison stars in a different order
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir(); b.mkdir()
+    used, shuffled = _run_shared(a, _three_filters(a, STARS, {f: STILL for f in "BVR"},
+                                                   keep_by_filter={"R": [0, 3, 1, 2]}))
+    _, ordered = _run_shared(b, _three_filters(b, STARS, {f: STILL for f in "BVR"}))
+
+    assert [s.number for s in used] == [1, 2, 3]
+    pd.testing.assert_frame_equal(shuffled["R"], ordered["R"])
+
+
+def test_comparison_star_record_file(tmp_path):
+    shifts = {"B": STILL, "V": STILL, "R": [(0, 0), (20, 0), (0, 0)]}
+    jobs = _three_filters(tmp_path, STARS, shifts, mags_by_filter={"V": {2: 99.999}})
+    _run_shared(tmp_path, jobs)
+
+    record = pd.read_csv(tmp_path / "T_comparison_stars.csv")
+    assert list(record.columns) == ["Star", "RA", "Dec", "Used", "B_mag", "V_mag", "R_mag", "Note"]
+    by_star = record.set_index("Star")
+    assert bool(by_star.loc[1, "Used"]) is True
+    assert by_star.loc[1, "B_mag"] == 11.0
+    assert bool(by_star.loc[2, "Used"]) is False and "no catalog magnitude in V" in by_star.loc[2, "Note"]
+    assert bool(by_star.loc[3, "Used"]) is False and "removed" in by_star.loc[3, "Note"]
+    assert "R image R_frame1.fits" in by_star.loc[3, "Note"]
+
+
+def test_nothing_is_written_when_the_run_cannot_finish(tmp_path):
+    # Every comparison star falls off in the last R image, so the run fails.
+    # B and V were measured fine first, but their files must not be written.
+    stars = [(100, 100, 20000.0, 99.999), (40, 100, 30000.0, 11.0)]
+    shifts = {"B": STILL, "V": STILL, "R": [(0, 0), (0, 0), (-30, 0)]}
+    with pytest.raises(RuntimeError, match="All comparison stars have been removed"):
+        _run_shared(tmp_path, _three_filters(tmp_path, stars, shifts))
+    assert not list(tmp_path.glob("T_*_data.csv"))
+
+
+def test_main_end_to_end_shares_stars_across_filters(tmp_path):
+    # Real image collection and filter grouping, as the GUI and pipeline call it
+    from EclipsingBinaries.multi_aperture_photometry import main
+
+    shifts = {"B": STILL, "V": [(0, 0), (20, 0), (0, 0)], "R": STILL}
+    jobs = _three_filters(tmp_path, STARS, shifts)
+    messages = []
+    used = main(path=str(tmp_path), radec_list=[j[2] for j in jobs], obj_name="T",
+                write_callback=messages.append, aperture_radius=6, annulus_radii=(10, OUTER))
+
+    assert [s.number for s in used] == [1, 2]
+    for f in "BVR":
+        assert len(pd.read_csv(tmp_path / f"T_{f}_data.csv")) == 3

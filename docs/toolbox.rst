@@ -357,26 +357,35 @@ Images are grouped by the ``FILTER`` keyword. ``Empty/B`` and ``B`` style names 
 of the box; other names need a ``filter_config.json`` as described in
 :ref:`custom-filter-mapping`.
 
-Stars Near the Edge
-^^^^^^^^^^^^^^^^^^^
+Shared Comparison Stars
+^^^^^^^^^^^^^^^^^^^^^^^
 
-Every star's aperture and annulus has to sit wholly on real image data in every image.
-Before measuring an image, each star's position is worked out from that image's WCS, so
+B, V and R always use exactly the same comparison stars. Stars are matched between the
+three RADEC files by position, so a hand-edited file with the rows in a different order
+still lines up. Before any image is measured, a star is left out of every filter if it
+is missing from one of the RADEC files, or has no catalog magnitude (99.999) in any one
+filter.
+
+Every star's aperture and annulus then has to sit wholly on real image data in every
+image of every filter. Each star's position is worked out from that image's own WCS, so
 pointing drift during the night is taken into account. A comparison star fails the check
 when any part of its outer annulus is off the edge of the image, or covers pixels with no
 data (NaN or infinite values, as on the padded edges of TESS cutouts or aligned frames).
 
-When comparison stars fail in an image, all of them are removed from the list at once and
-the photometry for that filter starts over from the first image with the smaller set. This
-repeats until one set of comparison stars fits in every image, so every magnitude in the
-light curve comes from the same ensemble. The result is the same as if those stars had
-been left out of the RADEC file from the start.
+When comparison stars fail in an image of any filter, all of them are dropped from every
+filter at once, and the whole analysis starts over from the first B image with the
+smaller set. This repeats until one set of comparison stars fits on every image of every
+filter. Light curves are only written once that happens, so every magnitude in all three
+light curves comes from the same ensemble. The result is the same as if those stars had
+been left out of all three RADEC files from the start.
 
 If the target's own annulus doesn't fit in an image, that image is skipped instead, and the
-comparison stars aren't judged on it. The output log lists each removed star with its
-pixel position and the reason, each skipped image, and which comparison stars were used
-in the end. Photometry stops with an error if every comparison star is removed or the
-target doesn't fit in any image.
+comparison stars aren't judged on it. The output log lists each excluded or removed star
+with the reason, each skipped image, and the comparison stars used in the end.
+Photometry stops with an error, and writes no light curves, if every comparison star is
+removed or the target doesn't fit in any image of a filter.
+
+If one filter has no images, the other filters still run and share their comparison stars.
 
 Optimize Radii
 ^^^^^^^^^^^^^^
@@ -400,6 +409,11 @@ For each filter, two files are written to the reduced images folder:
 + ``[name]_[filter]_data.csv`` — columns ``HJD``, ``BJD``, ``Source_AMag_T1`` and
   ``Source_AMag_T1_Error``
 + ``[name]_[filter]_figure.jpg`` — the light curve with error bars
+
+One more file covers all filters:
+
++ ``[name]_comparison_stars.csv`` — every comparison star from the RADEC files with its
+  catalog magnitude in each filter, whether it was used, and why not if it wasn't
 
 The times come from each image header: ``HJD`` from ``HJD-OBS`` (written by AstroImageJ),
 ``HJD`` or ``HJD_UTC`` (written by this package's reduction), and ``BJD`` from ``BJD-OBS``

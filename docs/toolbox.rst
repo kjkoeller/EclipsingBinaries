@@ -578,7 +578,13 @@ apart, nothing in the light curve can settle it: the fold shows one dip per cycl
 
 In the window:
 
-+ **Click** a peak in the periodogram to fold on it. Its top is found automatically.
++ **Drag** along the periodogram, or move the **Period** slider under the plots, and the
+  fold follows the period as it changes. A red dot rides the periodogram at the current
+  period and the side panel shows the statistic there. The epoch stays where it is while
+  dragging, so a period that's slightly off shows the eclipses from different nights
+  drifting apart, and the right period lines them up. The slider spans whatever the
+  periodogram shows, so zoom in with the toolbar for finer control.
++ **Click** a peak without dragging to jump to its top, found automatically.
 + **×2** and **÷2** double or halve the period; the left and right arrow keys nudge it.
   **Refine Here** finds the top of the nearest peak again. The peak's half width at half
   height is shown as a rough guide to how well these observations alone pin the period

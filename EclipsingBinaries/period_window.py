@@ -24,7 +24,9 @@ from matplotlib.figure import Figure
 
 from . import period as pr
 
-HELP_TEXT = ("Click a peak to fold on it. Over the plots, the left and right arrow keys nudge the period. "
+HELP_TEXT = ("Drag along the periodogram, or move the slider under it, and the fold follows the period. "
+             "Click a peak without dragging to jump to its top. Over the plots, the left and right arrow keys "
+             "nudge the period, and zooming the periodogram makes the slider finer. "
              "An eclipsing binary should show a primary and a secondary eclipse in one cycle: if the fold "
              "shows a single dip and the star has two alike eclipses, use \u00d72.")
 COLOURS = {"B": "#2f5aa8", "V": "#2d7d46", "R": "#b23a2e"}
@@ -74,6 +76,12 @@ class PeriodWindow(tk.Toplevel):
         self.epoch = None
         self.half_width = None
         self._job = None
+        self._drag = None           # set while the mouse is pressed on the periodogram
+        self._syncing = False       # True while the program, not the user, moves the slider
+        self._fold_lines = {}       # filter: the Line2D showing its folded points
+        self._marker_line = self._half_line = self._marker_dot = None
+        self._fold_text = None
+        self._background = None     # snapshot of everything that doesn't move while dragging
 
         self.title(f"Period Search: {obj_name}" if obj_name else "Period Search")
         self.geometry("1150x800")
@@ -134,9 +142,20 @@ class PeriodWindow(tk.Toplevel):
         self.toolbar = NavigationToolbar2Tk(self.canvas, plot_frame, pack_toolbar=False)
         self.toolbar.update()
         self.toolbar.pack(side="bottom", fill="x")
+        # A slider across the periodogram's visible range, the same as dragging the marker
+        slider_row = ttk.Frame(plot_frame, padding=(0, 4, 0, 2))
+        slider_row.pack(side="bottom", fill="x")
+        ttk.Label(slider_row, text="Period:").pack(side="left")
+        self.slider_var = tk.DoubleVar(master=self, value=min_period)
+        self.slider = ttk.Scale(slider_row, from_=min_period, to=max_period, orient="horizontal",
+                                variable=self.slider_var, command=self._on_slider)
+        self.slider.pack(side="left", fill="x", expand=True, padx=(6, 0))
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
-        self.canvas.mpl_connect("button_press_event", self._on_click)
+        self.canvas.mpl_connect("button_press_event", self._on_press)
+        self.canvas.mpl_connect("motion_notify_event", self._on_motion)
+        self.canvas.mpl_connect("button_release_event", self._on_release)
         self.canvas.mpl_connect("key_press_event", self._on_key)
+        self.canvas.mpl_connect("draw_event", self._on_draw)
 
         side = ttk.Frame(body, padding=(14, 0, 0, 0))
         side.grid(row=0, column=1, sticky="ns")
@@ -154,8 +173,10 @@ class PeriodWindow(tk.Toplevel):
         ttk.Button(row, text="÷2", width=4, command=lambda: self.set_period(self.period / 2),
                    style=secondary).pack(side="left", padx=4)
         ttk.Button(row, text="Refine Here", command=self.refine_here, style=secondary).pack(side="left")
+        self.value_var = tk.StringVar(master=self)
+        ttk.Label(side, textvariable=self.value_var).pack(anchor="w", pady=(6, 0))
         self.width_var = tk.StringVar(master=self)
-        ttk.Label(side, textvariable=self.width_var, foreground=MUTED_FG).pack(anchor="w", pady=(4, 12))
+        ttk.Label(side, textvariable=self.width_var, foreground=MUTED_FG).pack(anchor="w", pady=(2, 12))
 
         ttk.Label(side, text="Epoch (primary minimum)", font=self.heading_font).pack(anchor="w")
         self.epoch_var = tk.StringVar(master=self)
@@ -238,6 +259,7 @@ class PeriodWindow(tk.Toplevel):
         self.result = outcome["result"]
         self._report_search()
         self.half_width = self.result.half_width
+        self._draw_periodogram()
         self.set_period(self.result.best_period, keep_epoch=False)
         self._set_actions_enabled(True)
 
@@ -261,7 +283,8 @@ class PeriodWindow(tk.Toplevel):
     def _bands_changed(self):
         if self.result is not None:
             self._status("Filters changed. Search again to update the periodogram.")
-        self.redraw()
+        self._draw_fold()
+        self._update_period_artists()
 
     def _set_actions_enabled(self, enabled):
         for button in [self.save_button, *self.send_buttons]:
@@ -280,7 +303,7 @@ class PeriodWindow(tk.Toplevel):
             self.epoch = pr.faintest_epoch(curve, self.period)
             self.epoch_var.set(f"{self.epoch:.6f}")
         self._show_width()
-        self.redraw()
+        self._update_period_artists()
 
     def _show_width(self):
         if self.half_width and np.isfinite(self.half_width):
@@ -305,7 +328,7 @@ class PeriodWindow(tk.Toplevel):
             if self.epoch is not None:
                 self.epoch_var.set(f"{self.epoch:.6f}")
             return
-        self.redraw()
+        self._update_period_artists()
 
     def refine_here(self):
         """Find the top of the peak nearest the current period."""
@@ -321,7 +344,7 @@ class PeriodWindow(tk.Toplevel):
             return
         self.epoch = pr.faintest_epoch(self.selected_curve() or self.curve, self.period)
         self.epoch_var.set(f"{self.epoch:.6f}")
-        self.redraw()
+        self._update_period_artists()
 
     def swap_eclipses(self):
         """Move the epoch half a cycle, for when the secondary eclipse was taken as the primary."""
@@ -329,7 +352,7 @@ class PeriodWindow(tk.Toplevel):
             return
         self.epoch += self.period / 2
         self.epoch_var.set(f"{self.epoch:.6f}")
-        self.redraw()
+        self._update_period_artists()
 
     def epoch_from_file(self, path=None):
         """Use the first time of minimum from a Find Minimum file as the epoch."""
@@ -347,7 +370,7 @@ class PeriodWindow(tk.Toplevel):
         self.epoch = epoch
         self.epoch_var.set(f"{epoch:.6f}")
         self._status(f"Epoch {epoch:.6f} is the first of {count} minima in {Path(path).name}.")
-        self.redraw()
+        self._update_period_artists()
 
     def save(self):
         if self.period is None:
@@ -368,51 +391,170 @@ class PeriodWindow(tk.Toplevel):
 
     # ------------------------------------------------------------------
     # Drawing
+    #
+    # The periodogram and the fold are drawn in full only after a search, a
+    # change of filters, a zoom or a resize. The things that move with the
+    # period (the markers, the folded points and their caption) are
+    # "animated": after each full draw a snapshot of everything else is kept,
+    # and moving the period pastes the snapshot back and draws just those on
+    # top (blitting), which is quick enough to follow the mouse.
     # ------------------------------------------------------------------
     def redraw(self):
-        self.ax_power.clear()
-        self.ax_fold.clear()
+        self._draw_periodogram()
+        self._draw_fold()
+        self._update_period_artists()
+
+    def _draw_periodogram(self):
+        ax = self.ax_power
+        ax.clear()
+        self._marker_line = self._half_line = self._marker_dot = None
         r = self.result
         if r is not None:
-            self.ax_power.plot(r.periods, r.power, color="0.25", lw=0.7)
-            self.ax_power.set_xlim(r.periods[0], r.periods[-1])
-            self.ax_power.set_xlabel("Trial period (days)", fontsize=9)
-            self.ax_power.set_ylabel(pr.statistic_name(r.method), fontsize=9)
-            if self.period is not None:
-                self.ax_power.axvline(self.period, color="#c0392b", lw=1)
-                if r.periods[0] <= self.period / 2:
-                    self.ax_power.axvline(self.period / 2, color="#c0392b", lw=0.8, ls=":")
-            self.ax_power.grid(alpha=0.3)
+            ax.plot(r.periods, r.power, color="0.25", lw=0.7)
+            ax.set_xlim(r.periods[0], r.periods[-1])
+            ax.set_xlabel("Trial period (days)", fontsize=9)
+            ax.set_ylabel(pr.statistic_name(r.method), fontsize=9)
+            ax.grid(alpha=0.3)
+            self._marker_line = ax.axvline(r.best_period, color="#c0392b", lw=1, animated=True)
+            self._half_line = ax.axvline(r.best_period / 2, color="#c0392b", lw=0.8, ls=":", animated=True)
+            (self._marker_dot,) = ax.plot([r.best_period], [r.best_power], "o", color="#c0392b",
+                                          ms=7, zorder=5, animated=True)
+            # Clearing the axis drops its callbacks, so hook the slider's range to the zoom again
+            ax.callbacks.connect("xlim_changed", lambda _ax: self._sync_slider_range())
+            self._sync_slider_range()
+        ax.tick_params(labelsize=8)
+        self._background = None
+
+    def _draw_fold(self):
+        ax = self.ax_fold
+        ax.clear()
+        self._fold_lines = {}
         curve = self.selected_curve()
-        if curve is not None and self.period is not None and self.epoch is not None:
-            phase = pr.fold(curve.time, self.period, self.epoch)
+        if curve is not None:
             for label in curve.labels:
+                (self._fold_lines[label],) = ax.plot([], [], "o", ms=2.5, color=COLOURS.get(label, "0.2"),
+                                                     label=label if len(curve.labels) > 1 else None,
+                                                     animated=True)
+            ax.set_ylim(np.nanmax(curve.mag) + 0.05, np.nanmin(curve.mag) - 0.05)  # brighter is up
+            ax.set_xlim(-0.25, 1.25)
+            ax.set_xlabel("Phase", fontsize=9)
+            ax.set_ylabel("Magnitude minus median", fontsize=9)
+            self._fold_text = ax.text(0.01, 0.97, "", transform=ax.transAxes, va="top", fontsize=8,
+                                      animated=True)
+            ax.grid(alpha=0.3)
+            if len(curve.labels) > 1:
+                ax.legend(fontsize=7, loc="lower right", frameon=False)
+        ax.tick_params(labelsize=8)
+        self._background = None
+
+    def _animated_artists(self):
+        artists = [self._marker_line, self._half_line, self._marker_dot, self._fold_text,
+                   *self._fold_lines.values()]
+        return [a for a in artists if a is not None]
+
+    def _on_draw(self, _event):
+        """After a full draw: keep a snapshot without the moving parts, then add them."""
+        self._background = self.canvas.copy_from_bbox(self.figure.bbox)
+        for artist in self._animated_artists():
+            artist.axes.draw_artist(artist)
+
+    def _refresh(self):
+        """Show the moving parts in their new places, by blitting when a snapshot is ready."""
+        if self._background is None:
+            self.canvas.draw_idle()
+            return
+        self.canvas.restore_region(self._background)
+        for artist in self._animated_artists():
+            artist.axes.draw_artist(artist)
+        self.canvas.blit(self.figure.bbox)
+
+    def _update_period_artists(self):
+        """Move the period markers and refold the light curve on the current period and epoch."""
+        if self.period is None:
+            self._refresh()
+            return
+        curve = self.selected_curve()
+        if curve is not None and set(self._fold_lines) != set(curve.labels):
+            self._draw_fold()
+        value = self.value_at(self.period)
+        if self._marker_line is not None:
+            self._marker_line.set_xdata([self.period, self.period])
+            self._half_line.set_xdata([self.period / 2, self.period / 2])
+            self._half_line.set_visible(self.result.periods[0] <= self.period / 2)
+            self._marker_dot.set_data([self.period], [value])
+        name = pr.statistic_name(self.result.method if self.result else self.method_var.get())
+        self.value_var.set(f"{name} here: {value:,.1f}" if np.isfinite(value) else "")
+        if curve is not None and self.epoch is not None:
+            phase = pr.fold(curve.time, self.period, self.epoch)
+            for label, line in self._fold_lines.items():
                 keep = curve.label == label
                 ph, mag = phase[keep], curve.mag[keep]
                 # Show a little either side of one cycle so eclipses at phase 0 aren't cut in two
-                ph = np.concatenate([ph, ph[ph > 0.75] - 1, ph[ph < 0.25] + 1])
-                mag = np.concatenate([mag, mag[phase[keep] > 0.75], mag[phase[keep] < 0.25]])
-                self.ax_fold.plot(ph, mag, "o", ms=2.5, color=COLOURS.get(label, "0.2"),
-                                  label=label if len(curve.labels) > 1 else None)
-            self.ax_fold.invert_yaxis()
-            self.ax_fold.set_xlim(-0.25, 1.25)
-            self.ax_fold.set_xlabel(f"Phase (period {self.period:.7f} d, epoch {self.epoch:.5f})", fontsize=9)
-            self.ax_fold.set_ylabel("Magnitude minus median", fontsize=9)
-            self.ax_fold.grid(alpha=0.3)
-            if len(curve.labels) > 1:
-                self.ax_fold.legend(fontsize=7, loc="lower right", frameon=False)
-        for ax in (self.ax_power, self.ax_fold):
-            ax.tick_params(labelsize=8)
-        self.canvas.draw_idle()
+                line.set_data(np.concatenate([ph, ph[ph > 0.75] - 1, ph[ph < 0.25] + 1]),
+                              np.concatenate([mag, mag[ph > 0.75], mag[ph < 0.25]]))
+            if self._fold_text is not None:
+                self._fold_text.set_text(f"Period {self.period:.7f} d, epoch {self.epoch:.5f}")
+        self._syncing = True
+        try:
+            self.slider_var.set(self.period)
+        finally:
+            self._syncing = False
+        self._refresh()
+
+    def value_at(self, period):
+        """The periodogram's statistic at one period, for the marker and the side panel."""
+        curve = self.selected_curve()
+        if curve is None:
+            return float("nan")
+        method = self.result.method if self.result else self.method_var.get()
+        try:
+            return float(pr.score(curve, [period], method)[0])
+        except pr.PeriodError:
+            return float("nan")
+
+    def _sync_slider_range(self):
+        """Make the slider span what the periodogram shows, so zooming in makes it finer."""
+        lo, hi = self.ax_power.get_xlim()
+        self.slider.configure(from_=lo, to=hi)
 
     # ------------------------------------------------------------------
-    # Mouse and keys
+    # Dragging, the slider, clicks and keys
     # ------------------------------------------------------------------
-    def _on_click(self, event):
+    def drag_period(self, value):
+        """Set the period while dragging or sliding. The epoch stays put, so the fold shows any drift."""
+        if self.result is None or value is None or not np.isfinite(value):
+            return
+        lo, hi = self.ax_power.get_xlim()
+        self.period = float(min(max(value, lo, 1e-6), hi))
+        self.period_var.set(f"{self.period:.7f}")
+        self.half_width = None   # away from a peak's top the half width doesn't apply
+        self._show_width()
+        self._update_period_artists()
+
+    def _on_slider(self, value):
+        if not self._syncing:
+            self.drag_period(float(value))
+
+    def _on_press(self, event):
         if self.result is None or event.inaxes is not self.ax_power or event.xdata is None:
             return
         if self.toolbar.mode:  # zooming or panning with the toolbar
             return
+        self._drag = {"x": event.x, "moved": False}
+
+    def _on_motion(self, event):
+        if self._drag is None or event.inaxes is not self.ax_power or event.xdata is None:
+            return
+        if not self._drag["moved"] and abs(event.x - self._drag["x"]) < 4:
+            return  # a few pixels of wobble is still a click
+        self._drag["moved"] = True
+        self.drag_period(event.xdata)
+
+    def _on_release(self, event):
+        drag, self._drag = self._drag, None
+        if drag is None or drag["moved"] or event.inaxes is not self.ax_power or event.xdata is None:
+            return
+        # A click without dragging jumps to the top of the nearest peak
         x0, x1 = self.ax_power.get_xlim()
         window = 0.01 * (x1 - x0) / (self.result.periods[-1] - self.result.periods[0])
         picked = pr.nearest_peak(self.result, event.xdata, window=window)

@@ -12,6 +12,7 @@ from pathlib import Path
 import time
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
 tk = pytest.importorskip("tkinter")
@@ -614,6 +615,16 @@ def _open_period(app, tmp_path, count=3, method="ANOVA"):
     return window
 
 
+class _PlotEvent:
+    """A stand-in for a Matplotlib mouse or key event on the periodogram at a given period."""
+
+    def __init__(self, window, period=None, key=None):
+        self.key = key
+        self.inaxes = window.ax_power if period is not None else None
+        self.xdata = period
+        self.x = window.ax_power.transData.transform((period, 0))[0] if period is not None else 0
+
+
 def _finish_search(window, timeout=30):
     end = time.time() + timeout
     while window._job is not None and time.time() < end:
@@ -666,15 +677,14 @@ def test_period_window_controls(app, tmp_path):
     window.refine_here()
     assert window.period == pytest.approx(0.31741, abs=3e-4)
 
-    class Event:
-        def __init__(self, key=None, x=None, inaxes=None):
-            self.key, self.xdata, self.inaxes = key, x, inaxes
-
     before = window.period
-    window._on_key(Event("right"))
+    window._on_key(_PlotEvent(window, key="right"))
     assert window.period > before
 
-    window._on_click(Event(x=0.1587, inaxes=window.ax_power))
+    # A click without dragging jumps to the nearest peak's top
+    click = _PlotEvent(window, 0.1587)
+    window._on_press(click)
+    window._on_release(click)
     assert window.period == pytest.approx(0.15871, abs=2e-4)
 
     minima = tmp_path / "m_min.txt"
@@ -717,3 +727,47 @@ def test_period_search_validation(app, tmp_path):
     app._set_entry_text(app._panel_fields["Shortest Period (d)"], "x")
     app._run_button.invoke()
     assert "must be numbers" in app.log_area.get("1.0", "end")
+
+
+def test_dragging_the_period_refolds_live(app, tmp_path):
+    window = _open_period(app, tmp_path, count=1)
+    epoch = window.epoch
+    start = window.period
+    line = window._fold_lines["B"]
+    before = np.array(line.get_xdata())
+
+    window._on_press(_PlotEvent(window, start))
+    window._on_motion(_PlotEvent(window, start + 0.0005))   # a little wobble isn't a drag yet
+    window._on_motion(_PlotEvent(window, 0.40))
+    assert window.period == pytest.approx(0.40, abs=1e-3)
+    assert window.epoch == epoch                             # only the period moves
+    assert window.period_var.get() == f"{window.period:.7f}"
+    n = int((window.curve.label == "B").sum())   # the points themselves; copies either side follow them
+    assert not np.allclose(np.array(line.get_xdata())[:n], before[:n])   # the fold followed
+    x, y = window._marker_dot.get_data()
+    assert x[0] == pytest.approx(window.period)
+    assert y[0] == pytest.approx(window.value_at(window.period))   # the marker rides the curve
+    assert window.value_var.get().startswith("F statistic here:")
+    assert window.slider_var.get() == pytest.approx(window.period)
+
+    window._on_release(_PlotEvent(window, 0.40))
+    assert window.period == pytest.approx(0.40, abs=1e-3)   # releasing a drag doesn't snap
+    window.destroy()
+
+
+def test_slider_moves_the_period_and_follows_the_zoom(app, tmp_path):
+    window = _open_period(app, tmp_path, count=1)
+    window._on_slider("0.25")
+    assert window.period == pytest.approx(0.25)
+    assert window._marker_line.get_xdata()[0] == pytest.approx(0.25)
+
+    window.ax_power.set_xlim(0.31, 0.32)
+    assert float(window.slider.cget("from")) == pytest.approx(0.31)
+    assert float(window.slider.cget("to")) == pytest.approx(0.32)
+    window._on_slider("0.5")                  # outside the zoomed range: held to its edge
+    assert window.period == pytest.approx(0.32)
+
+    window._syncing = True                    # the program moving the slider doesn't feed back
+    window._on_slider("0.315")
+    assert window.period == pytest.approx(0.32)
+    window.destroy()

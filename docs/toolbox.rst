@@ -563,9 +563,11 @@ The GUI panel accepts the following inputs:
   empty to save next to the first light curve.
 
 **Open Period Search** opens the window and starts the search. The trial periods are spaced
-evenly in frequency, about ten to each peak width (a peak is roughly one over the time
-span of the observations wide), so long baselines get finer steps. Very large searches
-are thinned to keep them to a few seconds, and the window says so.
+evenly in frequency, about ten to each peak width, so long baselines get finer steps. A
+Lomb-Scargle peak is roughly one over the time span of the observations wide; ANOVA and
+multi-harmonic peaks are about ten and eight times narrower, because they respond to the
+sharp shape of the eclipses, and get closer spacing to match. Very large searches are
+thinned to keep them to a few seconds, and the window says so.
 
 Folding two similar eclipses on top of each other scores well with every method, so the
 highest peak is often half the orbital period. After each search the light curve is
@@ -580,33 +582,34 @@ In the window:
 
 + **Drag** along the periodogram, or move the **Period** slider under the plots, and the
   fold follows the period as it changes. A red dot rides the periodogram at the current
-  period and the side panel shows the statistic there. The epoch stays where it is while
-  dragging, so a period that's slightly off shows the eclipses from different nights
-  drifting apart, and the right period lines them up. The slider spans whatever the
-  periodogram shows, so zoom in with the toolbar for finer control.
+  period and the side panel shows the statistic there. A period that's slightly off
+  shows the eclipses from different nights drifting apart, and the right period lines
+  them up. The slider spans whatever the periodogram shows, so zoom in with the toolbar
+  for finer control.
 + **Click** a peak without dragging to jump to its top, found automatically.
 + **×2** and **÷2** double or halve the period; the left and right arrow keys nudge it.
   **Refine Here** finds the top of the nearest peak again. The peak's half width at half
   height is shown as a rough guide to how well these observations alone pin the period
   down; times of minimum over a longer baseline (Find Minimum, then O-C Plotting) do much
   better.
-+ The **epoch** starts at the faintest part of the fold. **Swap Eclipses** moves it half a
-  cycle, for when the secondary eclipse was taken as the primary, and **From Minimum
-  File...** uses the first time of minimum from a Find Minimum file.
 + The method, the period range and the filters used can be changed and searched again.
-+ **Save Period** writes the period, epoch and search settings to ``<object>_period.txt``.
++ **Save Period** writes the period and search settings to ``<object>_period.txt``.
   **Send to O-C Plotting**, **Send to O'Connell Effect** and **Send to Color Light Curve**
-  open that panel with the period and epoch filled in.
+  open that panel with the period filled in.
+
+The fold counts phase from the first observation, so only the period moves it. Where the
+eclipses fall in phase doesn't matter for finding the period; the epoch for O-C comes
+from times of minimum measured with Find Minimum.
 
 From a script:
 
 .. code-block:: python
 
-    from EclipsingBinaries.period import load_light_curves, search, faintest_epoch
+    from EclipsingBinaries.period import load_light_curves, search
 
     curve = load_light_curves(["NSVS_B_magnitudes.txt"], ["B"])
     result = search(curve, 0.1, 1.0, "ANOVA")
-    print(result.best_period, faintest_epoch(curve, result.best_period))
+    print(result.best_period, result.half_width)
 
 ``python -m EclipsingBinaries.period`` asks for the files in a terminal and opens the same
 window.

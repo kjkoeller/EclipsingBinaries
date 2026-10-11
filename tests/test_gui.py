@@ -643,17 +643,18 @@ def test_period_search_finds_the_period_and_sends_it(app, tmp_path):
     window.save()
     saved = tmp_path / "NSVS_896797_period.txt"
     assert saved.exists()
-    from EclipsingBinaries.period import read_ephemeris
+    from EclipsingBinaries.period import read_period
 
-    assert read_ephemeris(saved)[0] == pytest.approx(window.period, abs=1e-7)
+    assert read_period(saved) == pytest.approx(window.period, abs=1e-7)
+    assert "epoch" not in saved.read_text()
 
     window.send_to("oc")
     assert app._current_panel == "oc"
     assert float(app._entry_value(app._panel_fields["Period (days)"])) == pytest.approx(window.period, abs=1e-6)
-    assert float(app._entry_value(app._panel_fields["Epoch (T0)"])) == pytest.approx(window.epoch, abs=1e-5)
-    assert app.oc_has_epoch_var.get()
+    assert app._entry_value(app._panel_fields["Epoch (T0)"]) == ""   # only the period is sent
     window.send_to("oconnell")
-    assert app._entry_value(app._panel_fields["HJD"]) == f"{window.epoch:.6f}"
+    assert app._entry_value(app._panel_fields["Period"]) == f"{window.period:.7f}"
+    assert app._entry_value(app._panel_fields["HJD"]) == ""
     window.send_to("color")
     assert app._entry_value(app._panel_fields["Period (days)"]) == f"{window.period:.7f}"
     window.destroy()
@@ -661,15 +662,11 @@ def test_period_search_finds_the_period_and_sends_it(app, tmp_path):
 
 def test_period_window_controls(app, tmp_path):
     window = _open_period(app, tmp_path, count=1)
-    period, epoch = window.period, window.epoch
+    period = window.period
     window.set_period(period * 2)
     assert window.period == pytest.approx(2 * period)
     window.set_period(period)
-    window.swap_eclipses()
-    assert window.epoch == pytest.approx(epoch + period / 2)
-    window.epoch_at_faintest()
-    offset = ((window.epoch - epoch) / period) % 1  # the same eclipse, perhaps a whole cycle away
-    assert min(offset, 1 - offset) < 0.05
+    assert not hasattr(window, "epoch")
 
     window.period_var.set("0.3175")
     window._typed_period()
@@ -686,11 +683,6 @@ def test_period_window_controls(app, tmp_path):
     window._on_press(click)
     window._on_release(click)
     assert window.period == pytest.approx(0.15871, abs=2e-4)
-
-    minima = tmp_path / "m_min.txt"
-    minima.write_text("2458379.700000\t50\t0.000100000\n")
-    window.epoch_from_file(str(minima))
-    assert window.epoch == pytest.approx(2458379.7)
     window.destroy()
 
 
@@ -731,7 +723,6 @@ def test_period_search_validation(app, tmp_path):
 
 def test_dragging_the_period_refolds_live(app, tmp_path):
     window = _open_period(app, tmp_path, count=1)
-    epoch = window.epoch
     start = window.period
     line = window._fold_lines["B"]
     before = np.array(line.get_xdata())
@@ -740,7 +731,6 @@ def test_dragging_the_period_refolds_live(app, tmp_path):
     window._on_motion(_PlotEvent(window, start + 0.0005))   # a little wobble isn't a drag yet
     window._on_motion(_PlotEvent(window, 0.40))
     assert window.period == pytest.approx(0.40, abs=1e-3)
-    assert window.epoch == epoch                             # only the period moves
     assert window.period_var.get() == f"{window.period:.7f}"
     n = int((window.curve.label == "B").sum())   # the points themselves; copies either side follow them
     assert not np.allclose(np.array(line.get_xdata())[:n], before[:n])   # the fold followed

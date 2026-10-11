@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Tests for the period search: the statistics, the trial-period grid, the
-check for half the orbital period, epochs, folding and saving.
+check for half the orbital period, folding and saving.
 """
 
 from importlib.resources import files
@@ -158,46 +158,25 @@ def test_nearest_peak(example_bvr):
     assert picked == pytest.approx(TRUE_PERIOD, abs=0.001)
 
 
-# --- epoch, fold and files -----------------------------------------------------------------
-
-def test_faintest_epoch_is_a_minimum(example_bvr):
-    epoch = pr.faintest_epoch(example_bvr.select(["V"]), TRUE_PERIOD)
-    phase = pr.fold(example_bvr.time, TRUE_PERIOD, epoch)
-    near_zero = (phase < 0.03) | (phase > 0.97)
-    near_quarter = np.abs(phase - 0.25) < 0.03
-    assert example_bvr.mag[near_zero].mean() > example_bvr.mag[near_quarter].mean() + 0.2
-    assert example_bvr.time.min() <= epoch <= example_bvr.time.max()
-
+# --- folding and files -------------------------------------------------------------------
 
 def test_fold_keeps_precision_for_large_times():
     t = np.array([2458000.0, 2458000.25, 2458000.5])
     assert pr.fold(t, 0.5, 2458000.0) == pytest.approx([0.0, 0.5, 0.0])
 
 
-def test_epoch_from_minimum_file(tmp_path):
-    path = tmp_path / "T_B_min.txt"
-    path.write_text("2458379.700000\t50\t0.000100000\n2458380.017000\t40\t0.000200000\n")
-    assert pr.epoch_from_minimum_file(path) == (pytest.approx(2458379.7), 2)
-    empty = tmp_path / "empty_min.txt"
-    empty.write_text("")
-    with pytest.raises(pr.PeriodError, match="no times of minimum"):
-        pr.epoch_from_minimum_file(empty)
-
-
-def test_save_and_read_ephemeris(tmp_path, example_bvr):
+def test_save_and_read_period(tmp_path, example_bvr):
     result = pr.search(example_bvr.select(["B"]), 0.1, 1.0)
     path = tmp_path / pr.period_file_name("NSVS 896797")
     assert path.name == "NSVS_896797_period.txt"
-    pr.save_ephemeris(path, "NSVS 896797", result.best_period, 2458379.7, result, ["a.txt"])
-    period, epoch = pr.read_ephemeris(path)
-    assert period == pytest.approx(result.best_period, abs=1e-9)
-    assert epoch == pytest.approx(2458379.7)
+    pr.save_period(path, "NSVS 896797", result.best_period, result, ["a.txt"])
+    assert pr.read_period(path) == pytest.approx(result.best_period, abs=1e-9)
     text = path.read_text()
     assert "method\tANOVA" in text and "light_curves\ta.txt" in text
     bad = tmp_path / "bad.txt"
     bad.write_text("nothing here\n")
     with pytest.raises(pr.PeriodError):
-        pr.read_ephemeris(bad)
+        pr.read_period(bad)
 
 
 def test_load_light_curves_takes_off_each_median(example_bvr):
@@ -205,3 +184,11 @@ def test_load_light_curves_takes_off_each_median(example_bvr):
         assert np.median(example_bvr.mag[example_bvr.label == label]) == pytest.approx(0, abs=1e-12)
     with pytest.raises(pr.PeriodError):
         pr.load_light_curves([])
+
+
+@pytest.mark.parametrize("method", ["ANOVA", "Multi-harmonic"])
+def test_trial_periods_catch_the_top_of_the_peak(example_bvr, method):
+    """The plotted periodogram should reach the refined best value, not stop short of it."""
+    result = pr.search(example_bvr, 0.1, 1.0, method)
+    near = np.abs(result.periods - result.best_period) < 5 * result.half_width
+    assert np.nanmax(result.power[near]) >= 0.98 * result.best_power

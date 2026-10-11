@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 from astropy.timeseries import LombScargle
 
-from .find_min import MinimumError, MinimumFile, read_light_curve
+from .find_min import MinimumError, read_light_curve
 
 METHODS = ("ANOVA", "Multi-harmonic", "Lomb-Scargle")
 DEFAULT_METHOD = "ANOVA"
@@ -346,6 +346,22 @@ class SearchResult:
     doubled_from: float | None = None   # the periodogram's peak, when the orbital period is twice it
 
 
+def peak_sharpness(method, bins=DEFAULT_BINS, harmonics=DEFAULT_HARMONICS):
+    """
+    How many times narrower than 1/baseline this method's peaks are. A
+    single sine (Lomb-Scargle) gives peaks about 1/baseline wide, but folds
+    scored on fine detail (ANOVA's phase bins, the multi-harmonic fit's
+    higher harmonics) respond to phase shifts that many times smaller, and
+    their peaks narrow to match. The trial periods are packed that much
+    closer so the tops of the peaks aren't missed.
+    """
+    if method == "ANOVA":
+        return max(bins // 2, 1)
+    if method == "Multi-harmonic":
+        return max(2 * int(harmonics), 1)
+    return 1
+
+
 def search(curve, min_period, max_period, method=DEFAULT_METHOD, oversample=DEFAULT_OVERSAMPLE,
            bins=DEFAULT_BINS, harmonics=DEFAULT_HARMONICS):
     """
@@ -354,7 +370,8 @@ def search(curve, min_period, max_period, method=DEFAULT_METHOD, oversample=DEFA
     """
     if len(curve.time) < 10:
         raise PeriodError(f"Only {len(curve.time)} points; a period search needs at least 10.")
-    grid = frequency_grid(curve.time, min_period, max_period, oversample=oversample)
+    grid = frequency_grid(curve.time, min_period, max_period,
+                          oversample=oversample * peak_sharpness(method, bins, harmonics))
     power = score(curve, grid.periods, method, bins=bins, harmonics=harmonics)
     if not np.any(np.isfinite(power)):
         raise PeriodError("No trial period could be scored. Widen the period range or add points.")
@@ -421,61 +438,27 @@ def nearest_peak(result, period, window=0.01):
 
 
 # ---------------------------------------------------------------------------
-# Epoch and folding
+# Folding and saving
 # ---------------------------------------------------------------------------
 
-def fold(time, period, epoch):
-    """Phase from 0 to 1 of each time, with primary minimum (the epoch) at 0."""
-    return np.mod((np.asarray(time, float) - epoch) / period, 1.0)
+def fold(time, period, origin):
+    """Phase from 0 to 1 of each time, counted from `origin` (subtracted first to keep precision)."""
+    return np.mod((np.asarray(time, float) - origin) / period, 1.0)
 
-
-def faintest_epoch(curve, period, bins=50):
-    """
-    An epoch at the faintest part of the folded light curve: the middle of
-    the phase bin with the faintest median magnitude, moved to the cycle
-    nearest the middle of the observations.
-    """
-    t_ref = curve.time[0]
-    phase = fold(curve.time, period, t_ref)
-    idx = np.minimum((phase * bins).astype(int), bins - 1)
-    medians = np.full(bins, -np.inf)
-    for b in range(bins):
-        values = curve.mag[idx == b]
-        if len(values):
-            medians[b] = np.median(values)
-    faintest = (int(np.argmax(medians)) + 0.5) / bins   # larger magnitude is fainter
-    epoch = t_ref + faintest * period
-    middle = np.median(curve.time)
-    return float(epoch + np.round((middle - epoch) / period) * period)
-
-
-def epoch_from_minimum_file(path):
-    """The first time of minimum saved by Find Minimum in `path`, or a PeriodError."""
-    saved = MinimumFile(path)
-    if not saved.entries:
-        raise PeriodError(f"{Path(path).name} has no times of minimum in it.")
-    return saved.entries[0][0], len(saved.entries)
-
-
-# ---------------------------------------------------------------------------
-# Saving
-# ---------------------------------------------------------------------------
 
 def period_file_name(obj_name):
     stem = "_".join(str(obj_name).split()) or "target"
     return f"{stem}_period.txt"
 
 
-def save_ephemeris(path, obj_name, period, epoch, result=None, files=()):
+def save_period(path, obj_name, period, result=None, files=()):
     """
-    Write the period and epoch to a small text file: one "name<TAB>value"
-    line each, with the search settings underneath for the record.
+    Write the period to a small text file: one "name<TAB>value" line, with
+    the search settings underneath for the record.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f"# Period search for {obj_name}",
-             f"period_days\t{period:.9f}",
-             f"epoch\t{epoch:.6f}"]
+    lines = [f"# Period search for {obj_name}", f"period_days\t{period:.9f}"]
     if result is not None:
         lines += [f"period_half_width_days\t{result.half_width:.9f}",
                   f"method\t{result.method}",
@@ -486,17 +469,15 @@ def save_ephemeris(path, obj_name, period, epoch, result=None, files=()):
     return path
 
 
-def read_ephemeris(path):
-    """Read back (period, epoch) from a file written by save_ephemeris."""
-    values = {}
+def read_period(path):
+    """Read back the period from a file written by save_period."""
     for line in Path(path).read_text(encoding="utf-8").splitlines():
-        if line and not line.startswith("#") and "\t" in line:
-            key, value = line.split("\t", 1)
-            values[key] = value
-    try:
-        return float(values["period_days"]), float(values["epoch"])
-    except (KeyError, ValueError) as exc:
-        raise PeriodError(f"{Path(path).name} doesn't hold a period and epoch.") from exc
+        if line.startswith("period_days\t"):
+            try:
+                return float(line.split("\t", 1)[1])
+            except ValueError:
+                break
+    raise PeriodError(f"{Path(path).name} doesn't hold a period.")
 
 
 # ---------------------------------------------------------------------------

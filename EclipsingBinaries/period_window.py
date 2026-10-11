@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 The Period Search window: a periodogram above the light curve folded on the
-chosen period. Click a peak to fold on it, adjust the period and epoch, then
-save them or send them to O-C Plotting, O'Connell Effect or Color Light
-Curve.
+chosen period. Drag along the periodogram (or move the slider) and the fold
+follows; click a peak to jump to its top. The period can be saved or sent to
+O-C Plotting, O'Connell Effect or Color Light Curve.
 
 The calculations are in period.py; this file is only the window.
 
@@ -14,7 +14,6 @@ Created: 10/10/2026
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog
 from tkinter import font as tkfont
 from tkinter import ttk
 
@@ -57,8 +56,8 @@ class PeriodWindow(tk.Toplevel):
     :param min_period, max_period: the period range to search, in days
     :param method: one of period.METHODS
     :param log: function for progress messages
-    :param send: function(target, period, epoch) that fills in another
-        panel; target is "oc", "oconnell" or "color". Leave out to hide the
+    :param send: function(target, period) that fills in another panel's
+        period; target is "oc", "oconnell" or "color". Leave out to hide the
         Send buttons.
     """
 
@@ -73,7 +72,6 @@ class PeriodWindow(tk.Toplevel):
         self.send = send
         self.result = None
         self.period = None
-        self.epoch = None
         self.half_width = None
         self._job = None
         self._drag = None           # set while the mouse is pressed on the periodogram
@@ -178,19 +176,6 @@ class PeriodWindow(tk.Toplevel):
         self.width_var = tk.StringVar(master=self)
         ttk.Label(side, textvariable=self.width_var, foreground=MUTED_FG).pack(anchor="w", pady=(2, 12))
 
-        ttk.Label(side, text="Epoch (primary minimum)", font=self.heading_font).pack(anchor="w")
-        self.epoch_var = tk.StringVar(master=self)
-        epoch_entry = ttk.Entry(side, textvariable=self.epoch_var, width=18)
-        epoch_entry.pack(anchor="w", pady=(4, 4))
-        epoch_entry.bind("<Return>", lambda _e: self._typed_epoch())
-        epoch_entry.bind("<FocusOut>", lambda _e: self._typed_epoch())
-        row = ttk.Frame(side)
-        row.pack(anchor="w")
-        ttk.Button(row, text="Faintest Point", command=self.epoch_at_faintest, style=secondary).pack(side="left")
-        ttk.Button(row, text="Swap Eclipses", command=self.swap_eclipses, style=secondary).pack(side="left", padx=4)
-        ttk.Button(side, text="From Minimum File...", command=self.epoch_from_file,
-                   style=secondary).pack(anchor="w", pady=(4, 12))
-
         ttk.Separator(side).pack(fill="x", pady=(0, 12))
         self.save_button = ttk.Button(side, text="Save Period", command=self.save, style=accent)
         self.save_button.pack(anchor="w", fill="x")
@@ -260,7 +245,7 @@ class PeriodWindow(tk.Toplevel):
         self._report_search()
         self.half_width = self.result.half_width
         self._draw_periodogram()
-        self.set_period(self.result.best_period, keep_epoch=False)
+        self.set_period(self.result.best_period)
         self._set_actions_enabled(True)
 
     def _report_search(self):
@@ -291,23 +276,27 @@ class PeriodWindow(tk.Toplevel):
             button.state(["!disabled"] if enabled else ["disabled"])
 
     # ------------------------------------------------------------------
-    # Period and epoch
+    # Period
     # ------------------------------------------------------------------
-    def set_period(self, value, keep_epoch=True):
+    @property
+    def fold_origin(self):
+        """
+        Where phase 0 falls: the first observation, whatever filters are
+        ticked, so changing the period is the only thing that moves the fold.
+        """
+        return float(self.curve.time[0])
+
+    def set_period(self, value):
         if value is None or not np.isfinite(value) or value <= 0:
             return
         self.period = float(value)
         self.period_var.set(f"{self.period:.7f}")
-        if not keep_epoch or self.epoch is None:
-            curve = self.selected_curve() or self.curve
-            self.epoch = pr.faintest_epoch(curve, self.period)
-            self.epoch_var.set(f"{self.epoch:.6f}")
         self._show_width()
         self._update_period_artists()
 
     def _show_width(self):
         if self.half_width and np.isfinite(self.half_width):
-            self.width_var.set(f"Peak half width: ±{self.half_width:.6f} d")
+            self.width_var.set(f"Peak half width: \u00b1{self.half_width:.6f} d")
         else:
             self.width_var.set("")
 
@@ -321,15 +310,6 @@ class PeriodWindow(tk.Toplevel):
         if self.period is None or abs(value - self.period) > 1e-12:
             self.set_period(value)
 
-    def _typed_epoch(self):
-        try:
-            self.epoch = float(self.epoch_var.get())
-        except ValueError:
-            if self.epoch is not None:
-                self.epoch_var.set(f"{self.epoch:.6f}")
-            return
-        self._update_period_artists()
-
     def refine_here(self):
         """Find the top of the peak nearest the current period."""
         if self.period is None:
@@ -339,55 +319,22 @@ class PeriodWindow(tk.Toplevel):
         self.half_width = width
         self.set_period(best)
 
-    def epoch_at_faintest(self):
-        if self.period is None:
-            return
-        self.epoch = pr.faintest_epoch(self.selected_curve() or self.curve, self.period)
-        self.epoch_var.set(f"{self.epoch:.6f}")
-        self._update_period_artists()
-
-    def swap_eclipses(self):
-        """Move the epoch half a cycle, for when the secondary eclipse was taken as the primary."""
-        if self.epoch is None or self.period is None:
-            return
-        self.epoch += self.period / 2
-        self.epoch_var.set(f"{self.epoch:.6f}")
-        self._update_period_artists()
-
-    def epoch_from_file(self, path=None):
-        """Use the first time of minimum from a Find Minimum file as the epoch."""
-        if path is None:
-            path = filedialog.askopenfilename(parent=self, title="Choose a Find Minimum file",
-                                              initialdir=str(self.output_folder),
-                                              filetypes=[("Minimum files", "*_min.txt"), ("All files", "*")])
-            if not path:
-                return
-        try:
-            epoch, count = pr.epoch_from_minimum_file(path)
-        except pr.PeriodError as e:
-            self._status(str(e), error=True)
-            return
-        self.epoch = epoch
-        self.epoch_var.set(f"{epoch:.6f}")
-        self._status(f"Epoch {epoch:.6f} is the first of {count} minima in {Path(path).name}.")
-        self._update_period_artists()
-
     def save(self):
         if self.period is None:
             return
         path = self.output_folder / pr.period_file_name(self.obj_name)
         try:
-            pr.save_ephemeris(path, self.obj_name, self.period, self.epoch, self.result, self.files)
+            pr.save_period(path, self.obj_name, self.period, self.result, self.files)
         except OSError as e:
             self._status(f"Couldn't save {path}: {e}", error=True)
             return
-        self.log(f"Saved period {self.period:.7f} d and epoch {self.epoch:.6f} to {path}")
+        self.log(f"Saved period {self.period:.7f} d to {path}")
         self._status(f"Saved to {path}")
 
     def send_to(self, target):
         if self.period is None or self.send is None:
             return
-        self.send(target, self.period, self.epoch)
+        self.send(target, self.period)
 
     # ------------------------------------------------------------------
     # Drawing
@@ -415,7 +362,8 @@ class PeriodWindow(tk.Toplevel):
             ax.set_xlabel("Trial period (days)", fontsize=9)
             ax.set_ylabel(pr.statistic_name(r.method), fontsize=9)
             ax.grid(alpha=0.3)
-            self._marker_line = ax.axvline(r.best_period, color="#c0392b", lw=1, animated=True)
+            # Semi-transparent so the peak under it still shows at full width
+            self._marker_line = ax.axvline(r.best_period, color="#c0392b", lw=1, alpha=0.45, animated=True)
             self._half_line = ax.axvline(r.best_period / 2, color="#c0392b", lw=0.8, ls=":", animated=True)
             (self._marker_dot,) = ax.plot([r.best_period], [r.best_power], "o", color="#c0392b",
                                           ms=7, zorder=5, animated=True)
@@ -469,7 +417,7 @@ class PeriodWindow(tk.Toplevel):
         self.canvas.blit(self.figure.bbox)
 
     def _update_period_artists(self):
-        """Move the period markers and refold the light curve on the current period and epoch."""
+        """Move the period markers and refold the light curve on the current period."""
         if self.period is None:
             self._refresh()
             return
@@ -484,8 +432,8 @@ class PeriodWindow(tk.Toplevel):
             self._marker_dot.set_data([self.period], [value])
         name = pr.statistic_name(self.result.method if self.result else self.method_var.get())
         self.value_var.set(f"{name} here: {value:,.1f}" if np.isfinite(value) else "")
-        if curve is not None and self.epoch is not None:
-            phase = pr.fold(curve.time, self.period, self.epoch)
+        if curve is not None:
+            phase = pr.fold(curve.time, self.period, self.fold_origin)
             for label, line in self._fold_lines.items():
                 keep = curve.label == label
                 ph, mag = phase[keep], curve.mag[keep]
@@ -493,7 +441,7 @@ class PeriodWindow(tk.Toplevel):
                 line.set_data(np.concatenate([ph, ph[ph > 0.75] - 1, ph[ph < 0.25] + 1]),
                               np.concatenate([mag, mag[ph > 0.75], mag[ph < 0.25]]))
             if self._fold_text is not None:
-                self._fold_text.set_text(f"Period {self.period:.7f} d, epoch {self.epoch:.5f}")
+                self._fold_text.set_text(f"Period {self.period:.7f} d")
         self._syncing = True
         try:
             self.slider_var.set(self.period)
@@ -521,7 +469,7 @@ class PeriodWindow(tk.Toplevel):
     # Dragging, the slider, clicks and keys
     # ------------------------------------------------------------------
     def drag_period(self, value):
-        """Set the period while dragging or sliding. The epoch stays put, so the fold shows any drift."""
+        """Set the period while dragging or sliding, refolding as it goes."""
         if self.result is None or value is None or not np.isfinite(value):
             return
         lo, hi = self.ax_power.get_xlim()
@@ -561,7 +509,7 @@ class PeriodWindow(tk.Toplevel):
         curve = self.selected_curve() or self.curve
         best, _power, width = pr.refine(curve, picked, self.result.method)
         self.half_width = width
-        self.set_period(best, keep_epoch=False)
+        self.set_period(best)
 
     def _on_key(self, event):
         if self.period is None or event.key not in ("left", "right"):

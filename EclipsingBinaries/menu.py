@@ -2211,7 +2211,7 @@ class ProgramLauncher(tk.Tk):
         try:
             PeriodWindow(self, [path for _label, path in choices], labels, folder, name, min_period=lo,
                          max_period=hi, method=self.period_method.get(), log=self.write_to_log,
-                         send=self._send_ephemeris)
+                         send=self._send_period)
         except PeriodError as e:
             self.write_to_log(f"Error: {e}")
             return
@@ -2221,21 +2221,14 @@ class ProgramLauncher(tk.Tk):
             return
         self.write_to_log(f"Opened Period Search for {name} in {', '.join(labels)}.")
 
-    # Field names (as registered by create_input_field) for the period and epoch in each panel
-    EPHEMERIS_FIELDS = {"oc": ("Period (days)", "Epoch (T0)"),
-                        "oconnell": ("Period", "HJD"),
-                        "color": ("Period (days)", "HJD (Epoch)")}
+    # Field name (as registered by create_input_field) for the period in each panel
+    PERIOD_FIELDS = {"oc": "Period (days)", "oconnell": "Period", "color": "Period (days)"}
 
-    def _send_ephemeris(self, target, period, epoch):
-        """Open another panel with the period and epoch from Period Search filled in."""
+    def _send_period(self, target, period):
+        """Open another panel with the period from Period Search filled in."""
         self.open_panel(target)
-        if target == "oc":
-            self.oc_has_epoch_var.set(True)
-            self._update_oc_fields()
-        period_key, epoch_key = self.EPHEMERIS_FIELDS[target]
-        self._set_entry_text(self._panel_fields[period_key], f"{period:.7f}")
-        self._set_entry_text(self._panel_fields[epoch_key], f"{epoch:.6f}")
-        self.write_to_log(f"Filled in the period ({period:.7f} d) and epoch ({epoch:.6f}) from Period Search.")
+        self._set_entry_text(self._panel_fields[self.PERIOD_FIELDS[target]], f"{period:.7f}")
+        self.write_to_log(f"Filled in the period ({period:.7f} d) from Period Search.")
         self.lift()
 
     # ------------------------------------------------------------------

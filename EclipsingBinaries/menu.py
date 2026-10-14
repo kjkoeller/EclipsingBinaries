@@ -83,6 +83,11 @@ ACCENT_ACTIVE = "#00509e"
 ACCENT_DISABLED = "#8a9bb0"
 # Header and sidebar: a night-sky navy, with starlight marking the open panel
 NIGHT = "#0e1f3a"
+# Sidebar width at 100% display scaling; it grows with the scaling, like the text does
+SIDEBAR_WIDTH = 250
+# Room taken up beside a sidebar entry's text: the marker bar, the label's padding and its focus ring
+NAV_TEXT_MARGIN = 4 + 2 * 14 + 2
+SIDEBAR_PADX = 18
 NIGHT_HOVER = "#17305a"
 NIGHT_ACTIVE = "#1d3a66"
 NIGHT_TEXT = "#e6ecf5"
@@ -869,12 +874,26 @@ class ProgramLauncher(tk.Tk):
         tk.Label(header, text=f"v{__version__}", font=self.small_font, bg=NIGHT, fg=NIGHT_MUTED).pack(
             side="left", padx=(8, 0), pady=(4, 0))
 
+    def _scaled(self, pixels):
+        """
+        Pixels at 100% display scaling, converted for this display. Fonts
+        already grow with Windows and Linux display scaling (125%, 150%...),
+        but plain pixel sizes don't, so a fixed-width sidebar would clip its
+        text on a scaled screen.
+        """
+        try:
+            dpi = float(self.winfo_fpixels("1i"))
+        except (tk.TclError, ValueError):
+            return pixels
+        return max(pixels, int(round(pixels * dpi / 96.0)))
+
     def create_layout(self):
         """Sidebar on the left, the open panel on the right in a scrolling white card."""
         body = tk.Frame(self, bg=BG_APP)
         body.pack(side="top", fill="both", expand=True)
 
-        self.left_frame = tk.Frame(body, bg=NIGHT, width=250)
+        self.sidebar_width = self._scaled(SIDEBAR_WIDTH)
+        self.left_frame = tk.Frame(body, bg=NIGHT, width=self.sidebar_width)
         self.left_frame.pack(side="left", fill="y")
         self.left_frame.pack_propagate(False)
 
@@ -950,26 +969,46 @@ class ProgramLauncher(tk.Tk):
     def _build_sidebar(self):
         self._panel_builders = {}
         self._nav_items = {}
+        self._section_labels = []
+
+        footer = tk.Label(self.left_frame, text="Developed by Kyle Koeller\nEclipsing Binaries Research",
+                          font=self.small_font, bg=NIGHT, fg=NIGHT_MUTED, justify="left", anchor="w",
+                          wraplength=self.sidebar_width - 2 * SIDEBAR_PADX)
+        footer.pack(side="bottom", fill="x", padx=SIDEBAR_PADX, pady=12)
+
+        # The list scrolls when large text or a short window leaves it no room
+        self._nav_scroller = ScrollableFrame(self.left_frame, bg=NIGHT)
+        self._nav_scroller.pack(side="top", fill="both", expand=True)
+        self._nav_frame = self._nav_scroller.content
+        self._nav_frame.bind("<Configure>", self._fit_nav_text, add="+")
+
         for section, items in self._nav_sections():
-            tk.Label(self.left_frame, text=section, font=self.section_font, bg=NIGHT, fg=NIGHT_MUTED,
-                     anchor="w").pack(fill="x", padx=18, pady=(14, 2))
+            label = tk.Label(self._nav_frame, text=section, font=self.section_font, bg=NIGHT, fg=NIGHT_MUTED,
+                             anchor="w", justify="left", wraplength=self.sidebar_width - 2 * SIDEBAR_PADX)
+            label.pack(fill="x", padx=SIDEBAR_PADX, pady=(14, 2))
+            self._section_labels.append(label)
             for key, text, builder, note in items:
                 self._nav_items[key] = self._make_nav_item(key, text, enabled=builder is not None, note=note)
                 if builder is not None:
                     self._panel_builders[key] = builder
 
-        footer = tk.Label(self.left_frame, text="Developed by Kyle Koeller\nEclipsing Binaries Research",
-                          font=self.small_font, bg=NIGHT, fg=NIGHT_MUTED, justify="left", anchor="w")
-        footer.pack(side="bottom", fill="x", padx=18, pady=12)
+    def _fit_nav_text(self, event):
+        """Wrap the sidebar's text to the width it actually has (less when its scrollbar shows)."""
+        for item in self._nav_items.values():
+            item["label"].configure(wraplength=max(event.width - NAV_TEXT_MARGIN, 40))
+        for label in self._section_labels:
+            label.configure(wraplength=max(event.width - 2 * SIDEBAR_PADX, 40))
 
     def _make_nav_item(self, key, text, enabled=True, note=None):
         """One sidebar entry: a starlight bar on the left marks the open panel."""
-        row = tk.Frame(self.left_frame, bg=NIGHT)
+        row = tk.Frame(self._nav_frame, bg=NIGHT)
         row.pack(fill="x")
         bar = tk.Frame(row, bg=NIGHT, width=4)
         bar.pack(side="left", fill="y")
+        # Names too long for the sidebar wrap onto a second line rather than being cut off
         label = tk.Label(row, text=text, font=self.nav_font, bg=NIGHT,
-                         fg=NIGHT_TEXT if enabled else NIGHT_DISABLED, anchor="w",
+                         fg=NIGHT_TEXT if enabled else NIGHT_DISABLED, anchor="w", justify="left",
+                         wraplength=self.sidebar_width - NAV_TEXT_MARGIN,
                          padx=14, pady=6, highlightthickness=1, highlightbackground=NIGHT,
                          highlightcolor=STARLIGHT, takefocus=enabled)
         label.pack(side="left", fill="x", expand=True)

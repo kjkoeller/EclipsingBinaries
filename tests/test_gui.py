@@ -761,3 +761,72 @@ def test_slider_moves_the_period_and_follows_the_zoom(app, tmp_path):
     window._on_slider("0.315")
     assert window.period == pytest.approx(0.32)
     window.destroy()
+
+
+# ----------------------------------------------------------------------
+# Sidebar fit
+# ----------------------------------------------------------------------
+def _settle(window, seconds=0.6):
+    end = time.time() + seconds
+    while time.time() < end:
+        window.update()
+        time.sleep(0.03)
+
+
+def _nav_fits(app):
+    right_edge = app.left_frame.winfo_rootx() + app.sidebar_width
+    return all(item["label"].winfo_rootx() + item["label"].winfo_width() <= right_edge
+               for item in app._nav_items.values())
+
+
+def test_sidebar_names_fit(app):
+    app.deiconify()
+    app.geometry("1280x860+0+0")
+    _settle(app)
+    assert _nav_fits(app)
+    room = app._nav_frame.winfo_width() - 34   # the bar, padding and focus ring beside the text
+    label = app._nav_items["aij"]["label"]
+    if app.nav_font.measure(label.cget("text")) <= room:
+        assert label.winfo_height() < 2 * app.nav_font.metrics("linespace")   # fits, so not wrapped
+    scroller = app._nav_scroller
+    if scroller.content.winfo_reqheight() <= scroller.canvas.winfo_height():
+        assert not scroller.scrollbar.winfo_ismapped()   # (CI screens can be too short for the list)
+
+
+def test_sidebar_wraps_and_scrolls_with_large_text(app):
+    """Large text, as on a scaled Windows display, wraps rather than being cut off."""
+    app.deiconify()
+    app.geometry("1280x700+0+0")
+    app.nav_font.configure(size=18)
+    _settle(app)
+    assert _nav_fits(app)
+    label = app._nav_items["aij"]["label"]
+    assert label.winfo_height() >= 2 * app.nav_font.metrics("linespace")  # wrapped onto two lines
+    assert app._nav_scroller.scrollbar.winfo_ismapped()                  # the list scrolls
+
+
+def test_sidebar_width_follows_display_scaling(app, monkeypatch):
+    monkeypatch.setattr(app, "winfo_fpixels", lambda _unit: 144.0)   # a 150% display
+    assert app._scaled(250) == 375
+    monkeypatch.setattr(app, "winfo_fpixels", lambda _unit: 96.0)
+    assert app._scaled(250) == 250
+
+
+def test_scrollbar_goes_away_when_contents_shrink(app):
+    """A tall panel followed by a short one used to leave the scrollbar up."""
+    from EclipsingBinaries.gui_support import ScrollableFrame
+
+    app.deiconify()
+    holder = tk.Toplevel(app)
+    holder.geometry("300x200+0+0")
+    scroller = ScrollableFrame(holder, bg="white")
+    scroller.pack(fill="both", expand=True)
+    tall = tk.Frame(scroller.content, height=800, width=100)
+    tall.pack()
+    _settle(app)
+    assert scroller.scrollbar.winfo_ismapped()
+    tall.destroy()
+    tk.Frame(scroller.content, height=50, width=100).pack()
+    _settle(app, 3 * ScrollableFrame.WATCH_MS / 1000)
+    assert not scroller.scrollbar.winfo_ismapped()
+    holder.destroy()

@@ -153,6 +153,37 @@ class ScrollableFrame(tk.Frame):
         self.content.bind("<Configure>", self._fit, add="+")
         self.bind("<Enter>", self._bind_wheel, add="+")
         self.bind("<Leave>", self._unbind_wheel, add="+")
+        self._last_needed = None
+        self._watch_id = None
+        self._watch()
+
+    WATCH_MS = 250
+
+    def _watch(self):
+        """
+        Refit when the contents want a different height. The contents are
+        stretched to fill the canvas, so when they shrink (a panel with fewer
+        fields, text that stops wrapping) their actual size doesn't change and
+        Tk sends no Configure event; without this a scrollbar could stay up
+        after it stopped being needed.
+        """
+        try:
+            needed = self.content.winfo_reqheight()
+        except tk.TclError:
+            return  # being destroyed
+        if needed != self._last_needed:
+            self._last_needed = needed
+            self._fit()
+        self._watch_id = self.after(self.WATCH_MS, self._watch)
+
+    def destroy(self):
+        if self._watch_id is not None:
+            try:
+                self.after_cancel(self._watch_id)
+            except tk.TclError:
+                pass
+            self._watch_id = None
+        super().destroy()
 
     def _fit(self, _event=None):
         width = self.canvas.winfo_width()

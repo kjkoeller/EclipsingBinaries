@@ -11,23 +11,22 @@ Menu
 ----
 
 After launching EclipsingBinaries as described in :ref:`EB`,
-the user is presented with a GUI that centralizes all available tools. The left panel
-contains the program menu and the right panel displays the inputs and output log for
-the selected program.
+the user is presented with a GUI that centralizes all available tools. The sidebar on the
+left lists the programs, grouped in the order they're usually used, and the right side
+displays the inputs and output log for the selected program.
 
-The available programs are:
+The sidebar lists:
 
-+ IRAF Reduction
-+ Find Minimum (work in progress; run ``python -m EclipsingBinaries.find_min`` from a terminal for now)
-+ TESS Database Search/Download
-+ AIJ Comparison Star Selector
-+ Multi-Aperture Calculation
-+ BSUO or SARA/TESS Night Filters (see the note in that section)
-+ O-C Plotting
-+ Gaia Search
-+ O'Connell Effect
-+ Color Light Curve
-+ Close Program
++ **Reduce** — IRAF Reduction
++ **Comparison stars** — AIJ Comparison Star Selector
++ **Photometry** — Multi-Aperture Photometry, Night Filters
++ **Analysis** — Find Minimum, O-C Plotting, O'Connell Effect, Color Light Curve
++ **Archives** — TESS Search and Download, Gaia Search
+
+To quit, use **File > Exit** (or the application menu on macOS).
+
+When a program finishes, buttons for its output appear next to **Run**:
+
 
 IRAF Reduction
 --------------
@@ -200,8 +199,39 @@ back to ``BSU`` instead. To add your own site:
 
 ``correct_headers_batch`` does the same for a list of files.
 
-TESS Database Search/Download
-------------------------------
+Correcting Headers from the Command Line
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``EB_HCorr`` runs the same corrections on images outside a reduction, changing the files
+in place::
+
+    EB_HCorr raw_images/                      # every .fits, .fit and .fts file in the folder
+    EB_HCorr -r data/                         # and in the folders inside it
+    EB_HCorr image1.fits image2.fits --observatory SARA-KP
+
+Each correction can be turned off with ``--no-jd``, ``--no-hjd``, ``--no-bjd``,
+``--no-sidereal``, ``--no-eairmass`` or ``--no-radec-format``, and ``--filter-parse``
+replaces spaces in ``FILTER`` with underscores. ``--observatory`` sets the site used when
+``OBSERVAT`` is missing or unknown (``BSU`` unless given). ``-q`` prints only warnings and
+the summary. ``EB_HCorr -h`` lists everything.
+
+It prints how many keywords each file got, any warnings, and a summary, and exits with
+``0`` when every file was corrected without warnings, ``1`` when any had warnings, and
+``2`` for bad arguments.
+
+Some cameras need care, and the corrections handle these:
+
++ ``DATE-OBS`` holding only the date, with the time in ``TIME-OBS``, ``UT`` or ``UTSTART``,
+  is joined into one time. Without any of those the exposure is taken to start at midnight
+  UT, with a warning.
++ The coordinate frame comes from ``EQUINOX``, written as 2000, ``J2000`` or ``J2000.0``.
+  (Earlier versions skipped HJD and BJD when ``EPOCH`` held the observation date.)
++ Running it twice keeps the camera's original ``SECZ`` in ``SECZ_ORG``.
++ If the target comes out below the horizon, ``SECZ`` and ``EAIRMASS`` are left alone and
+  a warning suggests checking ``OBSERVAT``, ``DATE-OBS`` and RA/DEC.
+
+TESS Search and Download
+-------------------------
 
 TESS is a valuable resource for eclipsing binary research — if a target is in the
 database it typically has weeks to months of continuous photometry available.
@@ -215,6 +245,14 @@ The GUI panel accepts the following inputs:
 When **Download Specific Sector** is checked, a **Retrieve Sectors** button appears.
 Clicking it queries TESS for available sectors and populates a dropdown for the user
 to select from. The sector table is also printed to the output log.
+
+If the search or a download fails, the error is shown in the log and the task ends with an
+error rather than a success message.
+
+From Python, ``run_tess_search(system_name, single_sector, specific_sector, download_path)``
+downloads every sector when ``single_sector`` is ``False``, or only ``specific_sector``
+when it is ``True``. That argument used to be called ``download_all``, although ``True``
+always meant a single sector.
 
 Searching TESS
 ^^^^^^^^^^^^^^
@@ -327,8 +365,8 @@ with circles and index numbers marking each star:
 
 .. image:: ../EclipsingBinaries/examples/overlay_example.png
 
-Multi-Aperture Calculation
---------------------------
+Multi-Aperture Photometry
+-------------------------
 
 Runs aperture photometry on reduced science images for Johnson B, V and Cousins R, using
 the target and comparison stars from the RADEC files made by the
@@ -340,14 +378,58 @@ The GUI panel accepts the following inputs:
 
 + **Object Name** — used for output file naming
 + **Reduced Images Path** — folder of calibrated ``LIGHT`` frames
-+ **RADEC File (B/V/R Filter)** — one RADEC file per filter. The first row is the target
-  and the rest are comparison stars.
++ **Number of Filters** — radio buttons for 1, 2 or 3 filters, the same as in the
+  O'Connell Effect panel. That many RADEC rows are shown.
++ **RADEC File** — one row per filter, each with a dropdown to pick which filter it is
+  (B, V or R) and that filter's RADEC file. The first row of a RADEC file is the target
+  and the rest are comparison stars. The dropdowns start at V for one filter, B and V for
+  two, and B, V and R for three; once you pick a filter yourself, changing the number of
+  filters keeps your choice. Each filter can only be picked once.
 + **Aperture Radius**, **Inner Annulus Radius**, **Outer Annulus Radius** — in pixels.
   Leave them empty for 20, 30 and 50.
 
 Images are grouped by the ``FILTER`` keyword. ``Empty/B`` and ``B`` style names work out
 of the box; other names need a ``filter_config.json`` as described in
 :ref:`custom-filter-mapping`.
+
+Shared Comparison Stars
+^^^^^^^^^^^^^^^^^^^^^^^
+
+B, V and R always use exactly the same comparison stars. Stars are matched between the
+three RADEC files by position, so a hand-edited file with the rows in a different order
+still lines up. Before any image is measured, a star is left out of every filter if it
+is missing from one of the RADEC files, or has no catalog magnitude (99.999) in any one
+filter.
+
+Every star's aperture and annulus then has to sit wholly on real image data in every
+image of every filter. Each star's position is worked out from that image's own WCS, so
+pointing drift during the night is taken into account. A comparison star fails the check
+when any part of its outer annulus is off the edge of the image, or covers pixels with no
+data (NaN or infinite values, as on the padded edges of TESS cutouts or aligned frames).
+
+When comparison stars fail in an image of any filter, all of them are dropped from every
+filter at once, and the whole analysis starts over from the first B image with the
+smaller set. This repeats until one set of comparison stars fits on every image of every
+filter. Light curves are only written once that happens, so every magnitude in all three
+light curves comes from the same ensemble. The result is the same as if those stars had
+been left out of all three RADEC files from the start.
+
+If the target's own annulus doesn't fit in an image, that image is skipped instead, and the
+comparison stars aren't judged on it. The output log lists each excluded or removed star
+with the reason, each skipped image, and the comparison stars used in the end.
+Photometry stops with an error, and writes no light curves, if every comparison star is
+removed or the target doesn't fit in any image of a filter.
+
+Only the filters you choose are used, and they share comparison stars with each other.
+If a chosen filter has no images, the others still run.
+
+From Python, pass ``None`` in ``radec_list`` for a filter you don't have:
+
+.. code-block:: python
+
+    from EclipsingBinaries.multi_aperture_photometry import main
+
+    main(path="reduced_images", radec_list=[None, "NSVS_V.radec", None], obj_name="NSVS_896797")
 
 Optimize Radii
 ^^^^^^^^^^^^^^
@@ -372,24 +454,129 @@ For each filter, two files are written to the reduced images folder:
   ``Source_AMag_T1_Error``
 + ``[name]_[filter]_figure.jpg`` — the light curve with error bars
 
-BSUO or SARA/TESS Night Filters
----------------------------------
+One more file covers all filters:
 
-.. note::
-    The **BSUO or SARA/TESS Night Filters** button in the GUI isn't wired up yet. Run the
-    program from a terminal instead with ``python -m EclipsingBinaries.Night_Filters``,
-    which asks for the number of nights and each file path.
++ ``[name]_comparison_stars.csv`` — every comparison star from the RADEC files with its
+  catalog magnitude in each filter, whether it was used, and why not if it wasn't
 
-When using Astro ImageJ (AIJ), it produces ``.dat`` files containing magnitude and
-flux data for each night of observations. This program combines all nightly files
-into a single file per filter.
+The times come from each image header: ``HJD`` from ``HJD-OBS`` (written by AstroImageJ),
+``HJD`` or ``HJD_UTC`` (written by this package's reduction), and ``BJD`` from ``BJD-OBS``
+or ``BJD_TDB``. A frame with none of them gets an empty time and a warning in the log.
 
-The program checks whether the ``.dat`` files contain five columns (magnitude only)
-or seven columns (magnitude and flux) and writes the combined output accordingly:
+Flux errors use the read noise in each image's ``RDNOISE`` keyword, which the IRAF
+reduction writes from the camera preset. Images without one fall back to the BSUO value
+of 10.83 e⁻, or to the ``--loc`` preset when run through ``EB_pipeline``.
+
+Night Filters
+-------------
+
+Astro ImageJ (AIJ) saves a measurements file for each night. Night Filters combines the
+nights for one filter into a single file, sorted by time, ready for Find Minimum,
+O'Connell Effect, Color Light Curve, Peranso or PHOEBE. Run it once per filter.
+
+The GUI panel accepts the following inputs:
+
++ **Night Files** — one file per night, all for the same filter (for example
+  ``2018.09.18.APASS.B_datasubset.dat``). Add them with **Add Files...** or drag them onto
+  the list; **Remove** (or the Delete key) and **Clear** take them off again. The order
+  doesn't matter.
++ **Output Folder** — where the combined files are saved (created if missing)
++ **Output Name** — the start of the file names, for example ``NSVS_896797_B``
++ **Include BJD_TDB column** — adds BJD_TDB as the first column. Leave it off for Find
+  Minimum, O'Connell Effect and Color Light Curve, which expect HJD first.
+
+Each night needs ``HJD``, ``Source_AMag_T1`` and ``Source_AMag_Err_T1`` columns. The light
+curve CSV files Multi-Aperture Photometry saves work too. The output files are tab
+separated without a header:
+
++ ``<name>_magnitudes.txt`` — HJD, magnitude, error
++ ``<name>_flux.txt`` — HJD, relative flux, error. Only written when every night has
+  ``rel_flux_T1`` and ``rel_flux_err_T1`` columns; if only some do, the log says which
+  nights lack them.
+
+Rows with a missing or non-numeric value are skipped and counted in the log. The
+magnitude file looks like this:
 
 .. literalinclude:: ../EclipsingBinaries/examples/test_B.txt
     :language: text
     :lines: 1-15
+
+From a script:
+
+.. code-block:: python
+
+    from EclipsingBinaries.Night_Filters import combine_nights
+
+    combine_nights(["night1.dat", "night2.dat"], "combined", "NSVS_896797_B")
+
+``python -m EclipsingBinaries.Night_Filters`` asks for the files in a terminal instead and
+saves the result in the current folder.
+
+.. note::
+    Earlier versions wrote the flux values into ``_magnitudes.txt`` and the magnitudes into
+    ``_flux.txt``. Files combined with those versions have the two names swapped.
+
+Find Minimum
+------------
+
+Find Minimum measures times of minimum (ToM) with the Kwee-van Woerden method and saves
+them in the format O-C Plotting reads.
+
+The GUI panel accepts the following inputs:
+
++ **Object Name** — used to name the minimum files
++ **Number of Filters** and a **Light Curve** for each — a Night Filters magnitude file
+  (HJD, magnitude, error) or a light curve CSV from Multi-Aperture Photometry. Pick which
+  filter each file is from the dropdown.
++ **Output Folder** — where the minimum files are saved. Leave it empty to save them next
+  to the first light curve.
+
+**Open Minimum Finder** opens a window showing one night at a time, with the relative flux
+below and the Kwee-van Woerden S statistic above:
+
++ **Click** on the light curve to set the left boundary; **right-click** or **Shift-click**
+  sets the right one. Over the plot, the **a** and **d** keys do the same at the pointer.
+  The minimum is measured again every time a boundary moves.
++ Keep both boundaries on the sides of the eclipse, not out on the flat parts around it,
+  where the method can't tell one time from another.
++ **Previous Night** and **Next Night** (or the **n** and **p** keys, or the dropdown)
+  move between nights. Each night remembers its own boundaries, and starts with a guess
+  around its faintest point.
++ The **Filters** checkboxes choose which filters are fitted together. Each combination
+  saves to its own file, so for per-filter O-C files tick one filter at a time.
++ **Polynomial order**, **Pairs** and **Trial times** set the drawn polynomial, the number
+  of point pairs compared, and how many trial times are tried. The defaults are 5, 20 and
+  200.
++ **Save Minimum** (or Enter) adds the minimum to the list. Measuring the same eclipse
+  again replaces it. **Remove Selected** takes one off.
++ Scroll over the light curve to zoom; the toolbar under the plot pans, zooms and saves
+  the figure.
+
+Minima are saved straight away in ``<object>_<filters>_min.txt``, for example
+``NSVS_896797_B_min.txt``, one per line: time of minimum, number of points used, and
+error, separated by tabs. O-C Plotting reads the first and third columns. Opening the
+window again loads the minima already saved, so you can carry on another day.
+
+A minimum with no error estimate (too few points paired around it) can't be saved, since
+O-C Plotting needs the error.
+
+.. note::
+    Near either boundary there's almost nothing to reflect, so S drops towards zero there
+    whatever the light curve looks like. The lowest S is only looked for away from the
+    outer 10% of the window. Earlier versions meant to do this but didn't, and could
+    report a boundary as the minimum when the window included flat parts.
+
+``python -m EclipsingBinaries.find_min`` asks for the files in a terminal and opens the
+same window, saving minima in the current folder. For scripts:
+
+.. code-block:: python
+
+    from EclipsingBinaries.find_min import load_nights, guess_boundaries, measure_minimum
+
+    nights = load_nights(["NSVS_B_magnitudes.txt"], ["B"])
+    lb, rb = guess_boundaries(nights[0])
+    minimum = measure_minimum(nights[0], lb, rb)
+    print(minimum.hjd, minimum.error)
 
 O-C Plotting
 ------------
@@ -469,7 +656,9 @@ least squares fit. Output files written to the output folder:
 
 + ``[mode]_OC.txt`` — the O-C data table
 + ``[mode]_OC.png`` — the O-C plot with linear and quadratic fits
-+ ``[mode]_OC.tex`` — regression tables formatted for LaTeX
++ ``[mode]_OC_regression.tex`` — regression tables formatted for LaTeX
+
+In All Data mode, ``all_data_OC.tex`` also holds the LaTeX O-C table described above.
 
 .. literalinclude:: ../EclipsingBinaries/OC_plot.py
    :pyobject: data_fit
@@ -496,20 +685,26 @@ The GUI panel accepts the following inputs:
 + **Declination (DEC)** — format ``DD:MM:SS.SSSS`` or ``-DD:MM:SS.SSSS``
 + **Output Folder** — folder where ``gaia_results.csv`` will be saved
 
-The query returns the top four matches within a 5 arcsecond search cone and saves
-the following parameters:
+The RA and DEC are taken as J2000. Gaia DR3 positions are at epoch 2016, so each Gaia
+source near the target is moved back to J2000 using its own proper motion before the
+separation is measured. Up to four sources within 5 arcseconds are saved, closest first,
+so the first row is the best match for your target.
 
-+ Parallax and error
-+ Distance (lower, central, upper)
-+ Effective temperature (lower, central, upper)
-+ Gaia G, BP, and RP magnitudes
-+ Radial velocity and error
+``gaia_results.csv`` is a comma-separated file with these columns:
+
++ ``Source_ID`` — Gaia DR3 source identifier
++ ``Separation(arcsec)`` — distance from the entered position at J2000
++ ``Parallax(mas)`` and ``Parallax_err(mas)``
++ ``Distance_lower(pc)``, ``Distance(pc)``, ``Distance_higher(pc)`` — GSP-Phot distance
+  and its lower and upper bounds
++ ``T_eff_lower(K)``, ``T_eff(K)``, ``T_eff_higher(K)``
++ ``G_Mag``, ``G_BP_Mag``, ``G_RP_Mag``
++ ``Radial_velocity(km/s)`` and ``Radial_velocity_err(km/s)``
+
+If nothing lies within 5 arcseconds, the file has only the header row and the log says so.
 
 .. literalinclude:: ../EclipsingBinaries/gaia.py
    :pyobject: target_star
-
-.. literalinclude:: ../EclipsingBinaries/examples/Gaia_output.txt
-    :language: text
 
 .. note::
     Parameters with a value of ``1e+20`` indicate that Gaia does not have data for

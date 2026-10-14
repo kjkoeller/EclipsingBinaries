@@ -107,6 +107,20 @@ def test_splitter_zero_degrees():
     assert splitter(["0:0:0"])[0] == pytest.approx(0.0, abs=1e-5)
 
 
+def test_splitter_keeps_fractional_seconds():
+    # 12h 34m 56.78s; the old version dropped the .78 s (about 12 arcsec of RA)
+    assert splitter(["12:34:56.78"])[0] == pytest.approx(12 + 34 / 60 + 56.78 / 3600, abs=1e-7)
+
+
+def test_splitter_negative_zero_degrees_keeps_sign():
+    # int("-00") is 0, so the sign has to come from the text
+    assert splitter(["-00:30:00"])[0] == pytest.approx(-0.5)
+
+
+def test_splitter_accepts_leading_plus():
+    assert splitter(["+78:57:42.66"])[0] == pytest.approx(78 + 57 / 60 + 42.66 / 3600, abs=1e-7)
+
+
 # ===========================================================================
 # decimal_limit
 # ===========================================================================

@@ -21,6 +21,10 @@ Development Setup
 Follow the development installation in :doc:`installation`, then before opening a pull request:
 
 + Run ``pytest``. The suite runs offline, and new behaviour should come with tests.
+  The GUI tests open real windows and are skipped when there's no display; on a Linux
+  machine without one, run ``xvfb-run -a pytest``. CI runs them on Linux (under Xvfb),
+  macOS and Windows with ``EB_REQUIRE_GUI=1``, which makes them fail rather than skip if a
+  window can't be opened.
 + Build the docs with ``sphinx-build -b html docs docs/_build/html`` if you changed them, and
   update the pages for any program whose inputs or outputs you changed.
 + Lint settings for ``flake8`` and ``pycodestyle`` live in ``tox.ini``.

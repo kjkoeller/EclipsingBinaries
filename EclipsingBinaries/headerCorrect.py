@@ -15,6 +15,14 @@ verbatim; the structural changes are:
        same code drives both the GUI's log pane and the command line.
     4. There is a single public entry point ``correct_headers(image_path,
        cfg, ...)`` returning a small report object describing what changed.
+    5. ``EB_HCorr`` runs it from the command line on files or folders.
+
+A few things behave differently from the original script, because the
+original got them wrong for some cameras: a DATE-OBS without a time of
+day is combined with TIME-OBS (or UT), the coordinate frame follows
+EQUINOX rather than EPOCH, re-running keeps the first SECZ_ORG, and the
+airmass is left alone (with a warning) when the target comes out below
+the horizon.
 
 Author:  Kyle Koeller (refactor) - 04/24/2026
 Original: Robert Berrington (BSU) - 08/09/2024
@@ -25,7 +33,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional, Dict
+import argparse
 import re
+import sys
 
 from astropy.io import fits
 from astropy.time import Time
@@ -144,7 +154,7 @@ class ObservatoryRegistry:
         """Look up a site by name (case-insensitive). Returns None if absent."""
         if name is None:
             return None
-        return self._sites.get(name.upper())
+        return self._sites.get(str(name).strip().upper())
 
     def resolve(self, name: str, default: Optional[str] = "BSU",
                 log: Callable[[str], None] = print) -> coords.EarthLocation:
@@ -394,12 +404,12 @@ def _resolve_observatory(header, opts: HeaderCorrectionOptions,
 
 def _exposure_time(header, log) -> u.Quantity:
     """Mirror lines 493-501 of header-correct.py."""
-    if "EXPTIME" in header:
-        return header["EXPTIME"] * u.second
-    if "EXP_TIME" in header:
-        return header["EXP_TIME"] * u.second
-    if "EXPOSURE" in header:
-        return header["EXPOSURE"] * u.second
+    for key in ("EXPTIME", "EXP_TIME", "EXPOSURE"):
+        if key in header:
+            try:
+                return float(header[key]) * u.second
+            except (TypeError, ValueError):
+                log(f"WARNING: {key} = {header[key]!r} isn't a number; skipping it.")
     log("WARNING: no exposure time set. Assuming exposure time = 0 sec.")
     return 0 * u.second
 
@@ -407,14 +417,12 @@ def _exposure_time(header, log) -> u.Quantity:
 def _write_jd_suite(header, date, date_mid, date_end, report, log) -> None:
     """Mirror lines 523-552 of header-correct.py."""
     if "JD_START" in header:
-        jd_original = header["JD_START"]
+        pass  # already corrected once; JD_ORIG holds the camera's value
     elif "JD" in header:
-        jd_original = header["JD"]
         if "JD_ORIG" not in header:
-            header["JD_ORIG"] = (jd_original, "Original JD value in image.")
+            header["JD_ORIG"] = (header["JD"], "Original JD value in image.")
             report.note("JD_ORIG")
     else:
-        jd_original = date.jd
         if "JD_ORIG" not in header:
             header["JD_ORIG"] = (date.jd, "Original JD from header.")
             report.note("JD_ORIG")
@@ -427,18 +435,39 @@ def _write_jd_suite(header, date, date_mid, date_end, report, log) -> None:
         report.note(k)
 
 
+def _coordinate_frame(image_equinox):
+    """
+    The frame RA and DEC are given in, from the EQUINOX keyword.
+
+    J2000 coordinates are treated as ICRS, as the original script did. Other
+    equinoxes get FK5 (or FK4 for Besselian ones such as B1950). EQUINOX
+    turns up as 2000.0, "2000", "J2000" or "J2000.0" depending on the
+    camera software, so all of those are accepted.
+    """
+    text = str(image_equinox).strip().upper()
+    try:
+        year = float(text.lstrip("JB"))
+    except ValueError:
+        raise ValueError(f"EQUINOX {image_equinox!r} isn't a year such as 2000 or J2000")
+    if year == 2000.0 and not text.startswith("B"):
+        return "icrs"
+    if text.startswith("B") or year < 1984:
+        return coords.FK4(equinox=Time(f"B{year}"))
+    return coords.FK5(equinox=Time(f"J{year}"))
+
+
 def _build_target(header, image_epoch, image_equinox, date_mid):
-    """Mirror lines 563-574 of header-correct.py."""
-    if image_epoch == 2000.0 or image_equinox == "J2000.0":
-        return coords.SkyCoord(
-            header["RA"], header["DEC"],
-            unit=(u.hourangle, u.deg),
-            obstime=date_mid, frame="icrs",
-        )
+    """
+    Mirror lines 563-574 of header-correct.py, except that the frame comes
+    from EQUINOX. The original picked ICRS whenever EPOCH was 2000, and
+    otherwise passed EQUINOX to astropy as a frame name, which fails for
+    values like 2000.0 or "J2000" and so silently skipped HJD and BJD for
+    cameras that write the observation date into EPOCH.
+    """
     return coords.SkyCoord(
         header["RA"], header["DEC"],
         unit=(u.hourangle, u.deg),
-        obstime=date_mid, frame=image_equinox,
+        obstime=date_mid, frame=_coordinate_frame(image_equinox),
     )
 
 
@@ -517,6 +546,12 @@ def _write_eairmass(header, date_mid, target, location, report, log) -> None:
     altaz = target.transform_to(
         coords.AltAz(obstime=date_mid, location=location)
     )
+    if altaz.alt.deg <= 0:
+        report.warn(
+            f"Target is {altaz.alt.deg:.1f} degrees below the horizon at mid-exposure, so "
+            "SECZ and EAIRMASS were left alone. Check OBSERVAT, DATE-OBS and RA/DEC."
+        )
+        return
     secz = altaz.secz
     s = secz - 1.0
     eairmass = (
@@ -526,10 +561,10 @@ def _write_eairmass(header, date_mid, target, location, report, log) -> None:
         - 0.0008083 * s * s * s
     )
 
-    if "SECZ" in header:
-        secz_orig = header["SECZ"]
-        header["SECZ_ORG"] = (float(secz_orig),
-                              "Orignial value of SecZ in image header.")
+    # Only keep the camera's value; on a re-run SECZ is already ours
+    if "SECZ" in header and "SECZ_ORG" not in header:
+        header["SECZ_ORG"] = (float(header["SECZ"]),
+                              "Original value of SecZ in image header.")
         report.note("SECZ_ORG")
     header["SECZ"] = (float(secz),
                       "SecZ for airmass estimation at exp midpt.")
@@ -561,14 +596,39 @@ def _safe_call(report, label, fn, *args, **kwargs):
         return None
 
 
-def _read_date_obs(header, location):
-    """Build the DATE-OBS Time anchor (returns None if header lacks DATE-OBS)."""
+# Keywords some cameras use for the start time when DATE-OBS holds only the date
+_TIME_KEYS = ("TIME-OBS", "UT", "UTSTART", "UT-START", "UTC-OBS")
+
+
+def _date_obs_string(header, report):
+    """
+    The exposure start as an ISO date and time, or None without DATE-OBS.
+
+    Older cameras write just the date to DATE-OBS and the time to TIME-OBS
+    or UT. Reading the date alone would put every image at midnight UT, so
+    the two are joined. A space between date and time is accepted too.
+    """
     if "DATE-OBS" not in header:
         return None
+    value = str(header["DATE-OBS"]).strip().replace(" ", "T")
+    if "T" in value:
+        return value
+    for key in _TIME_KEYS:
+        if key in header and str(header[key]).strip():
+            return f"{value}T{str(header[key]).strip()}"
+    report.warn("DATE-OBS has no time of day and there's no TIME-OBS or UT keyword, "
+                "so exposures are assumed to start at 00:00 UT.")
+    return value
+
+
+def _read_date_obs(header, location, report=None):
+    """Build the DATE-OBS Time anchor (returns None if header lacks DATE-OBS)."""
+    value = _date_obs_string(header, report or HeaderCorrectionReport(file=Path("")))
+    if value is None:
+        return None
     if location is not None:
-        return Time(header["DATE-OBS"], scale="utc",
-                    format="fits", location=location)
-    return Time(header["DATE-OBS"], scale="utc", format="fits")
+        return Time(value, scale="utc", format="fits", location=location)
+    return Time(value, scale="utc", format="fits")
 
 
 def _maybe_build_target(opts, header, image_epoch, image_equinox, date_mid, report):
@@ -672,7 +732,11 @@ def correct_headers(
         location = _resolve_observatory(header, opts, registry, report, log) \
             if need_observer else None
 
-        date = _read_date_obs(header, location)
+        try:
+            date = _read_date_obs(header, location, report)
+        except ValueError as e:
+            report.warn(f"DATE-OBS couldn't be read: {e}")
+            return report
         if date is None:
             report.warn(
                 "DATE-OBS missing; cannot compute JD/HJD/BJD/sidereal/airmass."
@@ -718,3 +782,107 @@ def correct_headers_batch(
             log(f"WARNING: header correction failed for {path}: {e}")
             reports.append(r)
     return reports
+
+# ---------------------------------------------------------------------------
+# Command line (EB_HCorr)
+# ---------------------------------------------------------------------------
+
+FITS_SUFFIXES = (".fits", ".fit", ".fts")
+
+
+def find_fits_files(paths, recursive=False):
+    """
+    Expand files and folders into a sorted list of FITS files. Folders are
+    searched for .fits, .fit and .fts files (any capitalisation).
+    """
+    found = []
+    for raw in paths:
+        path = Path(raw).expanduser()
+        if path.is_dir():
+            pattern = "**/*" if recursive else "*"
+            found.extend(p for p in path.glob(pattern)
+                         if p.is_file() and p.suffix.lower() in FITS_SUFFIXES)
+        elif path.is_file():
+            found.append(path)
+        else:
+            raise FileNotFoundError(f"{raw} doesn't exist")
+    return sorted(set(found))
+
+
+def _build_parser():
+    parser = argparse.ArgumentParser(
+        prog="EB_HCorr",
+        description="Add JD, HJD, BJD, sidereal time and effective airmass to FITS headers "
+                    "and rewrite RA/DEC in IRAF format. Files are changed in place.",
+    )
+    parser.add_argument("paths", nargs="+",
+                        help="FITS files, or folders of them")
+    parser.add_argument("-r", "--recursive", action="store_true",
+                        help="also look in folders inside the given folders")
+    parser.add_argument("--observatory", default="BSU", metavar="SITE",
+                        help="site to use when OBSERVAT is missing or unknown (default: BSU). "
+                             "Built in: " + ", ".join(sorted(DEFAULT_REGISTRY._sites)))
+    parser.add_argument("--no-jd", dest="do_jd", action="store_false",
+                        help="don't write JD, JD_START, JD_MID and JD_END")
+    parser.add_argument("--no-hjd", dest="do_hjd", action="store_false",
+                        help="don't write HJD and HJD_UTC")
+    parser.add_argument("--no-bjd", dest="do_bjd", action="store_false",
+                        help="don't write BJD_UTC and BJD_TDB")
+    parser.add_argument("--no-sidereal", dest="do_sidereal", action="store_false",
+                        help="don't write sidereal times")
+    parser.add_argument("--no-eairmass", dest="do_eairmass", action="store_false",
+                        help="don't write SECZ and EAIRMASS")
+    parser.add_argument("--no-radec-format", dest="do_radec_format", action="store_false",
+                        help="leave RA and DEC as they are")
+    parser.add_argument("--filter-parse", dest="do_filter_parse", action="store_true",
+                        help="replace spaces in FILTER with underscores (keeps the original in FILT_ORG)")
+    parser.add_argument("-q", "--quiet", action="store_true",
+                        help="only print warnings and the summary")
+    return parser
+
+
+def header_correct(argv=None):
+    """
+    Entry point for the ``EB_HCorr`` command. Returns 0 when every file was
+    corrected without warnings, 1 if any file had warnings or failed, and 2
+    for bad arguments.
+    """
+    args = _build_parser().parse_args(argv)
+    if DEFAULT_REGISTRY.get(args.observatory) is None:
+        print(f"Unknown observatory {args.observatory!r}. Built in: "
+              + ", ".join(sorted(DEFAULT_REGISTRY._sites)), file=sys.stderr)
+        return 2
+    try:
+        files = find_fits_files(args.paths, recursive=args.recursive)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
+    if not files:
+        print("No FITS files found.", file=sys.stderr)
+        return 2
+
+    opts = HeaderCorrectionOptions(
+        do_jd=args.do_jd, do_hjd=args.do_hjd, do_bjd=args.do_bjd,
+        do_sidereal=args.do_sidereal, do_eairmass=args.do_eairmass,
+        do_filter_parse=args.do_filter_parse, do_radec_format=args.do_radec_format,
+        default_observatory=args.observatory,
+    )
+    log = (lambda _msg: None) if args.quiet else print
+    problems = 0
+    for report in correct_headers_batch(files, opts, log=log):
+        if report.warnings:
+            problems += 1
+            print(f"{report.file.name}: {len(report.warnings)} warning(s)")
+            for warning in report.warnings:
+                print(f"    {warning}")
+        elif not args.quiet:
+            site = f" at {report.observatory}" if report.observatory else ""
+            print(f"{report.file.name}: updated {len(set(report.wrote_keys))} keywords{site}")
+
+    print(f"Corrected {len(files) - problems} of {len(files)} file(s) cleanly"
+          + (f"; {problems} had warnings." if problems else "."))
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(header_correct())

@@ -185,55 +185,70 @@ def test_no_bp_rp_fallback_is_fainter_than_g():
 # ===========================================================================
 # target_star — network mocked via GaiaData.from_query
 # ===========================================================================
-def _make_mock_gaia_result():
-    """
-    Build a minimal mock GaiaData object matching all fields accessed by
-    target_star, including distance_gspphot_upper (not distance_gspphot twice).
-    """
-    import astropy.units as u
+TARGET_RA = "12:34:56.78"   # 188.736583 deg
+TARGET_DEC = "45:00:00.00"
+TARGET_RA_DEG = 188.736583333
+TARGET_DEC_DEG = 45.0
 
-    mock = MagicMock()
-    mock.parallax = [1.0, 1.1, 1.2, 1.3] * u.mas
-    mock.parallax_error = [0.01, 0.01, 0.01, 0.01] * u.mas
-    mock.distance_gspphot_lower = [300.0, 310.0, 320.0, 330.0] * u.pc
-    mock.distance_gspphot = [320.0, 330.0, 340.0, 350.0] * u.pc
-    mock.distance_gspphot_upper = [340.0, 350.0, 360.0, 370.0] * u.pc  # must differ from distance_gspphot
-    mock.teff_gspphot_lower = [5500.0, 5600.0, 5700.0, 5800.0] * u.K
-    mock.teff_gspphot = [5700.0, 5800.0, 5900.0, 6000.0] * u.K
-    mock.teff_gspphot_upper = [5900.0, 6000.0, 6100.0, 6200.0] * u.K
-    mock.phot_g_mean_mag = [12.0, 12.1, 12.2, 12.3] * u.mag
-    mock.phot_bp_mean_mag = [12.5, 12.6, 12.7, 12.8] * u.mag
-    mock.phot_rp_mean_mag = [11.7, 11.8, 11.9, 12.0] * u.mag
-    mock.radial_velocity = [-10.0, -10.1, -10.2, -10.3] * u.km / u.s
-    mock.radial_velocity_error = [0.5, 0.5, 0.5, 0.5] * u.km / u.s
-    return mock
+
+def _make_mock_gaia_result(rows=None):
+    """
+    Build a real GaiaData object like the archive would return.
+
+    Each row is (source_id, ra_offset_arcsec, dec_offset_arcsec, pmra, pmdec).
+    Offsets are measured from the target at Gaia's 2016 epoch.
+    """
+    from astropy.table import Table
+    from pyia import GaiaData
+
+    if rows is None:
+        # Deliberately out of order: the closest source is second
+        rows = [(30, 3.0, 0.0, 0.0, 0.0), (10, 0.2, 0.0, 0.0, 0.0),
+                (20, 0.0, 1.5, 0.0, 0.0), (40, 0.0, -4.0, 0.0, 0.0)]
+    n = len(rows)
+    cos_dec = np.cos(np.radians(TARGET_DEC_DEG))
+    table = Table({
+        "source_id": [r[0] for r in rows],
+        "ra": [TARGET_RA_DEG + r[1] / 3600 / cos_dec for r in rows],
+        "dec": [TARGET_DEC_DEG + r[2] / 3600 for r in rows],
+        "pmra": [r[3] for r in rows],
+        "pmdec": [r[4] for r in rows],
+        # Values tagged with the source_id so the tests can tell rows apart
+        "parallax": [r[0] / 10 for r in rows],
+        "parallax_error": [0.01] * n,
+        "distance_gspphot_lower": [r[0] * 10 + 1.0 for r in rows],
+        "distance_gspphot": [r[0] * 10 + 2.0 for r in rows],
+        "distance_gspphot_upper": [r[0] * 10 + 3.0 for r in rows],
+        "teff_gspphot_lower": [5500.0] * n,
+        "teff_gspphot": [5700.0] * n,
+        "teff_gspphot_upper": [5900.0] * n,
+        "phot_g_mean_mag": [12.0] * n,
+        "phot_bp_mean_mag": [12.5] * n,
+        "phot_rp_mean_mag": [11.7] * n,
+        "radial_velocity": [-10.0] * n,
+        "radial_velocity_error": [0.5] * n,
+    })
+    return GaiaData(table)
+
+
+def _run_target_star(tmpdir, result, messages=None):
+    from EclipsingBinaries.gaia import target_star
+    with patch("EclipsingBinaries.gaia.GaiaData.from_query", return_value=result) as query:
+        target_star(TARGET_RA, TARGET_DEC, tmpdir,
+                    write_callback=(messages.append if messages is not None else None))
+    return query, pd.read_csv(os.path.join(tmpdir, "gaia_results.csv"))
 
 
 def test_target_star_creates_output_file():
-    from EclipsingBinaries.gaia import target_star
-    cancel = MagicMock()
-    cancel.is_set.return_value = False
-
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("EclipsingBinaries.gaia.GaiaData.from_query",
-                   return_value=_make_mock_gaia_result()):
-            target_star("12:34:56.78", "45:00:00.00", tmpdir,
-                        write_callback=None, cancel_event=cancel)
+        _run_target_star(tmpdir, _make_mock_gaia_result())
         assert os.path.isfile(os.path.join(tmpdir, "gaia_results.csv"))
 
 
 def test_target_star_logs_completion():
-    from EclipsingBinaries.gaia import target_star
-    cancel = MagicMock()
-    cancel.is_set.return_value = False
     messages = []
-
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("EclipsingBinaries.gaia.GaiaData.from_query",
-                   return_value=_make_mock_gaia_result()):
-            target_star("12:34:56.78", "45:00:00.00", tmpdir,
-                        write_callback=messages.append, cancel_event=cancel)
-
+        _run_target_star(tmpdir, _make_mock_gaia_result(), messages)
     assert any("Finished" in m for m in messages)
 
 
@@ -245,7 +260,7 @@ def test_target_star_cancels_before_query():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         with patch("EclipsingBinaries.gaia.GaiaData.from_query") as mock_query:
-            target_star("12:34:56.78", "45:00:00.00", tmpdir,
+            target_star(TARGET_RA, TARGET_DEC, tmpdir,
                         write_callback=messages.append, cancel_event=cancel)
         mock_query.assert_not_called()
 
@@ -253,52 +268,76 @@ def test_target_star_cancels_before_query():
 
 
 def test_target_star_output_has_expected_columns():
-    from EclipsingBinaries.gaia import target_star
-    cancel = MagicMock()
-    cancel.is_set.return_value = False
-
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("EclipsingBinaries.gaia.GaiaData.from_query",
-                   return_value=_make_mock_gaia_result()):
-            target_star("12:34:56.78", "45:00:00.00", tmpdir,
-                        write_callback=None, cancel_event=cancel)
-
-        df = pd.read_csv(os.path.join(tmpdir, "gaia_results.csv"), sep="\t",
-                         index_col=0)
-        expected_cols = [
-            "Parallax(mas)", "Parallax_err(mas)",
-            "Distance_lower(pc)", "Distance(pc)", "Distance_higher(pc)",
-            "T_eff_lower(K)", "T_eff(K)", "T_eff_higher(K)",
-            "G_Mag", "G_BP_Mag", "G_RP_Mag",
-            "Radial_velocity(km/s)", "Radial_velocity_err(km/s)",
-        ]
-        for col in expected_cols:
-            assert col in df.columns, f"Missing column: {col}"
+        _, df = _run_target_star(tmpdir, _make_mock_gaia_result())
+    expected_cols = [
+        "Source_ID", "Separation(arcsec)",
+        "Parallax(mas)", "Parallax_err(mas)",
+        "Distance_lower(pc)", "Distance(pc)", "Distance_higher(pc)",
+        "T_eff_lower(K)", "T_eff(K)", "T_eff_higher(K)",
+        "G_Mag", "G_BP_Mag", "G_RP_Mag",
+        "Radial_velocity(km/s)", "Radial_velocity_err(km/s)",
+    ]
+    assert list(df.columns) == expected_cols
 
 
-def test_target_star_distance_higher_differs_from_distance():
+def test_target_star_distance_columns_map_to_the_right_gaia_fields():
     """
-    Regression test: Distance_higher(pc) must use distance_gspphot_upper,
-    not a duplicate of distance_gspphot.
+    Regression test: Distance(pc) used to hold distance_gspphot_upper and
+    Distance_higher(pc) held distance_gspphot.
     """
-    from EclipsingBinaries.gaia import target_star
-    cancel = MagicMock()
-    cancel.is_set.return_value = False
-
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("EclipsingBinaries.gaia.GaiaData.from_query",
-                   return_value=_make_mock_gaia_result()):
-            target_star("12:34:56.78", "45:00:00.00", tmpdir,
-                        write_callback=None, cancel_event=cancel)
+        _, df = _run_target_star(tmpdir, _make_mock_gaia_result())
+    for _, row in df.iterrows():
+        base = row["Source_ID"] * 10
+        assert row["Distance_lower(pc)"] == base + 1.0
+        assert row["Distance(pc)"] == base + 2.0
+        assert row["Distance_higher(pc)"] == base + 3.0
 
-        df = pd.read_csv(os.path.join(tmpdir, "gaia_results.csv"), sep="\t",
-                         index_col=0)
-        # distance_gspphot=[320,330,340,350], distance_gspphot_upper=[340,350,360,370]
-        # If the bug is present both columns will be identical.
-        assert not df["Distance(pc)"].equals(df["Distance_higher(pc)"]), (
-            "Distance_higher(pc) is a duplicate of Distance(pc) — "
-            "gaia.py must use distance_gspphot_upper, not distance_gspphot"
-        )
+
+def test_target_star_rows_are_sorted_by_separation():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _, df = _run_target_star(tmpdir, _make_mock_gaia_result())
+    assert list(df["Source_ID"]) == [10, 20, 30, 40]
+    assert df["Separation(arcsec)"].is_monotonic_increasing
+    assert df["Separation(arcsec)"].iloc[0] == pytest.approx(0.2, abs=0.01)
+
+
+def test_target_star_drops_sources_outside_match_radius():
+    rows = [(10, 0.5, 0.0, 0.0, 0.0), (99, 0.0, 12.0, 0.0, 0.0)]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _, df = _run_target_star(tmpdir, _make_mock_gaia_result(rows))
+    assert list(df["Source_ID"]) == [10]
+
+
+def test_target_star_matches_fast_moving_star_at_j2000():
+    # A star 8 arcsec north of the J2000 position in 2016 because it moves
+    # 500 mas/yr north. Moved back 16 years it sits right on the target.
+    rows = [(10, 0.0, 8.0, 0.0, 500.0), (20, 0.0, 4.5, 0.0, 0.0)]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _, df = _run_target_star(tmpdir, _make_mock_gaia_result(rows))
+    assert list(df["Source_ID"]) == [10, 20]
+    assert df["Separation(arcsec)"].iloc[0] == pytest.approx(0.0, abs=0.01)
+
+
+def test_target_star_query_has_no_hardcoded_astrometry():
+    # The old query propagated every target with one star's parallax and
+    # proper motion (4.7516, 48.8840, -24.1470)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        query, _ = _run_target_star(tmpdir, _make_mock_gaia_result())
+    adql = query.call_args[0][0]
+    assert "EPOCH_PROP_POS" not in adql
+    assert "48.884" not in adql
+    assert "188.73658" in adql
+
+
+def test_target_star_logs_when_nothing_matches():
+    rows = [(99, 0.0, 20.0, 0.0, 0.0)]
+    messages = []
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _, df = _run_target_star(tmpdir, _make_mock_gaia_result(rows), messages)
+    assert df.empty
+    assert any("No Gaia DR3 source" in m for m in messages)
 
 
 def test_target_star_logs_error_on_exception():

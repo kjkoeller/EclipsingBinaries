@@ -27,26 +27,6 @@ To quit, use **File > Exit** (or the application menu on macOS).
 
 When a program finishes, buttons for its output appear next to **Run**:
 
-=================================  =====================================================
-Program                            Buttons
-=================================  =====================================================
-IRAF Reduction                     Open Output Folder (the calibrated images)
-TESS Search and Download           Open Output Folder (the downloaded sectors)
-AIJ Comparison Star Selector       Open Output Folder, View Overlay (when one was saved)
-Multi-Aperture Photometry          Open Output Folder, View Light Curves
-Night Filters                      Open Output Folder, Open Magnitude File, Find Minimum
-Find Minimum                       Open Output Folder (where the minimum files are saved)
-Period Search                      (the window's own Save Period and Send to buttons)
-O-C Plotting                       Open Output Folder, View O-C Plot
-Gaia Search                        Open Output Folder, Open Results (``gaia_results.csv``)
-O'Connell Effect                   Open Output Folder, View Plot
-Color Light Curve                  Open Output Folder, View Plot
-=================================  =====================================================
-
-**Find Minimum** after Night Filters opens the Find Minimum panel with the combined
-magnitude file already filled in. **View Light Curves** opens the light curve of every filter that was measured in one
-window, stacked with a shared time axis, with the usual Matplotlib zoom, pan and save
-tools.
 
 IRAF Reduction
 --------------

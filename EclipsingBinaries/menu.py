@@ -51,6 +51,8 @@ from .color_light_curve import color_plot
 from .find_min import MinimumError
 from .find_min_window import MinimumFinderWindow
 from .Night_Filters import combine_nights, NightFileError
+from .period import DEFAULT_METHOD as PERIOD_DEFAULT_METHOD, METHODS as PERIOD_METHODS, PeriodError
+from .period_window import PeriodWindow
 from .gui_support import (ToolTip, SettingsStore, ScrollableFrame, make_app_icon, open_path,
                           classify_log_line)
 
@@ -140,6 +142,88 @@ def _enable_windows_dpi_awareness():
             ctypes.windll.user32.SetProcessDPIAware()
         except (AttributeError, OSError):
             pass
+
+
+class _LightCurveRows:
+    """
+    "Number of Filters" radio buttons plus a "Light Curve (B Filter)" row for
+    each filter, with a B/V/R picker and a file field. Hidden rows keep what
+    was typed in them. Values are remembered with the panel's settings.
+    """
+
+    def __init__(self, app, panel, first_row, count_tip):
+        self.app = app
+        frame = app.right_frame
+        count_label = tk.Label(frame, text="Number of Filters:", font=app.label_font, bg=BG_PANEL, fg=FG_TEXT)
+        count_label.grid(row=first_row, column=0, padx=(16, 10), pady=5, sticky="e")
+        app._tooltip(count_label, count_tip)
+        self.count = app._remember_var("filter_count", tk.IntVar(master=app, value=len(PHOTOMETRY_FILTERS)))
+        radio_frame = tk.Frame(frame, bg=BG_PANEL)
+        radio_frame.grid(row=first_row, column=1, padx=(0, 10), pady=5, sticky="w")
+        for count in range(1, len(PHOTOMETRY_FILTERS) + 1):
+            tk.Radiobutton(radio_frame, text=f"{count} Filter{'s' if count > 1 else ''}", variable=self.count,
+                           value=count, command=self.update, font=app.label_font, bg=BG_PANEL,
+                           fg=FG_TEXT).pack(side="left", padx=(0, 12))
+
+        saved = app.settings.section(panel)
+        # Until someone picks filters by hand, the usual ones for the count are suggested
+        self.picked = any(f"filter_{i}" in saved for i in range(len(PHOTOMETRY_FILTERS)))
+        self.rows = []
+        for i, default_filter in enumerate(PHOTOMETRY_FILTERS):
+            label_frame = tk.Frame(frame, bg=BG_PANEL)
+            tk.Label(label_frame, text="Light Curve (", font=app.label_font, bg=BG_PANEL,
+                     fg=FG_TEXT).pack(side="left")
+            picker_var = app._remember_var(f"filter_{i}", tk.StringVar(master=app, value=default_filter))
+            picker = ttk.Combobox(label_frame, values=PHOTOMETRY_FILTERS, state="readonly", width=3,
+                                  font=app.label_font, textvariable=picker_var)
+            picker.pack(side="left")
+            tk.Label(label_frame, text=" Filter):", font=app.label_font, bg=BG_PANEL,
+                     fg=FG_TEXT).pack(side="left")
+            entry = app.create_input_field(frame, "", _example_path(f"{picker.get()}_magnitudes.txt"),
+                                           row=first_row + 1 + i, error_message="Please enter a light curve file.",
+                                           browse_type="file", label_widget=label_frame,
+                                           remember_as=f"curve_{i}",
+                                           tooltip="Light curve for this filter: a Night Filters magnitude file "
+                                                   "(HJD, magnitude, error) or a light curve CSV from "
+                                                   "Multi-Aperture Photometry.")
+            picker.bind("<<ComboboxSelected>>", lambda _e, p=picker, ent=entry: self._picked(p, ent))
+            self.rows.append((picker, entry))
+        self.update()
+
+    def update(self):
+        """Show one row per chosen filter and hide the rest."""
+        count = self.count.get()
+        if not self.picked:
+            for (picker, entry), filt in zip(self.rows, PHOTOMETRY_DEFAULTS[count]):
+                picker.set(filt)
+                self.app._set_placeholder(entry, _example_path(f"{filt}_magnitudes.txt"))
+        for i, (_picker, entry) in enumerate(self.rows):
+            self.app._set_field_visible(entry, i < count)
+
+    def _picked(self, picker, entry):
+        self.picked = True
+        self.app._set_placeholder(entry, _example_path(f"{picker.get()}_magnitudes.txt"))
+
+    def choices(self):
+        """
+        (filter, path) for each visible row, or None after logging what's
+        wrong: a filter chosen twice, an empty row, or a missing file.
+        """
+        app = self.app
+        choices = [(picker.get(), app._path_value(entry)) for picker, entry in self.rows[:self.count.get()]]
+        labels = [label for label, _ in choices]
+        if len(set(labels)) != len(labels):
+            app.write_to_log("Error: Each filter can only be chosen once.")
+            return None
+        missing = [label for label, path in choices if not path]
+        if missing:
+            app.write_to_log(f"Error: A light curve file is required for {', '.join(missing)}.")
+            return None
+        not_found = [path for _label, path in choices if not Path(path).is_file()]
+        if not_found:
+            app.write_to_log(f"Error: {not_found[0]} doesn't exist.")
+            return None
+        return choices
 
 
 class ProgramLauncher(tk.Tk):
@@ -851,6 +935,7 @@ class ProgramLauncher(tk.Tk):
                 ("night_filters", "Night Filters", self.show_night_filters, None),
             ]),
             ("Analysis", [
+                ("period", "Period Search", self.show_period_search, None),
                 ("find_min", "Find Minimum", self.show_find_minimum, None),
                 ("oc", "O-C Plotting", self.show_oc_plot, None),
                 ("oconnell", "O'Connell Effect", self.show_oconnell_effect, None),
@@ -2063,6 +2148,90 @@ class ProgramLauncher(tk.Tk):
         self._set_entry_text(self.find_min_rows[0][1], light_curve)
 
     # ------------------------------------------------------------------
+    # Period Search
+    # ------------------------------------------------------------------
+    def show_period_search(self):
+        """Display the Period Search panel."""
+        self.clear_right_frame()
+        self._panel_title("Period Search", "period")
+
+        obj_name = self.create_input_field(self.right_frame, "Object Name:", "e.g. NSVS 896797", row=1,
+                                           error_message="Please enter an object name.",
+                                           tooltip="Used to name the saved file, e.g. NSVS_896797_period.txt.")
+        self.period_curves = self._light_curve_rows(
+            "period", first_row=2,
+            count_tip="How many filters' light curves to search. They're combined after taking off each "
+                      "filter's median magnitude, and can be switched off in the window.")
+
+        min_period = self.create_input_field(self.right_frame, "Shortest Period (d):", "0.1", row=6,
+                                             validation_func=_is_float, default="0.1",
+                                             error_message="Enter a period in days.",
+                                             tooltip="Shortest trial period, in days. Contact binaries are "
+                                                     "rarely under 0.2 d.")
+        max_period = self.create_input_field(self.right_frame, "Longest Period (d):", "1.0", row=7,
+                                             validation_func=_is_float, default="1.0",
+                                             error_message="Enter a period in days.",
+                                             tooltip="Longest trial period, in days. It can't be longer than "
+                                                     "the observations span. Longer ranges take longer.")
+
+        method_label = tk.Label(self.right_frame, text="Method:", font=self.label_font, bg=BG_PANEL, fg=FG_TEXT)
+        method_label.grid(row=8, column=0, padx=(16, 10), pady=5, sticky="e")
+        self._tooltip(method_label, "ANOVA compares phase-bin averages; Multi-harmonic fits a sum of sines; "
+                                    "Lomb-Scargle fits one sine. Each can be changed in the window.")
+        self.period_method = self._remember_var("method", tk.StringVar(master=self, value=PERIOD_DEFAULT_METHOD))
+        ttk.Combobox(self.right_frame, textvariable=self.period_method, values=PERIOD_METHODS, state="readonly",
+                     width=16, font=self.label_font).grid(row=8, column=1, padx=(0, 10), pady=5, sticky="w")
+
+        output_folder = self.create_input_field(self.right_frame, "Output Folder:", "Same folder as the first file",
+                                                row=9, browse_type="folder", optional=True,
+                                                tooltip="Where Save Period writes <object>_period.txt. Left empty, "
+                                                        "it goes next to the first light curve.")
+
+        self.create_run_button(self.right_frame, self.run_period_search, row=10, text="Open Period Search",
+                               cancellable=False, obj_name=obj_name, output_folder=output_folder,
+                               min_period=min_period, max_period=max_period)
+        self._log_section(11)
+
+    def run_period_search(self, obj_name, output_folder, min_period, max_period):
+        """Check the inputs and open the interactive Period Search window."""
+        name = self._entry_value(obj_name)
+        if not name:
+            self.write_to_log("Error: Object name is required.")
+            return
+        try:
+            lo, hi = float(self._entry_value(min_period)), float(self._entry_value(max_period))
+        except ValueError:
+            self.write_to_log("Error: The shortest and longest periods must be numbers.")
+            return
+        choices = self.period_curves.choices()
+        if choices is None:
+            return
+        labels = [label for label, _ in choices]
+        folder = self._path_value(output_folder) or str(Path(choices[0][1]).parent)
+        try:
+            PeriodWindow(self, [path for _label, path in choices], labels, folder, name, min_period=lo,
+                         max_period=hi, method=self.period_method.get(), log=self.write_to_log,
+                         send=self._send_period)
+        except PeriodError as e:
+            self.write_to_log(f"Error: {e}")
+            return
+        except Exception as e:
+            self.write_to_log(f"Error: Period Search couldn't open: {type(e).__name__}: {e}")
+            self.write_to_log(traceback.format_exc())
+            return
+        self.write_to_log(f"Opened Period Search for {name} in {', '.join(labels)}.")
+
+    # Field name (as registered by create_input_field) for the period in each panel
+    PERIOD_FIELDS = {"oc": "Period (days)", "oconnell": "Period", "color": "Period (days)"}
+
+    def _send_period(self, target, period):
+        """Open another panel with the period from Period Search filled in."""
+        self.open_panel(target)
+        self._set_entry_text(self._panel_fields[self.PERIOD_FIELDS[target]], f"{period:.7f}")
+        self.write_to_log(f"Filled in the period ({period:.7f} d) from Period Search.")
+        self.lift()
+
+    # ------------------------------------------------------------------
     # Find Minimum
     # ------------------------------------------------------------------
     def show_find_minimum(self):
@@ -2074,43 +2243,15 @@ class ProgramLauncher(tk.Tk):
                                            error_message="Please enter an object name.",
                                            tooltip="Used to name the minimum files, e.g. NSVS_896797_B_min.txt.")
 
-        count_label = tk.Label(self.right_frame, text="Number of Filters:", font=self.label_font,
-                               bg=BG_PANEL, fg=FG_TEXT)
-        count_label.grid(row=2, column=0, padx=(16, 10), pady=5, sticky="e")
-        self._tooltip(count_label, "How many filters' light curves to load. In the window you can fit them "
-                                   "together or one at a time.")
-        self.find_min_filter_count = self._remember_var("filter_count",
-                                                        tk.IntVar(master=self, value=len(PHOTOMETRY_FILTERS)))
-        radio_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
-        radio_frame.grid(row=2, column=1, padx=(0, 10), pady=5, sticky="w")
-        for count in range(1, len(PHOTOMETRY_FILTERS) + 1):
-            tk.Radiobutton(radio_frame, text=f"{count} Filter{'s' if count > 1 else ''}",
-                           variable=self.find_min_filter_count, value=count, command=self._update_find_min_rows,
-                           font=self.label_font, bg=BG_PANEL, fg=FG_TEXT).pack(side="left", padx=(0, 12))
-
-        self.find_min_rows = []
-        saved = self.settings.section("find_min")
-        self._find_min_filters_picked = any(f"filter_{i}" in saved for i in range(len(PHOTOMETRY_FILTERS)))
-        for i, default_filter in enumerate(PHOTOMETRY_FILTERS):
-            label_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
-            tk.Label(label_frame, text="Light Curve (", font=self.label_font, bg=BG_PANEL,
-                     fg=FG_TEXT).pack(side="left")
-            picker_var = self._remember_var(f"filter_{i}", tk.StringVar(master=self, value=default_filter))
-            picker = ttk.Combobox(label_frame, values=PHOTOMETRY_FILTERS, state="readonly", width=3,
-                                  font=self.label_font, textvariable=picker_var)
-            picker.pack(side="left")
-            tk.Label(label_frame, text=" Filter):", font=self.label_font, bg=BG_PANEL,
-                     fg=FG_TEXT).pack(side="left")
-            entry = self.create_input_field(self.right_frame, "", _example_path(f"{picker.get()}_magnitudes.txt"),
-                                            row=3 + i, error_message="Please enter a light curve file.",
-                                            browse_type="file", label_widget=label_frame,
-                                            remember_as=f"curve_{i}",
-                                            tooltip="Light curve for this filter: a Night Filters magnitude "
-                                                    "file (HJD, magnitude, error) or a light curve CSV from "
-                                                    "Multi-Aperture Photometry.")
-            picker.bind("<<ComboboxSelected>>", lambda _e, p=picker, ent=entry: self._on_find_min_filter_picked(p, ent))
-            self.find_min_rows.append((picker, entry))
-        self._update_find_min_rows()
+        curves = self._light_curve_rows(
+            "find_min", first_row=2,
+            count_tip="How many filters' light curves to load. In the window you can fit them together or one "
+                      "at a time.")
+        # Names the Night Filters shortcut and the tests use
+        self.find_min_curves = curves
+        self.find_min_filter_count = curves.count
+        self.find_min_rows = curves.rows
+        self._update_find_min_rows = curves.update
 
         output_folder = self.create_input_field(self.right_frame, "Output Folder:", "Same folder as the first file",
                                                 row=6, browse_type="folder", optional=True,
@@ -2122,39 +2263,24 @@ class ProgramLauncher(tk.Tk):
                                cancellable=False, obj_name=obj_name, output_folder=output_folder)
         self._log_section(8)
 
-    def _update_find_min_rows(self):
-        count = self.find_min_filter_count.get()
-        if not self._find_min_filters_picked:
-            for (picker, entry), filt in zip(self.find_min_rows, PHOTOMETRY_DEFAULTS[count]):
-                picker.set(filt)
-                self._set_placeholder(entry, _example_path(f"{filt}_magnitudes.txt"))
-        for i, (_picker, entry) in enumerate(self.find_min_rows):
-            self._set_field_visible(entry, i < count)
-
-    def _on_find_min_filter_picked(self, picker, entry):
-        self._find_min_filters_picked = True
-        self._set_placeholder(entry, _example_path(f"{picker.get()}_magnitudes.txt"))
+    def _light_curve_rows(self, panel, first_row, count_tip):
+        """
+        The "Number of Filters" choice and one "Light Curve (B Filter)" row per
+        filter, shared by Find Minimum and Period Search. Uses rows first_row
+        to first_row + 3.
+        """
+        return _LightCurveRows(self, panel, first_row, count_tip)
 
     def run_find_minimum(self, obj_name, output_folder):
         """Check the inputs and open the interactive Find Minimum window."""
         name = self._entry_value(obj_name)
-        count = self.find_min_filter_count.get()
-        choices = [(picker.get(), self._path_value(entry)) for picker, entry in self.find_min_rows[:count]]
-        labels = [label for label, _ in choices]
         if not name:
             self.write_to_log("Error: Object name is required.")
             return
-        if len(set(labels)) != len(labels):
-            self.write_to_log("Error: Each filter can only be chosen once.")
+        choices = self.find_min_curves.choices()
+        if choices is None:
             return
-        missing = [label for label, path in choices if not path]
-        if missing:
-            self.write_to_log(f"Error: A light curve file is required for {', '.join(missing)}.")
-            return
-        not_found = [path for _label, path in choices if not Path(path).is_file()]
-        if not_found:
-            self.write_to_log(f"Error: {not_found[0]} doesn't exist.")
-            return
+        labels = [label for label, _ in choices]
         folder = self._path_value(output_folder) or str(Path(choices[0][1]).parent)
 
         try:

@@ -7,16 +7,19 @@ The helpers in gui_support that don't need a window are tested everywhere; the
 rest open the real Tk window and are skipped where no display is available.
 """
 
-import os
 import threading
+from pathlib import Path
 import time
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
 tk = pytest.importorskip("tkinter")
 
 from EclipsingBinaries.gui_support import SettingsStore, classify_log_line, open_path  # noqa: E402
+
+from .gui_helpers import open_launcher  # noqa: E402
 
 
 # ----------------------------------------------------------------------
@@ -92,12 +95,7 @@ def make_app(settings_path, monkeypatch):
     windows = []
 
     def factory():
-        try:
-            window = menu.ProgramLauncher()
-        except tk.TclError as exc:
-            if os.environ.get("EB_REQUIRE_GUI"):
-                raise  # CI sets this so a broken display fails instead of skipping
-            pytest.skip(f"No display available: {exc}")
+        window = open_launcher(menu)
         window.withdraw()
         windows.append(window)
         return window
@@ -163,15 +161,16 @@ def test_fields_are_remembered_across_panels_and_restarts(make_app, settings_pat
     first = make_app()
     first.open_panel("gaia")
     key, entry = next(iter(first._panel_fields.items()))
+    typed = str(Path("/data/gaia_out"))  # the app keeps paths in the system's own form
     first._set_entry_text(entry, "/data/gaia_out")
     first.open_panel("oc")
     first.open_panel("gaia")
-    assert first._path_value(first._panel_fields[key]) == "/data/gaia_out"
+    assert first._path_value(first._panel_fields[key]) == typed
     first._save_panel_settings()
 
     second = make_app()
     assert second._current_panel == "gaia"
-    assert second._path_value(second._panel_fields[key]) == "/data/gaia_out"
+    assert second._path_value(second._panel_fields[key]) == typed
 
 
 def test_photometry_filter_choices_are_remembered(make_app):
@@ -435,7 +434,7 @@ def _fill_find_min(app, count, folder=None):
         app._set_entry_text(entry, str(EXAMPLES / f"test_{filt}.txt"))
     if folder:
         app._set_entry_text(app._panel_fields["Output Folder"], str(folder))
-    app._find_min_filters_picked = True
+    app.find_min_curves.picked = True
 
 
 def _finder(app):
@@ -563,4 +562,202 @@ def test_find_minimum_defaults_to_the_light_curve_folder(app):
     from pathlib import Path
 
     assert window.output_folder == Path(str(EXAMPLES / "test_B.txt")).parent
+    window.destroy()
+
+
+def test_window_creation_retries_the_windows_tcl_fault(monkeypatch):
+    """Windows sometimes can't read init.tcl when many windows are opened in a row."""
+    import types
+
+    from . import gui_helpers
+
+    monkeypatch.setattr(gui_helpers.time, "sleep", lambda _s: None)
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise tk.TclError("Can't find a usable init.tcl in the following directories: ...")
+        return "window"
+
+    assert gui_helpers.open_launcher(types.SimpleNamespace(ProgramLauncher=flaky)) == "window"
+    assert len(calls) == 2
+
+    def broken():
+        raise tk.TclError("no display name and no $DISPLAY environment variable")
+
+    monkeypatch.setenv("EB_REQUIRE_GUI", "1")
+    with pytest.raises(tk.TclError):
+        gui_helpers.open_launcher(types.SimpleNamespace(ProgramLauncher=broken))
+
+
+# ----------------------------------------------------------------------
+# Period Search
+# ----------------------------------------------------------------------
+def _open_period(app, tmp_path, count=3, method="ANOVA"):
+    app.open_panel("period")
+    app.period_curves.count.set(count)
+    app.period_curves.update()
+    app.period_curves.picked = True
+    app._set_entry_text(app._panel_fields["Object Name"], "NSVS 896797")
+    for (picker, entry), filt in zip(app.period_curves.rows[:count], "BVR"):
+        picker.set(filt)
+        app._set_entry_text(entry, str(EXAMPLES / f"test_{filt}.txt"))
+    app._set_entry_text(app._panel_fields["Output Folder"], str(tmp_path))
+    app.period_method.set(method)
+    app._run_button.invoke()
+    from EclipsingBinaries.period_window import PeriodWindow
+
+    windows = [w for w in app.winfo_children() if isinstance(w, PeriodWindow)]
+    assert windows, app.log_area.get("1.0", "end")
+    window = windows[-1]
+    _finish_search(window)
+    return window
+
+
+class _PlotEvent:
+    """A stand-in for a Matplotlib mouse or key event on the periodogram at a given period."""
+
+    def __init__(self, window, period=None, key=None):
+        self.key = key
+        self.inaxes = window.ax_power if period is not None else None
+        self.xdata = period
+        self.x = window.ax_power.transData.transform((period, 0))[0] if period is not None else 0
+
+
+def _finish_search(window, timeout=30):
+    end = time.time() + timeout
+    while window._job is not None and time.time() < end:
+        window.update()
+        time.sleep(0.05)
+    window.update()
+
+
+def test_period_search_finds_the_period_and_sends_it(app, tmp_path):
+    window = _open_period(app, tmp_path)
+    assert app._cancel_button is None
+    assert window.period == pytest.approx(0.31741, abs=3e-4)
+    assert "double the peak" in window.status_var.get()
+    assert window.save_button.instate(["!disabled"])
+
+    window.save()
+    saved = tmp_path / "NSVS_896797_period.txt"
+    assert saved.exists()
+    from EclipsingBinaries.period import read_period
+
+    assert read_period(saved) == pytest.approx(window.period, abs=1e-7)
+    assert "epoch" not in saved.read_text()
+
+    window.send_to("oc")
+    assert app._current_panel == "oc"
+    assert float(app._entry_value(app._panel_fields["Period (days)"])) == pytest.approx(window.period, abs=1e-6)
+    assert app._entry_value(app._panel_fields["Epoch (T0)"]) == ""   # only the period is sent
+    window.send_to("oconnell")
+    assert app._entry_value(app._panel_fields["Period"]) == f"{window.period:.7f}"
+    assert app._entry_value(app._panel_fields["HJD"]) == ""
+    window.send_to("color")
+    assert app._entry_value(app._panel_fields["Period (days)"]) == f"{window.period:.7f}"
+    window.destroy()
+
+
+def test_period_window_controls(app, tmp_path):
+    window = _open_period(app, tmp_path, count=1)
+    period = window.period
+    window.set_period(period * 2)
+    assert window.period == pytest.approx(2 * period)
+    window.set_period(period)
+    assert not hasattr(window, "epoch")
+
+    window.period_var.set("0.3175")
+    window._typed_period()
+    assert window.period == pytest.approx(0.3175)
+    window.refine_here()
+    assert window.period == pytest.approx(0.31741, abs=3e-4)
+
+    before = window.period
+    window._on_key(_PlotEvent(window, key="right"))
+    assert window.period > before
+
+    # A click without dragging jumps to the nearest peak's top
+    click = _PlotEvent(window, 0.1587)
+    window._on_press(click)
+    window._on_release(click)
+    assert window.period == pytest.approx(0.15871, abs=2e-4)
+    window.destroy()
+
+
+def test_period_window_reports_problems(app, tmp_path):
+    window = _open_period(app, tmp_path)
+    window.max_var.set("500")
+    window.start_search()
+    _finish_search(window)
+    assert "longer than the observations" in window.status_var.get()
+    window.min_var.set("abc")
+    window.start_search()
+    assert "two numbers" in window.status_var.get()
+    for var in window.band_vars.values():
+        var.set(False)
+    window.min_var.set("0.1")
+    window.max_var.set("1")
+    window.start_search()
+    assert "Tick at least one filter" in window.status_var.get()
+    window.destroy()
+
+
+@pytest.mark.parametrize("method", ["Multi-harmonic", "Lomb-Scargle"])
+def test_period_search_other_methods(app, tmp_path, method):
+    window = _open_period(app, tmp_path, count=1, method=method)
+    assert window.period == pytest.approx(0.31741, abs=5e-4)
+    window.destroy()
+
+
+def test_period_search_validation(app, tmp_path):
+    app.open_panel("period")
+    app._run_button.invoke()
+    assert "Object name is required" in app.log_area.get("1.0", "end")
+    app._set_entry_text(app._panel_fields["Object Name"], "T")
+    app._set_entry_text(app._panel_fields["Shortest Period (d)"], "x")
+    app._run_button.invoke()
+    assert "must be numbers" in app.log_area.get("1.0", "end")
+
+
+def test_dragging_the_period_refolds_live(app, tmp_path):
+    window = _open_period(app, tmp_path, count=1)
+    start = window.period
+    line = window._fold_lines["B"]
+    before = np.array(line.get_xdata())
+
+    window._on_press(_PlotEvent(window, start))
+    window._on_motion(_PlotEvent(window, start + 0.0005))   # a little wobble isn't a drag yet
+    window._on_motion(_PlotEvent(window, 0.40))
+    assert window.period == pytest.approx(0.40, abs=1e-3)
+    assert window.period_var.get() == f"{window.period:.7f}"
+    n = int((window.curve.label == "B").sum())   # the points themselves; copies either side follow them
+    assert not np.allclose(np.array(line.get_xdata())[:n], before[:n])   # the fold followed
+    x, y = window._marker_dot.get_data()
+    assert x[0] == pytest.approx(window.period)
+    assert y[0] == pytest.approx(window.value_at(window.period))   # the marker rides the curve
+    assert window.value_var.get().startswith("F statistic here:")
+    assert window.slider_var.get() == pytest.approx(window.period)
+
+    window._on_release(_PlotEvent(window, 0.40))
+    assert window.period == pytest.approx(0.40, abs=1e-3)   # releasing a drag doesn't snap
+    window.destroy()
+
+
+def test_slider_moves_the_period_and_follows_the_zoom(app, tmp_path):
+    window = _open_period(app, tmp_path, count=1)
+    window._on_slider("0.25")
+    assert window.period == pytest.approx(0.25)
+    assert window._marker_line.get_xdata()[0] == pytest.approx(0.25)
+
+    window.ax_power.set_xlim(0.31, 0.32)
+    assert float(window.slider.cget("from")) == pytest.approx(0.31)
+    assert float(window.slider.cget("to")) == pytest.approx(0.32)
+    window._on_slider("0.5")                  # outside the zoomed range: held to its edge
+    assert window.period == pytest.approx(0.32)
+
+    window._syncing = True                    # the program moving the slider doesn't feed back
+    window._on_slider("0.315")
+    assert window.period == pytest.approx(0.32)
     window.destroy()

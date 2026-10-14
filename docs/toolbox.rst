@@ -20,7 +20,7 @@ The sidebar lists:
 + **Reduce** — IRAF Reduction
 + **Comparison stars** — AIJ Comparison Star Selector
 + **Photometry** — Multi-Aperture Photometry, Night Filters
-+ **Analysis** — Find Minimum, O-C Plotting, O'Connell Effect, Color Light Curve
++ **Analysis** — Period Search, Find Minimum, O-C Plotting, O'Connell Effect, Color Light Curve
 + **Archives** — TESS Search and Download, Gaia Search
 
 To quit, use **File > Exit** (or the application menu on macOS).
@@ -515,6 +515,84 @@ saves the result in the current folder.
 .. note::
     Earlier versions wrote the flux values into ``_magnitudes.txt`` and the magnitudes into
     ``_flux.txt``. Files combined with those versions have the two names swapped.
+
+Period Search
+-------------
+
+Period Search finds the orbital period from a light curve. It folds the light curve on
+many trial periods, scores each fold, and shows the scores (the periodogram) above the
+light curve folded on the chosen period.
+
+The GUI panel accepts the following inputs:
+
++ **Object Name** — used to name the saved file
++ **Number of Filters** and a **Light Curve** for each — the same files as Find Minimum.
+  Each filter's median magnitude is taken off before they're combined.
++ **Shortest Period** and **Longest Period** — the range searched, in days (0.1 and 1.0
+  unless changed). The longest can't be more than the observations span.
++ **Method** — how each fold is scored:
+
+  + **ANOVA** (the default) — splits the fold into 20 phase bins and compares how much
+    better the bin averages describe the magnitudes than a single average (the F
+    statistic of a one-way analysis of variance, the same as ``scipy.stats.f_oneway``)
+  + **Multi-harmonic** — fits a constant plus four sine and cosine harmonics of the phase
+    and reports the F statistic of the fit
+  + **Lomb-Scargle** — fits a single sine, weighted by the magnitude errors
+
++ **Output Folder** — where **Save Period** writes ``<object>_period.txt``. Leave it
+  empty to save next to the first light curve.
+
+**Open Period Search** opens the window and starts the search. The trial periods are spaced
+evenly in frequency, about ten to each peak width, so long baselines get finer steps. A
+Lomb-Scargle peak is roughly one over the time span of the observations wide; ANOVA and
+multi-harmonic peaks are about ten and eight times narrower, because they respond to the
+sharp shape of the eclipses, and get closer spacing to match. Very large searches are
+thinned to keep them to a few seconds, and the window says so.
+
+Folding two similar eclipses on top of each other scores well with every method, so the
+highest peak is often half the orbital period. After each search the light curve is
+folded on twice the best period and the two halves are compared. If they hold different
+eclipses (one deeper than the other), the period is doubled and the window explains why.
+The comparison is made against the night-to-night scatter in the data itself, so it
+doesn't double a period that's already right. When the two eclipses are too alike to tell
+apart, nothing in the light curve can settle it: the fold shows one dip per cycle, and
+**×2** fixes it.
+
+In the window:
+
++ **Drag** along the periodogram, or move the **Period** slider under the plots, and the
+  fold follows the period as it changes. A red dot rides the periodogram at the current
+  period and the side panel shows the statistic there. A period that's slightly off
+  shows the eclipses from different nights drifting apart, and the right period lines
+  them up. The slider spans whatever the periodogram shows, so zoom in with the toolbar
+  for finer control.
++ **Click** a peak without dragging to jump to its top, found automatically.
++ **×2** and **÷2** double or halve the period; the left and right arrow keys nudge it.
+  **Refine Here** finds the top of the nearest peak again. The peak's half width at half
+  height is shown as a rough guide to how well these observations alone pin the period
+  down; times of minimum over a longer baseline (Find Minimum, then O-C Plotting) do much
+  better.
++ The method, the period range and the filters used can be changed and searched again.
++ **Save Period** writes the period and search settings to ``<object>_period.txt``.
+  **Send to O-C Plotting**, **Send to O'Connell Effect** and **Send to Color Light Curve**
+  open that panel with the period filled in.
+
+The fold counts phase from the first observation, so only the period moves it. Where the
+eclipses fall in phase doesn't matter for finding the period; the epoch for O-C comes
+from times of minimum measured with Find Minimum.
+
+From a script:
+
+.. code-block:: python
+
+    from EclipsingBinaries.period import load_light_curves, search
+
+    curve = load_light_curves(["NSVS_B_magnitudes.txt"], ["B"])
+    result = search(curve, 0.1, 1.0, "ANOVA")
+    print(result.best_period, result.half_width)
+
+``python -m EclipsingBinaries.period`` asks for the files in a terminal and opens the same
+window.
 
 Find Minimum
 ------------

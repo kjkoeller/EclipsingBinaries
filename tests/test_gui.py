@@ -590,6 +590,19 @@ def test_window_creation_retries_the_windows_tcl_fault(monkeypatch):
     with pytest.raises(tk.TclError):
         gui_helpers.open_launcher(types.SimpleNamespace(ProgramLauncher=broken))
 
+    # The same fault when Tk can't read one of its message files
+    calls.clear()
+
+    def flaky_tk():
+        calls.append(1)
+        if len(calls) < 3:
+            raise tk.TclError("Can't find a usable tk.tcl in the following directories: ... "
+                              "couldn't read file \".../tk8.6/msgs/en.msg\": no such file or directory")
+        return "window"
+
+    assert gui_helpers.open_launcher(types.SimpleNamespace(ProgramLauncher=flaky_tk)) == "window"
+    assert len(calls) == 3
+
 
 # ----------------------------------------------------------------------
 # Period Search

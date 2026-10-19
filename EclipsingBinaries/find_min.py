@@ -12,7 +12,7 @@ Created:  07/03/2021
 Original Author: Alec Neal
 
 Last Edits Done By: Kyle Koeller
-Last Edited: 10/10/2026
+Last Edited: 10/19/2026
 """
 
 import statistics
@@ -24,7 +24,8 @@ import pandas as pd
 import scipy.interpolate
 from astropy.time import Time
 
-from .vseq_updated import calc, FT
+from .vseq_updated import (calc, FT, pick_column, LIGHT_CURVE_ERR_NAMES, LIGHT_CURVE_MAG_NAMES,
+                            LIGHT_CURVE_TIME_NAMES)
 
 # Starting values for the fit, the same ones the terminal version used
 DEFAULT_ORDER = 5          # polynomial drawn through the eclipse (not used for the minimum itself)
@@ -32,10 +33,11 @@ DEFAULT_RESOLUTION = 200   # trial times tried across the boundaries
 DEFAULT_NPAIRS = 20        # pairs of points compared either side of each trial time
 fontsize = 9
 
-# Column names accepted in light curve files that have a header row
-TIME_NAMES = ("HJD", "BJD", "BJD_TDB", "JD", "TIME")
-MAG_NAMES = ("Source_AMag_T1", "AMag", "MAG", "MAGNITUDE")
-ERR_NAMES = ("Source_AMag_Err_T1", "Source_AMag_T1_Error", "AMag Error", "MAG_ERR", "ERROR", "ERR")
+# Column names accepted in light curve files that have a header row, shared
+# with O'Connell Effect and Color Light Curve
+TIME_NAMES = LIGHT_CURVE_TIME_NAMES
+MAG_NAMES = LIGHT_CURVE_MAG_NAMES
+ERR_NAMES = LIGHT_CURVE_ERR_NAMES
 
 
 class MinimumError(ValueError):
@@ -244,11 +246,7 @@ def sim_min(filter_HJD, filter_flux, filter_fluxerr, order, sims, filter_files=N
 # ---------------------------------------------------------------------------
 
 def _pick(columns, names):
-    upper = {str(c).strip().upper(): c for c in columns}
-    for name in names:
-        if name.upper() in upper:
-            return upper[name.upper()]
-    return None
+    return pick_column(columns, names)
 
 
 def read_light_curve(path):
@@ -278,7 +276,7 @@ def read_light_curve(path):
             t_col, m_col, e_col = (_pick(df.columns, names) for names in (TIME_NAMES, MAG_NAMES, ERR_NAMES))
             if None in (t_col, m_col, e_col):
                 raise MinimumError(f"{path.name} needs time, magnitude and error columns (for example "
-                                   "HJD, Source_AMag_T1 and Source_AMag_Err_T1).")
+                                   "HJD or HJD_UTC, Source_AMag_T1 and Source_AMag_Err_T1).")
             df = df[[t_col, m_col, e_col]]
         else:
             df = pd.read_csv(path, sep=r"[\s,]+", header=None, engine="python")

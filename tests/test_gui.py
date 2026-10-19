@@ -590,6 +590,19 @@ def test_window_creation_retries_the_windows_tcl_fault(monkeypatch):
     with pytest.raises(tk.TclError):
         gui_helpers.open_launcher(types.SimpleNamespace(ProgramLauncher=broken))
 
+    # The same fault when Tk can't read one of its message files
+    calls.clear()
+
+    def flaky_tk():
+        calls.append(1)
+        if len(calls) < 3:
+            raise tk.TclError("Can't find a usable tk.tcl in the following directories: ... "
+                              "couldn't read file \".../tk8.6/msgs/en.msg\": no such file or directory")
+        return "window"
+
+    assert gui_helpers.open_launcher(types.SimpleNamespace(ProgramLauncher=flaky_tk)) == "window"
+    assert len(calls) == 3
+
 
 # ----------------------------------------------------------------------
 # Period Search
@@ -787,7 +800,9 @@ def test_sidebar_names_fit(app):
     room = app._nav_frame.winfo_width() - 34   # the bar, padding and focus ring beside the text
     label = app._nav_items["aij"]["label"]
     if app.nav_font.measure(label.cget("text")) <= room:
-        assert label.winfo_height() < 2 * app.nav_font.metrics("linespace")   # fits, so not wrapped
+        # Fits, so it's one line: as tall as a short name that can't wrap. (Comparing with
+        # the text height alone breaks on macOS, where the padding and border add more.)
+        assert label.winfo_height() == app._nav_items["gaia"]["label"].winfo_height()
     scroller = app._nav_scroller
     if scroller.content.winfo_reqheight() <= scroller.canvas.winfo_height():
         assert not scroller.scrollbar.winfo_ismapped()   # (CI screens can be too short for the list)
@@ -801,7 +816,8 @@ def test_sidebar_wraps_and_scrolls_with_large_text(app):
     _settle(app)
     assert _nav_fits(app)
     label = app._nav_items["aij"]["label"]
-    assert label.winfo_height() >= 2 * app.nav_font.metrics("linespace")  # wrapped onto two lines
+    one_line = app._nav_items["gaia"]["label"].winfo_height()
+    assert label.winfo_height() >= one_line + app.nav_font.metrics("linespace") - 1  # wrapped onto two lines
     assert app._nav_scroller.scrollbar.winfo_ismapped()                  # the list scrolls
 
 

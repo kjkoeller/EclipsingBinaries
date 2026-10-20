@@ -4,7 +4,7 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 10/10/2026
+Last Updated: 10/19/2026
 """
 
 import os
@@ -2609,8 +2609,9 @@ class ProgramLauncher(tk.Tk):
                 label = tk.Label(self.right_frame, text=f"File Path {i + 1}:", font=self.label_font,
                                  bg=BG_PANEL, fg=FG_TEXT)
                 label.grid(row=3 + i, column=0, padx=(16, 10), pady=5, sticky="e")
-                self._tooltip(label, "Light curve file for one filter (B, V or Cousins R), in the format "
-                                     "of examples/test_B.txt.")
+                self._tooltip(label, "Light curve for one filter (B, V or Cousins R): a Night Filters file "
+                                     "(HJD, magnitude, error), a light curve CSV from Multi-Aperture "
+                                     "Photometry, or an AIJ measurement table saved as CSV.")
 
                 entry_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
                 entry_frame.grid(row=3 + i, column=1, padx=(0, 10), pady=5, sticky="ew")
@@ -2766,13 +2767,16 @@ class ProgramLauncher(tk.Tk):
                                         _example_path("b_band.txt"), row=1,
                                         error_message="Please select a valid B-band file.",
                                         browse_type="file",
-                                        tooltip="Johnson B light curve: time, magnitude and error columns.")
+                                        tooltip="Johnson B light curve: a Night Filters file (HJD, magnitude, "
+                                                "error), a light curve CSV from Multi-Aperture Photometry, "
+                                                "or an AIJ measurement table saved as CSV.")
 
         vfile = self.create_input_field(self.right_frame, "V-band File:",
                                         _example_path("v_band.txt"), row=2,
                                         error_message="Please select a valid V-band file.",
                                         browse_type="file",
-                                        tooltip="Johnson V light curve in the same format as the B file.")
+                                        tooltip="Johnson V light curve, in any of the formats the B file "
+                                                "can be.")
 
         period = self.create_input_field(self.right_frame, "Period (days):",
                                          "e.g. 1.234", row=3,

@@ -3,7 +3,7 @@
 Created on Sat Feb 22 16:09:28 2020
 @author: Alec Neal
 
-Last Updated: 03/14/2026
+Last Updated: 10/19/2026
 Last Editor: Kyle Koeller
 
 Collection of functions, coefficients and equations commonly used
@@ -103,6 +103,65 @@ def decimal_limit(a):
     return b
 
 
+# Column names a light curve's time, magnitude and error can go by, in the
+# order they're preferred. They cover AIJ's measurement tables (which call
+# the time HJD_UTC or BJD_TDB), Night Filters and Multi-Aperture Photometry.
+LIGHT_CURVE_TIME_NAMES = ("HJD", "HJD_UTC", "BJD_TDB", "BJD", "BJD_UTC", "JD_UTC", "JD", "TIME")
+LIGHT_CURVE_MAG_NAMES = ("Source_AMag_T1", "AMag", "MAG", "MAGNITUDE")
+LIGHT_CURVE_ERR_NAMES = ("Source_AMag_Err_T1", "Source_AMag_T1_Error", "AMag Error", "MAG_ERR",
+                         "ERROR", "ERR")
+
+
+def pick_column(columns, names):
+    """The first of `names` found among `columns` (ignoring case and spaces at the ends), or None."""
+    found = {str(c).strip().upper(): c for c in columns}
+    for name in names:
+        if name.upper() in found:
+            return found[name.upper()]
+    return None
+
+
+def light_curve_columns(columns, file_name="The file"):
+    """
+    The (time, magnitude, error) columns of a table with a header row.
+    Raises ValueError naming the columns that couldn't be found.
+    """
+    picked = [pick_column(columns, names) for names in
+              (LIGHT_CURVE_TIME_NAMES, LIGHT_CURVE_MAG_NAMES, LIGHT_CURVE_ERR_NAMES)]
+    missing = [what for what, col in zip(("time (e.g. HJD or HJD_UTC)", "magnitude (e.g. Source_AMag_T1)",
+                                          "magnitude error (e.g. Source_AMag_Err_T1)"), picked) if col is None]
+    if missing:
+        raise ValueError(f"{file_name} has a header row but no {', '.join(missing)} column.")
+    return picked
+
+
+def sniff_text_table(inputFile):
+    """
+    Look at the first line of a text table and return (separator, has_header):
+    a comma or tab when the line has one, otherwise any run of spaces, and
+    whether the line holds column names rather than numbers.
+    """
+    with open(inputFile, "r", encoding="utf-8", errors="replace") as handle:
+        first = ""
+        for line in handle:
+            if line.strip():
+                first = line
+                break
+    if "," in first:
+        sep = ","
+    elif "\t" in first:
+        sep = "\t"
+    else:
+        sep = r"\s+"
+    fields = [f.strip() for f in (first.split(",") if sep == "," else first.split())]
+    try:
+        [float(f) for f in fields[:3]]
+        has_header = False
+    except ValueError:
+        has_header = True
+    return sep, has_header
+
+
 class io:
     """
     This class provides file input/output functionalities.
@@ -148,7 +207,28 @@ class io:
             with open(inputFile, "r") as f:
                 raw_lines = f.readlines()
 
-            if delim_whitespace:
+            # Comma-separated files and files with a header row (such as AIJ measurement
+            # tables saved as CSV) were read as one long string per row before. Unless the
+            # caller says how to read the file, tell from its first line, and for a header
+            # row put the time, magnitude and error columns first, picked by name.
+            sep, has_header = (sniff_text_table(inputFile) if delimit is None and header is None
+                               else (None, False))
+            if has_header:
+                table = pd.read_csv(inputFile, sep=sep, engine=engine)
+                picked = light_curve_columns(table.columns, Path(inputFile).name)
+                rest = [c for c in table.columns if c not in picked]
+                table = table[picked + rest]
+                table[picked] = table[picked].apply(pd.to_numeric, errors="coerce")
+                table = table.dropna(subset=picked)
+                if table.empty:
+                    raise ValueError(f"{Path(inputFile).name} has no rows with numbers in its "
+                                     f"{', '.join(map(str, picked))} columns.")
+                df = table.reset_index(drop=True)
+                df.columns = range(len(df.columns))
+                raw_lines = None  # row numbers no longer line up with the file's lines
+            elif sep == ",":
+                df = pd.read_csv(inputFile, sep=",", header=None, engine=engine)
+            elif delim_whitespace:
                 df = pd.read_csv(inputFile, sep=r"\s+", header=header, engine=engine)
             else:
                 df = pd.read_csv(inputFile, sep=delimit, header=header, engine=engine)

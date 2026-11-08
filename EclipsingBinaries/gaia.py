@@ -12,18 +12,18 @@ https://arxiv.org/pdf/2012.01916.pdf
 """
 
 from pyia import GaiaData
-from astroquery.vizier import Vizier
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 import pandas as pd
 import numpy as np
 import os
+from http.client import HTTPException
 from requests import exceptions as request_exceptions
-import socket
 import time
 
 from .vseq_updated import splitter
 from ._log import make_logger
+from ._vizier import VizierUnavailable, query_region as vizier_query_region
 
 # Gaia sources within this distance of the target (after moving them back to
 # J2000 with their own proper motion) count as matches
@@ -35,6 +35,9 @@ TARGET_QUERY_ARCSEC = 30.0
 GAIA_DR3_EPOCH = 2016.0
 INPUT_EPOCH = 2000.0
 MAX_TARGET_ROWS = 4
+# Seconds to wait before each retry when the Gaia archive drops the connection
+GAIA_RETRY_WAITS = (5, 15)
+TIC_CATALOG = "IV/39/tic82"
 
 
 def _rank_by_separation(g, ra_deg, dec_deg):
@@ -67,6 +70,30 @@ def _rank_by_separation(g, ra_deg, dec_deg):
     order = order[separation[order] <= TARGET_MATCH_ARCSEC][:MAX_TARGET_ROWS]
     return order, separation[order]
 
+def _query_gaia_archive(adql, write_callback=None, cancel_event=None):
+    """
+    Run an ADQL query on the ESA Gaia archive, trying again a couple of times if
+    the connection drops. The archive has been dropping connections now and then
+    ("connection reset by peer", "remote end closed connection"), and a second
+    try usually works. Returns None if canceled between tries.
+    """
+    log = make_logger(write_callback)
+    for attempt in range(1, len(GAIA_RETRY_WAITS) + 2):
+        try:
+            return GaiaData.from_query(adql)
+        except (request_exceptions.RequestException, OSError, HTTPException) as error:
+            if attempt > len(GAIA_RETRY_WAITS):
+                raise OSError(f"The Gaia archive at ESA didn't answer after {attempt} tries ({error}). "
+                              "It has had outages lately, so please try again later. Updating "
+                              "astroquery (pip install -U astroquery) can also help.") from error
+            wait = GAIA_RETRY_WAITS[attempt - 1]
+            log(f"The Gaia archive didn't answer ({error}); trying again in {wait} seconds.")
+            for _ in range(wait):
+                if cancel_event is not None and cancel_event.is_set():
+                    return None
+                time.sleep(1)
+
+
 def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_event=None):
     """
     This queries Gaia DR3 all the parameters below, but I only outputted the specific parameters that are (at the moment)
@@ -91,7 +118,7 @@ def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_ev
         # A plain cone around the entered position. This used to call
         # EPOCH_PROP_POS with one particular star's parallax and proper motion
         # written into the query, which shifted every target by that star's motion.
-        g = GaiaData.from_query("""
+        g = _query_gaia_archive("""
         SELECT TOP 2000
         gaia_source.source_id,gaia_source.ra,gaia_source.dec,gaia_source.parallax,gaia_source.parallax_error,
         gaia_source.pmra,gaia_source.pmdec,gaia_source.ruwe,gaia_source.phot_g_mean_mag,gaia_source.bp_rp,
@@ -108,7 +135,11 @@ def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_ev
         CONTAINS(
             POINT('ICRS', gaiadr3.gaia_source.ra, gaiadr3.gaia_source.dec),
             CIRCLE('ICRS', {}, {}, {})
-        )=1""".format(ra, dec, TARGET_QUERY_ARCSEC / 3600))
+        )=1""".format(ra, dec, TARGET_QUERY_ARCSEC / 3600), write_callback, cancel_event)
+
+        if g is None:  # canceled while waiting to retry
+            log("Task canceled.")
+            return
 
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
@@ -153,20 +184,6 @@ def target_star(ra_input, dec_input, output_path, write_callback=None, cancel_ev
         raise
 
 
-# --- _is_timeout_exception ---
-# Identifies network timeout errors that should trigger retries or fallback.
-def _is_timeout_exception(error: Exception) -> bool:
-    timeout_types = (
-        TimeoutError,
-        socket.timeout,
-        request_exceptions.Timeout,
-        request_exceptions.ReadTimeout,
-    )
-    if isinstance(error, timeout_types):
-        return True
-    return "timed out" in str(error).lower()
-
-
 # --- _empty_tic_dataframe ---
 # Creates a standardized empty TIC dataframe with expected columns.
 def _empty_tic_dataframe() -> pd.DataFrame:
@@ -187,7 +204,7 @@ def _compute_tmag_limit(apass_vmag) -> float | None:
 
 
 # --- _query_single_tic_region ---
-# Queries TIC v8.2 for one sky region with retries and mirror fallback.
+# Queries TIC v8.2 for one sky region, trying the VizieR mirrors in turn.
 def _query_single_tic_region(
     center_coord: SkyCoord,
     radius: u.Quantity,
@@ -195,62 +212,23 @@ def _query_single_tic_region(
     write_callback=None,
     cancel_event=None
 ) -> pd.DataFrame:
-    log = make_logger(write_callback)
-
     required_columns = ["_RAJ2000", "_DEJ2000", "Tmag", "e_Tmag"]
-    vizier_servers = (
-        "vizier.cds.unistra.fr",
-        "vizier.cfa.harvard.edu",
-    )
-    timeout_seconds = 60
-    retries_per_server = 2
+    column_filters = {}
+    if tmag_limit is not None:
+        column_filters["Tmag"] = f"<{tmag_limit:.3f}"
 
-    last_timeout_error = None
+    table = vizier_query_region(TIC_CATALOG, center_coord, columns=required_columns,
+                                column_filters=column_filters, radius=radius,
+                                write_callback=write_callback, cancel_event=cancel_event)
+    if table is None:
+        return _empty_tic_dataframe()
 
-    for server_name in vizier_servers:
-        for attempt in range(1, retries_per_server + 1):
-            if cancel_event and cancel_event.is_set():
-                log("Task canceled.")
-                return _empty_tic_dataframe()
-
-            try:
-                column_filters = {}
-                if tmag_limit is not None:
-                    column_filters["Tmag"] = f"<{tmag_limit:.3f}"
-
-                vizier = Vizier(columns=required_columns, row_limit=-1, column_filters=column_filters)
-                vizier.TIMEOUT = timeout_seconds
-                vizier.VIZIER_SERVER = server_name
-                result = vizier.query_region(center_coord, radius=radius, catalog="IV/39/tic82")
-
-                if len(result) == 0:
-                    return _empty_tic_dataframe()
-
-                tic_df = result[0].to_pandas()
-                for column_name in required_columns:
-                    if column_name not in tic_df.columns:
-                        tic_df[column_name] = np.nan
-                    tic_df[column_name] = pd.to_numeric(tic_df[column_name], errors="coerce")
-
-                return tic_df[required_columns]
-
-            except Exception as error:
-                if _is_timeout_exception(error):
-                    last_timeout_error = error
-                    log(
-                        f"TIC query timeout via {server_name} "
-                        f"(attempt {attempt}/{retries_per_server})."
-                    )
-                    if attempt < retries_per_server:
-                        time.sleep(1.0)
-                        continue
-                    break
-                raise
-
-    if last_timeout_error is not None:
-        raise request_exceptions.ReadTimeout(last_timeout_error)
-
-    return _empty_tic_dataframe()
+    tic_df = table.to_pandas()
+    for column_name in required_columns:
+        if column_name not in tic_df.columns:
+            tic_df[column_name] = np.nan
+        tic_df[column_name] = pd.to_numeric(tic_df[column_name], errors="coerce")
+    return tic_df[required_columns]
 
 
 # --- _query_tic_catalog ---
@@ -286,8 +264,10 @@ def _query_tic_catalog(
             write_callback=write_callback,
             cancel_event=cancel_event,
         )
-    except Exception as error:
-        if not _is_timeout_exception(error):
+    except VizierUnavailable as error:
+        # A large field can take too long on every server; smaller cones may still work.
+        # Any other failure means VizieR itself is down, and smaller queries won't help.
+        if not error.timed_out or ra_hours.size < 2:
             raise
 
         log("Bulk TIC query timed out. Falling back to per-star TIC queries.")
@@ -308,12 +288,10 @@ def _query_tic_catalog(
                 )
                 if not star_df.empty:
                     tic_frames.append(star_df)
-            except Exception as star_error:
-                if _is_timeout_exception(star_error):
-                    log(
-                        f"Skipping TIC lookup for source {count + 1}/{ra_hours.size} due to timeout."
-                    )
-                    continue
+            except VizierUnavailable:
+                # A 5 arcsecond cone failing on every server means VizieR is down, not
+                # that the field is too big, so trying the rest one by one would only wait longer
+                log(f"TIC lookup failed for source {count + 1}/{ra_hours.size}, so the rest are skipped.")
                 raise
 
         if not tic_frames:
@@ -402,15 +380,20 @@ def tess_mag(ra, dec, write_callback, cancel_event, apass_vmag=None):
         if tmag_limit is not None:
             log(f"Applying TIC Tmag filter: Tmag < {tmag_limit:.3f}")
 
-        tic_df = _query_tic_catalog(
-            ra_hours,
-            dec_degrees,
-            tmag_limit=tmag_limit,
-            write_callback=write_callback,
-            cancel_event=cancel_event,
-        )
+        try:
+            tic_df = _query_tic_catalog(
+                ra_hours,
+                dec_degrees,
+                tmag_limit=tmag_limit,
+                write_callback=write_callback,
+                cancel_event=cancel_event,
+            )
+        except VizierUnavailable as error:
+            # The APASS magnitudes are already in hand, so keep them and mark Tmag as missing
+            log(f"{error} TESS magnitudes are written as 99.999 for this run.")
+            tic_df = _empty_tic_dataframe()
 
-        log("Finished querying the IV/39/tic82 Vizier Catalog.")
+        log(f"Finished querying the {TIC_CATALOG} Vizier Catalog.")
         log("Processing data from the Vizier catalog.")
 
         if cancel_event and cancel_event.is_set():

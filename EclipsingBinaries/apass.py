@@ -6,7 +6,6 @@ Created: 12/26/2022
 Last Updated: 04/28/2026
 """
 
-from astroquery.vizier import Vizier
 import numpy as np
 import pandas as pd
 import os
@@ -25,6 +24,12 @@ from PyAstronomy import pyasl
 from .gaia import tess_mag as ga
 from .vseq_updated import isNaN, conversion
 from ._log import make_logger
+from ._vizier import query_region as vizier_query_region
+
+# Comparison stars in the RADEC files come from within this distance of the target
+COMPARISON_RADIUS_ARCMIN = 15.0
+# An APASS star this close to the entered position is taken to be the target itself
+TARGET_MATCH_ARCSEC = 5.0
 
 # turn off this warning that just tells the user,
 # "The warning raised when the contents of the FITS header have been modified to be standards compliant."
@@ -232,18 +237,22 @@ def query_vizier(ra_input, dec_input, write_callback, cancel_event):
 
         log("Starting the query for the Vizier catalog.")
 
-        # Query Vizier here and return result
-        result = Vizier(
+        # APASS DR9 in a 30 arcminute box, trying the VizieR mirrors if CDS is down
+        catalog = "II/336/apass9"
+        tb = vizier_query_region(
+            catalog,
+            coord.SkyCoord(ra=ra_input, dec=dec_input, unit=(u.h, u.deg), frame="icrs"),
             columns=['_RAJ2000', '_DEJ2000', 'Vmag', "e_Vmag", 'Bmag', "e_Bmag", "g'mag", "e_g'mag", "r'mag",
                      "e_r'mag", "i'mag", "e_i'mag"],
-            row_limit=-1,
-            column_filters=({"Vmag": "<14", "Bmag": "<14"})).query_region(
-            coord.SkyCoord(ra=ra_input, dec=dec_input, unit=(u.h, u.deg), frame="icrs"),
-            width="30m", catalog="APASS")
+            column_filters={"Vmag": "<14", "Bmag": "<14"},
+            width="30m", write_callback=write_callback, cancel_event=cancel_event)
 
-        # catalog is II/336/apass9
-        catalog = "II/336/apass9"
-        tb = result[catalog]
+        if cancel_event is not None and cancel_event.is_set():
+            log("Task canceled.")
+            return
+        if tb is None:
+            raise ValueError("APASS has no stars brighter than magnitude 14 in B and V within the "
+                             "30 arcminute box around these coordinates.")
         log(f"Finished querying the {catalog} Vizier Catalog.")
 
         return tb
@@ -279,7 +288,7 @@ def process_data(vizier_result):
 
     one = 0
     # pastes all variables into a list for future use
-    for _ in range(0, len(table_list) - 1):
+    for _ in range(len(table_list)):
         two = 0
         ra.append(table_list[one][two])
         dec.append(table_list[one][two + 1])
@@ -390,6 +399,8 @@ def catalog_finder(ra, dec, pipeline, folder_path, obj_name, write_callback, can
         dec_input = [_to_decimal_coord(dec)]
 
         result = query_vizier(ra_input[0], dec_input[0], write_callback, cancel_event)
+        if result is None:  # canceled
+            return
         log("Processing data from the Vizier catalog.")
         df = process_data(result)
 
@@ -548,9 +559,9 @@ def create_lines(ra_list, dec_list, mag_list, ra, dec, filt):
         next_ra = float(ra_decimal[count])
         next_dec = float(dec_decimal[count])
 
-        # Check where the RA and DEC given by the user at the beginning is in the file to make sure there is no
-        # duplication
-        angle = angle_dist(float(ra), float(dec), next_ra, next_dec)
+        # RA is in hours here, so it's turned into degrees for the distance. Stars more than
+        # 15 arcminutes out are skipped, and so is the target, since the header already has it.
+        angle = angle_dist(_to_decimal_coord(ra) * 15, _to_decimal_coord(dec), next_ra * 15, next_dec)
         if angle:
             mag_text = _format_radec_magnitude(mag_list[count])
             ra_text = _format_sexagesimal_coord(val, is_ra=True)
@@ -797,23 +808,22 @@ def calculations(B, V, g, r, i, e_B, e_V, e_g, e_r, e_i, count):
 
 def angle_dist(x1, y1, x2, y2):
     """
-    Determines whether the two sets of coordinates are the same position or not.
-    This is primarily to not output the target star twice in the same RADEC file.
+    Decides whether a star belongs in the RADEC file as a comparison star.
 
-    :param x1: ra coordinate in degrees
-    :param y1: dec coordinate in degrees
-    :param x2: ra coordinate in degrees
-    :param y2: dec coordinate in degrees
+    It has to be within COMPARISON_RADIUS_ARCMIN of the target, but not within
+    TARGET_MATCH_ARCSEC, because that star is the target itself and the RADEC
+    header already lists it. Without that, AIJ would get the target twice.
 
-    :return: True or False for the equality
+    :param x1: target ra coordinate in degrees
+    :param y1: target dec coordinate in degrees
+    :param x2: star ra coordinate in degrees
+    :param y2: star dec coordinate in degrees
+
+    :return: True if the star should be used as a comparison star
     """
     # noinspection PyUnresolvedReferences
-    radial = pyasl.getAngDist(x1, y1, x2, y2)
-    # print(f"Comparing ({x1}, {y1}) to ({x2}, {y2}), Radial distance: {radial}")
-    if 0.15 > radial >= 0.00:  # Exclude exact target and include values within 15 arcminutes (0.25 degrees)
-        return True
-    else:
-        return False
+    radial = pyasl.getAngDist(x1, y1, x2, y2)  # degrees
+    return TARGET_MATCH_ARCSEC / 3600 < radial <= COMPARISON_RADIUS_ARCMIN / 60
 
 # comparison_selector()
 # overlay("test_cat.txt", "00:28:27.9684836736", "78:57:42.657327180")

@@ -27,6 +27,26 @@ To quit, use **File > Exit** (or the application menu on macOS).
 
 When a program finishes, buttons for its output appear next to **Run**:
 
+=================================  =====================================================
+Program                            Buttons
+=================================  =====================================================
+IRAF Reduction                     Open Output Folder (the calibrated images)
+TESS Search and Download           Open Output Folder (the downloaded sectors)
+AIJ Comparison Star Selector       Open Output Folder, View Overlay (when one was saved)
+Multi-Aperture Photometry          Open Output Folder, View Light Curves
+Night Filters                      Open Output Folder, Open Magnitude File, Find Minimum
+Find Minimum                       Open Output Folder (where the minimum files are saved)
+Period Search                      (the window's own Save Period and Send to buttons)
+O-C Plotting                       Open Output Folder, View O-C Plot
+Gaia Search                        Open Output Folder, Open Results (``gaia_results.csv``)
+O'Connell Effect                   Open Output Folder, View Plot
+Color Light Curve                  Open Output Folder, View Plot
+=================================  =====================================================
+
+**Find Minimum** after Night Filters opens the Find Minimum panel with the combined
+magnitude file already filled in. **View Light Curves** opens the light curve of every filter that was measured in one
+window, stacked with a shared time axis, with the usual Matplotlib zoom, pan and save
+tools.
 
 IRAF Reduction
 --------------
@@ -314,6 +334,14 @@ using a 30 arcmin search box centered on the target:
 
 Only stars with Johnson B and V magnitudes below 14 are returned.
 
+.. note::
+    VizieR is run by CDS in Strasbourg, which has had outages lately. If CDS doesn't
+    answer, or answers with an error instead of data, the query moves on to the official
+    VizieR mirrors (South Africa, Japan, India, China and Russia) and the log says which
+    one answered. Results are always fetched fresh rather than from astroquery's cache, so
+    an error saved during an outage can't come back on a later run. If every server is
+    down, the log says so and you can try again later.
+
 Cousins R
 ^^^^^^^^^
 
@@ -343,13 +371,18 @@ TESS magnitudes for each comparison star. References:
    :pyobject: tess_mag
 
 If the TESS magnitude for a comparison star cannot be determined, its value and error
-are set to ``99.999`` so it will not be selected as a comparison star.
+are set to ``99.999`` so it will not be selected as a comparison star. The same happens
+for every star if VizieR can't be reached for the TIC at all; the APASS magnitudes are
+still saved and the log explains why the TESS ones are missing.
 
 Creating RADEC Files
 ^^^^^^^^^^^^^^^^^^^^
 
 Four RADEC files are created — one each for Johnson B, Johnson V, Cousins R, and TESS —
-using Astro ImageJ (AIJ) formatting:
+using Astro ImageJ (AIJ) formatting. The target is the first line of each file. The
+comparison stars after it are the APASS stars within 15 arcminutes of the target; any
+APASS star within 5 arcseconds of the entered position is the target itself, so it's
+left out rather than listed a second time as a comparison star:
 
 .. literalinclude:: ../EclipsingBinaries/apass.py
    :pyobject: create_radec
@@ -619,7 +652,8 @@ below and the Kwee-van Woerden S statistic above:
   where the method can't tell one time from another.
 + **Previous Night** and **Next Night** (or the **n** and **p** keys, or the dropdown)
   move between nights. Each night remembers its own boundaries, and starts with a guess
-  around its faintest point.
+  around its faintest complete eclipse, wide enough for sparse data (at least six times
+  the usual gap between points either side).
 + The **Filters** checkboxes choose which filters are fitted together. Each combination
   saves to its own file, so for per-filter O-C files tick one filter at a time.
 + **Polynomial order**, **Pairs** and **Trial times** set the drawn polynomial, the number
@@ -637,6 +671,17 @@ window again loads the minima already saved, so you can carry on another day.
 
 A minimum with no error estimate (too few points paired around it) can't be saved, since
 O-C Plotting needs the error.
+
+A new night starts wherever there's a gap of more than about five hours in the
+observations. Continuous data with no gaps, such as a TESS light curve, is cut into pieces
+1.25 days long that overlap by a quarter of a day, so an eclipse cut off at the end of one
+piece is whole at the start of the next. Measuring the same eclipse in both just replaces
+the first measurement.
+
+Rows that repeat earlier ones exactly (a light curve pasted into a file twice, say) are
+left out, and the log says how many. Two points at the same time would otherwise make the
+Kwee-van Woerden fit fail without saying so, giving a minimum with no error that can't be
+saved.
 
 .. note::
     Near either boundary there's almost nothing to reflect, so S drops towards zero there
@@ -781,6 +826,11 @@ so the first row is the best match for your target.
 
 If nothing lies within 5 arcseconds, the file has only the header row and the log says so.
 
+The query goes to the ESA Gaia archive, which sometimes drops connections. A dropped
+connection is tried again after 5 and then 15 seconds before the search gives up. If it
+keeps failing, try again later, and make sure astroquery is up to date
+(``pip install -U astroquery``).
+
 .. literalinclude:: ../EclipsingBinaries/gaia.py
    :pyobject: target_star
 
@@ -788,6 +838,30 @@ If nothing lies within 5 arcseconds, the file has only the header row and the lo
     Parameters with a value of ``1e+20`` indicate that Gaia does not have data for
     that parameter for the given star. Full parameter descriptions are available at the
     `Gaia archive documentation <https://gea.esac.esa.int/archive/documentation/GDR3/Gaia_archive/chap_datamodel/sec_dm_main_source_catalogue/ssec_dm_gaia_source.html>`_.
+
+Light Curve Files
+-----------------
+
+Period Search, Find Minimum, O'Connell Effect and Color Light Curve all read light curves
+in these forms:
+
++ **No header row** — time, magnitude and error as the first three columns, separated by
+  tabs, spaces or commas. This is what Night Filters writes (see
+  `examples/test_B.txt <https://github.com/kjkoeller/EclipsingBinaries/blob/main/EclipsingBinaries/examples/test_B.txt>`_).
++ **A header row** — the columns are found by name, in any order, and any other columns
+  are ignored. This covers the light curve CSV files from Multi-Aperture Photometry and
+  AIJ measurement tables saved as CSV or tab-separated text.
+
+  + Time: ``HJD``, ``HJD_UTC``, ``BJD_TDB``, ``BJD``, ``BJD_UTC``, ``JD_UTC``, ``JD`` or
+    ``TIME``, preferred in that order
+  + Magnitude: ``Source_AMag_T1``, ``AMag``, ``MAG`` or ``MAGNITUDE``
+  + Error: ``Source_AMag_Err_T1``, ``Source_AMag_T1_Error``, ``AMag Error``, ``MAG_ERR``,
+    ``ERROR`` or ``ERR``
+
+Rows with a missing or non-numeric value in those columns are skipped. A file with a header
+row but no recognisable time, magnitude or error column is refused with a message naming
+what's missing. The time has to be a full Julian date, so AIJ's ``J.D.-2400000`` column
+isn't used.
 
 O'Connell Effect
 ----------------
@@ -799,7 +873,8 @@ O'Connell Effect
 The GUI panel accepts the following inputs:
 
 + **Number of Filters** — radio buttons to select 1, 2, or 3 filters
-+ **File Path(s)** — one file per selected filter (Johnson B, V, Cousins R)
++ **File Path(s)** — one file per selected filter (Johnson B, V, Cousins R), in any of the
+  formats in `Light Curve Files`_
 + **HJD** — reference epoch (first primary ToM)
 + **Period** — orbital period in days
 + **System Name** — used for output file naming
@@ -858,6 +933,8 @@ The GUI panel accepts the following inputs:
 + **Output Image Name** — filename for the saved plot (must end in ``.png``). Leave it empty
   for ``color_curve.png``. A bare file name is saved in the folder you launched
   ``EclipsingBinaries`` from, so give a full path to save it elsewhere.
+
+The B and V files can be in any of the formats in `Light Curve Files`_.
 
 Subtract Light Curve
 ^^^^^^^^^^^^^^^^^^^^

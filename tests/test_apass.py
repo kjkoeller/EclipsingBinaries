@@ -68,52 +68,53 @@ class TestProcessData(unittest.TestCase):
             "RA": [
                 '9:59:13.561', '9:59:42.206', '10:0:14.316', '9:59:54.041', '9:59:33.098',
                 '9:59:24.698', '9:59:10.680', '9:59:27.347', '9:59:6.983', '10:0:51.732',
-                '10:0:27.121', '10:0:14.390', '10:0:44.693', '9:59:27.454'
+                '10:0:27.121', '10:0:14.390', '10:0:44.693', '9:59:27.454', '9:59:28.000'
             ],
             "Dec": [
                 '9:46:38.190', '9:51:15.494', '9:55:50.167', '9:58:13.166', '9:57:14.908',
                 '10:2:51.374', '10:4:23.624', '10:5:58.747', '10:7:59.790', '9:56:13.283',
-                '9:56:20.584', '10:1:27.642', '10:13:20.626', '10:8:38.432'
+                '9:56:20.584', '10:1:27.642', '10:13:20.626', '10:8:38.432', '10:10:10.909'
             ],
-            # Bmag: sourced from Vmag column (index 4) of vizier_result, rows 0–13
+            # Bmag: sourced from Vmag column (index 4) of vizier_result, rows 0–14
             "Bmag": [
                 12.795, 13.62, 12.774, 13.478, 11.853, 12.578, 11.922, 12.646, 12.842, 12.274,
-                13.9, 11.635, 13.495, 13.095
+                13.9, 11.635, 13.495, 13.095, 12.281
             ],
-            # e_Bmag: sourced from e_Vmag column (index 5), rows 0–13
+            # e_Bmag: sourced from e_Vmag column (index 5), rows 0–14
             "e_Bmag": [
                 0.074, 0.064, 0.075, 0.07, 0.068, 0.06, 0.071, 0.072, 0.077, 0.082,
-                0.074, 0.075, 0.077, 0.065
+                0.074, 0.075, 0.077, 0.065, 0.068
             ],
-            # Vmag: sourced from Bmag column (index 2), rows 0–13
+            # Vmag: sourced from Bmag column (index 2), rows 0–14
             "Vmag": [
                 11.978, 12.97, 12.093, 12.635, 11.22, 11.412, 10.718, 11.512, 12.141, 11.674,
-                13.03, 10.889, 12.757, 12.13
+                13.03, 10.889, 12.757, 12.13, 11.651
             ],
-            # e_Vmag: sourced from e_Bmag column (index 3), rows 0–13
+            # e_Vmag: sourced from e_Bmag column (index 3), rows 0–14
             "e_Vmag": [
                 0.059, 0.057, 0.068, 0.053, 0.063, 0.06, 0.04, 0.051, 0.037, 0.06,
-                0.056, 0.064, 0.057, 0.047
+                0.056, 0.064, 0.057, 0.047, 0.046
             ],
-            # g'mag: sourced from g_mag column (index 6), rows 0–13
+            # g'mag: sourced from g_mag column (index 6), rows 0–14
             "g'mag": [
                 12.297, 13.216, 12.353, 12.979, 11.457, 11.941, 11.246, 12.018, 12.4, 11.879,
-                13.396, 11.196, 13.045, 12.543
+                13.396, 11.196, 13.045, 12.543, 11.875
             ],
-            # e_g'mag: sourced from e_g_mag column (index 7), rows 0–13
+            # e_g'mag: sourced from e_g_mag column (index 7), rows 0–14
             "e_g'mag": [
                 0.051, 0.044, 0.063, 0.035, 0.038, 0.046, 0.036, 0.049, 0.035, 0.04,
-                0.043, 0.05, 0.041, 0.039
+                0.043, 0.05, 0.041, 0.039, 0.033
             ],
-            # r'mag: sourced from r_mag column (index 8), rows 0–13
+            # r'mag: sourced from r_mag column (index 8), rows 0–14
             "r'mag": [
                 11.745, 12.786, 11.901, 12.386, 11.052, 11.026, 10.366, 11.143, 11.975, 11.507,
-                12.737, 10.685, 12.55, 11.83
+                12.737, 10.685, 12.55, 11.83, 11.482
             ],
-            # e_r'mag: sourced from e_r_mag column (index 9), rows 0–13
-            "e_r'mag": [0.025, 0.026, 0.018, 0.028, 0.036, 0.025, 0.019, 0.016, 0.022, 0.014, 0.032, 0.046, 0.026, 0.022],
-            "i'mag": [11.5]*14,
-            "e_i'mag": [0.02]*14
+            # e_r'mag: sourced from e_r_mag column (index 9), rows 0–14
+            "e_r'mag": [0.025, 0.026, 0.018, 0.028, 0.036, 0.025, 0.019, 0.016, 0.022, 0.014, 0.032, 0.046, 0.026, 0.022,
+                        0.025],
+            "i'mag": [11.5]*15,
+            "e_i'mag": [0.02]*15
         })
     
         actual_df = apass.process_data(expected)
@@ -153,44 +154,44 @@ class TestProcessData(unittest.TestCase):
         expected_df = pd.DataFrame({
             "RA": [
                 '15:10:40.979', '15:11:0.362', '15:11:12.362', '15:11:18.112', '15:9:48.503',
-                '15:10:49.390', '15:9:35.635', '15:9:23.525', '15:9:34.145', '15:11:13.488'
+                '15:10:49.390', '15:9:35.635', '15:9:23.525', '15:9:34.145', '15:11:13.488', '15:10:50.394'
             ],
             "Dec": [
                 '14:56:29.047', '15:2:7.850', '15:1:41.106', '15:4:51.136', '15:5:6.378',
-                '15:6:4.385', '15:6:37.454', '15:16:30.835', '15:18:44.712', '15:22:19.816'
+                '15:6:4.385', '15:6:37.454', '15:16:30.835', '15:18:44.712', '15:22:19.816', '15:22:30.122'
             ],
-            # Bmag: sourced from Vmag column (index 4) of vizier_result, rows 0–9
+            # Bmag: sourced from Vmag column (index 4) of vizier_result, rows 0–10
             "Bmag": [
-                12.86, 11.98, 13.47, 13.29, 10.76, 13.94, 11.44, 12.68, 12.7, 12.6
+                12.86, 11.98, 13.47, 13.29, 10.76, 13.94, 11.44, 12.68, 12.7, 12.6, 11.83
             ],
-            # e_Bmag: sourced from e_Vmag column (index 5), rows 0–9
+            # e_Bmag: sourced from e_Vmag column (index 5), rows 0–10
             "e_Bmag": [
-                0.04, 0.03, 0.02, 0.05, 0.03, 0.05, 0.04, 0.04, 0.04, 0.04
+                0.04, 0.03, 0.02, 0.05, 0.03, 0.05, 0.04, 0.04, 0.04, 0.04, 0.03
             ],
-            # Vmag: sourced from Bmag column (index 2), rows 0–9
+            # Vmag: sourced from Bmag column (index 2), rows 0–10
             "Vmag": [
-                11.97, 11.33, 12.88, 12.72, 10.15, 13.31, 10.92, 12.14, 12.14, 12.05
+                11.97, 11.33, 12.88, 12.72, 10.15, 13.31, 10.92, 12.14, 12.14, 12.05, 10.88
             ],
-            # e_Vmag: sourced from e_Bmag column (index 3), rows 0–9
+            # e_Vmag: sourced from e_Bmag column (index 3), rows 0–10
             "e_Vmag": [
-                0.02, 0.03, 0.03, 0.02, 0.03, 0.03, 0.03, 0.01, 0.02, 0.02
+                0.02, 0.03, 0.03, 0.02, 0.03, 0.03, 0.03, 0.01, 0.02, 0.02, 0.02
             ],
-            # g'mag: sourced from g_mag column (index 6), rows 0–9
+            # g'mag: sourced from g_mag column (index 6), rows 0–10
             "g'mag": [
-                12.4, 11.61, 13.15, 12.96, 10.54, 13.57, 11.12, 12.34, 12.35, 12.28
+                12.4, 11.61, 13.15, 12.96, 10.54, 13.57, 11.12, 12.34, 12.35, 12.28, 11.31
             ],
-            # e_g'mag: sourced from e_g_mag column (index 7), rows 0–9
+            # e_g'mag: sourced from e_g_mag column (index 7), rows 0–10
             "e_g'mag": [
-                0.04, 0.05, 0.03, 0.05, 0.18, 0.04, 0.04, 0.04, 0.04, 0.05
+                0.04, 0.05, 0.03, 0.05, 0.18, 0.04, 0.04, 0.04, 0.04, 0.05, 0.04
             ],
-            # r'mag: sourced from r_mag column (index 8), rows 0–9
+            # r'mag: sourced from r_mag column (index 8), rows 0–10
             "r'mag": [
-                11.68, 11.16, 12.74, 12.59, 10.07, 13.14, 10.78, 12.0, 11.99, 11.93
+                11.68, 11.16, 12.74, 12.59, 10.07, 13.14, 10.78, 12.0, 11.99, 11.93, 10.61
             ],
-            # e_r'mag: sourced from e_r_mag column (index 9), rows 0–9
-            "e_r'mag": [0.03, 0.03, 0.03, 0.04, 0.08, 0.05, 0.03, 0.02, 0.02, 0.05],
-            "i'mag": [11.5]*10,
-            "e_i'mag": [0.02]*10
+            # e_r'mag: sourced from e_r_mag column (index 9), rows 0–10
+            "e_r'mag": [0.03, 0.03, 0.03, 0.04, 0.08, 0.05, 0.03, 0.02, 0.02, 0.05, 0.06],
+            "i'mag": [11.5]*11,
+            "e_i'mag": [0.02]*11
         })
     
         actual_df = apass.process_data(expected)
@@ -209,22 +210,24 @@ class TestProcessData(unittest.TestCase):
     
 
 class TestAngleDist(unittest.TestCase):
-    def test_angle_dist_same_position(self):
-        # Test when the coordinates are the same position
-        x1, y1 = 10.0, 20.0
-        x2, y2 = 10.0, 20.0
+    def test_target_itself_is_not_a_comparison_star(self):
+        self.assertFalse(apass.angle_dist(10.0, 20.0, 10.0, 20.0))
 
-        comp = apass.angle_dist(x1, y1, x2, y2)
-        self.assertEqual(comp, True)
+    def test_star_a_few_arcseconds_off_is_still_the_target(self):
+        # APASS and the entered position rarely agree exactly
+        self.assertFalse(apass.angle_dist(10.0, 20.0, 10.0, 20.0 + 3 / 3600))
 
-    def test_angle_dist_different_positions(self):
-        # Test when the coordinates are different positions
-        x1, y1 = 10.0, 20.0
-        x2, y2 = 10.0, 30.0
+    def test_star_just_past_the_target_match_is_kept(self):
+        self.assertTrue(apass.angle_dist(10.0, 20.0, 10.0, 20.0 + 6 / 3600))
 
-        comp = apass.angle_dist(x1, y1, x2, y2)
+    def test_star_inside_15_arcminutes_is_kept(self):
+        self.assertTrue(apass.angle_dist(10.0, 20.0, 10.0, 20.0 + 14.9 / 60))
 
-        self.assertEqual(comp, False)
+    def test_star_past_15_arcminutes_is_left_out(self):
+        self.assertFalse(apass.angle_dist(10.0, 20.0, 10.0, 20.0 + 15.1 / 60))
+
+    def test_far_away_star_is_left_out(self):
+        self.assertFalse(apass.angle_dist(10.0, 20.0, 10.0, 30.0))
 
 
 class TestCreateLines(unittest.TestCase):
@@ -241,17 +244,25 @@ class TestCreateLines(unittest.TestCase):
 
         self.assertEqual(expected, result)
 
-    def test_create_lines_with_angle_dist(self):
-        ra_list = ['10:00:00.000', '20:00:00.000', '30:00:00.000']
-        dec_list = ['30:00:00.000', '40:00:00.000', '50:00:00.000']
+    def test_create_lines_leaves_out_the_target(self):
+        # The target at 10h +30, then stars 10 and 20 arcminutes north of it
+        ra_list = ['10:00:00.000', '10:00:00.000', '10:00:00.000']
+        dec_list = ['30:00:00.000', '30:10:00.000', '30:20:00.000']
         mag_list = [12.000, 10.000, 11.000]
         ra = '10'
         dec = '30'
         filt = 'V'
 
         result = apass.create_lines(ra_list, dec_list, mag_list, ra, dec, filt)
-        expected = '10:00:00.000, 30:00:00.000, 1, 1, 12.000\n'
+        expected = '10:00:00.000, 30:10:00.000, 1, 1, 10.000\n'
         self.assertEqual(expected, result)
+
+    def test_create_lines_measures_ra_in_degrees(self):
+        # 40 seconds of RA at +30 is about 8.7 arcminutes, so this star belongs. Treating
+        # hours as degrees used to shrink the gap by a factor of 15.
+        result = apass.create_lines(['10:00:40.000', '10:01:20.000'], ['30:00:00.000', '30:00:00.000'],
+                                    [10.0, 11.0], 10.0, 30.0, 'V')
+        self.assertEqual('10:00:40.000, 30:00:00.000, 1, 1, 10.000\n', result)
 
 
 class TestCalculations(unittest.TestCase):

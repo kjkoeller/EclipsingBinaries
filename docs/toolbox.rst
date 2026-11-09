@@ -355,25 +355,44 @@ from `Jester et al. 2005 <https://arxiv.org/pdf/astro-ph/0609736.pdf>`_:
     :language: text
     :lines: 1-10
 
-Gaia
-^^^^
+TESS Magnitudes
+^^^^^^^^^^^^^^^
 
-The comparison star selection also queries the
-`Gaia DR3 <https://www.cosmos.esa.int/web/gaia/data-release-3>`_ catalog to calculate
-TESS magnitudes for each comparison star. References:
-
-+ https://iopscience.iop.org/article/10.3847/1538-3881/acaaa7/pdf
-+ https://iopscience.iop.org/article/10.3847/1538-3881/ab3467/pdf
-+ https://arxiv.org/pdf/2012.01916.pdf
-+ https://arxiv.org/pdf/2301.03704
+Each comparison star's TESS magnitude and error are taken from the
+`TESS Input Catalog <https://tess.mit.edu/science/tess-input-catalogue/>`_ (TIC v8.2,
+VizieR catalog ``IV/39/tic82``), matching stars within 3 arcseconds.
 
 .. literalinclude:: ../EclipsingBinaries/gaia.py
    :pyobject: tess_mag
 
-If the TESS magnitude for a comparison star cannot be determined, its value and error
-are set to ``99.999`` so it will not be selected as a comparison star. The same happens
-for every star if VizieR can't be reached for the TIC at all; the APASS magnitudes are
-still saved and the log explains why the TESS ones are missing.
+When the TIC doesn't give a magnitude for a star, or VizieR can't be reached at all, the
+TESS magnitude is worked out from `Gaia DR3 <https://www.cosmos.esa.int/web/gaia/data-release-3>`_
+photometry instead, the same way the TIC does it (Stassun et al. 2019, equations 1 and 2).
+One query to the ESA Gaia archive covers all those stars, and each one takes the nearest
+Gaia source within 3 arcseconds once Gaia's positions are moved back to J2000 with their
+proper motions. With a BP − RP colour,
+
+.. math::
+
+    T = G - 0.00522555\,x^3 + 0.0891337\,x^2 - 0.633923\,x + 0.0324473,
+    \qquad x = G_{BP} - G_{RP}
+
+The error combines the G and colour errors with the relation's 0.006 mag scatter, and
+0.1 mag more for colours outside −0.2 to 3.5, where the relation is extrapolated. A star
+with no BP − RP colour gets :math:`T = G - 0.430` with an error of 0.6 mag. The log says
+how many stars needed Gaia and how many it covered.
+
+.. literalinclude:: ../EclipsingBinaries/gaia.py
+   :pyobject: gaia_tess_magnitude
+
+A star neither the TIC nor Gaia covers gets ``99.999`` for its magnitude and error, so it
+won't be selected as a comparison star. That's also what happens to every star when both
+VizieR and the Gaia archive are down; the APASS magnitudes are still saved, and the log
+explains why the TESS ones are missing. References:
+
++ Stassun et al. 2019, The Revised TESS Input Catalog and Candidate Target List,
+  AJ 158, 138: https://iopscience.iop.org/article/10.3847/1538-3881/ab3467/pdf
++ Paegert et al. 2021, TESS Input Catalog versions 8.1 and 8.2: https://arxiv.org/pdf/2108.04778
 
 Creating RADEC Files
 ^^^^^^^^^^^^^^^^^^^^
@@ -799,7 +818,7 @@ Query
 ^^^^^
 
 Some Gaia functionality is described in the
-`AIJ Comparison Star Selector section <https://eclipsingbinaries.readthedocs.io/en/latest/toolbox.html#gaia>`_.
+`AIJ Comparison Star Selector section <https://eclipsingbinaries.readthedocs.io/en/latest/toolbox.html#tess-magnitudes>`_.
 The Gaia Search panel queries Gaia DR3 for physical parameters of a target star.
 
 The GUI panel accepts the following inputs:

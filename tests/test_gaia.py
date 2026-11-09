@@ -14,172 +14,91 @@ from unittest.mock import patch, MagicMock
 
 
 # ===========================================================================
-# Pure math helpers — extracted from tess_mag
-# These mirror the TESS magnitude formula and error propagation exactly.
+# TESS magnitude from Gaia photometry (the backup when the TIC has none)
+# Stassun et al. 2019, AJ 158, 138, equations 1 and 2
 # ===========================================================================
 
-def _tess_mag_from_gaia(G, BP, RP):
-    """TESS magnitude from Gaia G, BP, RP (scalar values)."""
-    return (G - 0.00522555 * (BP - RP) ** 3
-            + 0.0891337 * (BP - RP) ** 2
-            - 0.633923 * (BP - RP)
-            + 0.0324473)
+def _tic_polynomial(G, bp_rp):
+    return (G - 0.00522555 * bp_rp ** 3 + 0.0891337 * bp_rp ** 2
+            - 0.633923 * bp_rp + 0.0324473)
 
 
 def _flux_to_mag_err(flux_over_error):
-    """Convert Gaia flux/error ratio to magnitude error."""
-    return (2.5 / math.log(10)) * (flux_over_error ** -1)
+    """Gaia flux over error as a magnitude error."""
+    return (2.5 / math.log(10)) / flux_over_error
 
 
-def _tess_mag_error(G_flux, BP_flux, RP_flux):
-    """Full TESS magnitude error propagation."""
-    G_err = _flux_to_mag_err(G_flux)
-    BP_err = _flux_to_mag_err(BP_flux)
-    RP_err = _flux_to_mag_err(RP_flux)
-    Bp_Rp_err = math.sqrt(BP_err ** 2 + RP_err ** 2)
-    return math.sqrt(G_err ** 2 + (Bp_Rp_err * 3) ** 2)
+def test_gaia_tess_magnitude_zero_colour():
+    from EclipsingBinaries.gaia import gaia_tess_magnitude
+    T, _ = gaia_tess_magnitude(12.0, 0.0)
+    assert T == pytest.approx(12.0 + 0.0324473, abs=1e-3)
 
 
-def _tess_mag_no_bp_rp(G, G_flux):
-    """Fallback TESS magnitude when BP or RP are unavailable."""
-    return G - 0.403, _flux_to_mag_err(G_flux)
+def test_gaia_tess_magnitude_known_value():
+    from EclipsingBinaries.gaia import gaia_tess_magnitude
+    T, _ = gaia_tess_magnitude(14.0, 0.8)
+    assert T == pytest.approx(_tic_polynomial(14.0, 0.8), abs=1e-3)
 
 
-# ===========================================================================
-# TESS magnitude formula
-# ===========================================================================
-def test_tess_mag_formula_solar_colors():
-    # Sun-like star: G~6, BP-RP~0.82 → T should be slightly fainter than G
-    G, BP, RP = 6.0, 6.5, 5.68
-    T = _tess_mag_from_gaia(G, BP, RP)
-    assert isinstance(T, float)
-    assert 4.0 < T < 8.0
+def test_gaia_tess_magnitude_blue_and_red_stars():
+    from EclipsingBinaries.gaia import gaia_tess_magnitude
+    assert gaia_tess_magnitude(8.0, -0.1)[0] > 8.0   # blue stars are fainter in TESS than in G
+    assert gaia_tess_magnitude(15.0, 2.5)[0] < 15.0  # red stars are brighter
 
 
-def test_tess_mag_formula_zero_color():
-    # BP - RP = 0 → cubic, quadratic, linear terms all vanish → T = G + 0.0324473
-    G, BP, RP = 12.0, 10.0, 10.0
-    T = _tess_mag_from_gaia(G, BP, RP)
-    assert T == pytest.approx(12.0 + 0.0324473, abs=1e-6)
+def test_gaia_tess_magnitude_follows_g():
+    from EclipsingBinaries.gaia import gaia_tess_magnitude
+    assert gaia_tess_magnitude(13.0, 0.9)[0] - gaia_tess_magnitude(12.0, 0.9)[0] == pytest.approx(1.0)
 
 
-def test_tess_mag_formula_known_value():
-    # Manual calculation: G=14, BP=14.5, RP=13.7 → BP-RP=0.8
-    G, BP, RP = 14.0, 14.5, 13.7
-    bprp = BP - RP
-    expected = (G
-                - 0.00522555 * bprp ** 3
-                + 0.0891337 * bprp ** 2
-                - 0.633923 * bprp
-                + 0.0324473)
-    assert _tess_mag_from_gaia(G, BP, RP) == pytest.approx(expected, abs=1e-10)
+def test_gaia_tess_error_includes_the_relation_scatter():
+    from EclipsingBinaries.gaia import gaia_tess_magnitude
+    # With perfect photometry only the TIC relation's 0.006 mag scatter is left
+    assert gaia_tess_magnitude(12.0, 0.8, 0.0, 0.0)[1] == pytest.approx(0.006, abs=1e-3)
 
 
-def test_tess_mag_formula_blue_star():
-    # Blue star: BP - RP < 0
-    G, BP, RP = 8.0, 7.5, 8.5
-    T = _tess_mag_from_gaia(G, BP, RP)
-    assert isinstance(T, float)
-    assert T > G  # blue stars have T > G for negative BP-RP
+def test_gaia_tess_error_carries_the_colour_error_through():
+    from EclipsingBinaries.gaia import gaia_tess_magnitude
+    g_err, colour_err, x = 0.003, 0.02, 0.8
+    slope = -3 * 0.00522555 * x ** 2 + 2 * 0.0891337 * x - 0.633923
+    expected = math.sqrt(g_err ** 2 + (slope * colour_err) ** 2 + 0.006 ** 2)
+    assert gaia_tess_magnitude(12.0, x, g_err, colour_err)[1] == pytest.approx(expected, abs=1e-3)
 
 
-def test_tess_mag_formula_red_star():
-    # Red star: large positive BP - RP
-    G, BP, RP = 15.0, 17.0, 13.5
-    T = _tess_mag_from_gaia(G, BP, RP)
-    assert isinstance(T, float)
-    assert T < G  # red stars have T < G
+def test_gaia_tess_error_grows_with_noisier_photometry():
+    from EclipsingBinaries.gaia import gaia_tess_magnitude
+    assert gaia_tess_magnitude(12.0, 0.8, 0.05, 0.1)[1] > gaia_tess_magnitude(12.0, 0.8, 0.005, 0.01)[1]
 
 
-def test_tess_mag_formula_scales_with_g():
-    # Increasing G by 1 mag should increase T by exactly 1 mag
-    G, BP, RP = 12.0, 12.5, 11.8
-    T1 = _tess_mag_from_gaia(G, BP, RP)
-    T2 = _tess_mag_from_gaia(G + 1.0, BP + 1.0, RP + 1.0)
-    assert T2 - T1 == pytest.approx(1.0, abs=1e-10)
+def test_gaia_tess_error_is_widened_outside_the_fitted_colours():
+    from EclipsingBinaries.gaia import gaia_tess_magnitude
+    inside = gaia_tess_magnitude(12.0, 3.4, 0.0, 0.0)[1]
+    outside = gaia_tess_magnitude(12.0, 4.0, 0.0, 0.0)[1]
+    assert inside == pytest.approx(0.006, abs=1e-3)
+    assert outside == pytest.approx(math.hypot(0.006, 0.1), abs=1e-3)
 
 
-# ===========================================================================
-# Flux-to-magnitude error conversion
-# ===========================================================================
-def test_flux_err_high_snr_gives_small_error():
-    # High SNR (large flux/error ratio) → small magnitude error
-    assert _flux_to_mag_err(1000.0) < 0.01
+def test_gaia_tess_magnitude_without_a_colour():
+    from EclipsingBinaries.gaia import gaia_tess_magnitude
+    # T = G - 0.430 with the TIC's conservative 0.6 mag error
+    T, T_err = gaia_tess_magnitude(14.0, np.nan, 0.002)
+    assert T == pytest.approx(13.570, abs=1e-3)
+    assert T_err == pytest.approx(0.6, abs=1e-3)
 
 
-def test_flux_err_low_snr_gives_large_error():
-    # Low SNR → large magnitude error
-    assert _flux_to_mag_err(5.0) > 0.1
+def test_gaia_tess_magnitude_without_a_g_magnitude():
+    from EclipsingBinaries.gaia import gaia_tess_magnitude
+    assert gaia_tess_magnitude(np.nan, 0.8) == (99.999, 99.999)
 
 
 def test_flux_err_known_value():
-    # (2.5 / ln(10)) / flux_over_error
-    expected = (2.5 / math.log(10)) / 100.0
-    assert _flux_to_mag_err(100.0) == pytest.approx(expected, abs=1e-12)
+    from EclipsingBinaries.gaia import _magnitude_error
+    assert _magnitude_error(np.array([100.0]))[0] == pytest.approx(_flux_to_mag_err(100.0))
 
 
-def test_flux_err_positive():
-    assert _flux_to_mag_err(50.0) > 0
-
-
-def test_flux_err_scales_inversely():
-    # Doubling flux/error should halve the magnitude error
-    err1 = _flux_to_mag_err(100.0)
-    err2 = _flux_to_mag_err(200.0)
-    assert err1 == pytest.approx(2 * err2, abs=1e-10)
-
-
-# ===========================================================================
-# TESS magnitude error propagation
-# ===========================================================================
-def test_tess_err_positive():
-    assert _tess_mag_error(200.0, 150.0, 180.0) > 0
-
-
-def test_tess_err_dominated_by_bp_rp_when_noisy():
-    # Factor of 3 on Bp_Rp_err means BP/RP noise dominates
-    err_noisy_bprp = _tess_mag_error(1000.0, 10.0, 10.0)
-    err_noisy_g = _tess_mag_error(10.0, 1000.0, 1000.0)
-    assert err_noisy_bprp > err_noisy_g
-
-
-def test_tess_err_increases_with_lower_snr():
-    err_high = _tess_mag_error(500.0, 400.0, 450.0)
-    err_low = _tess_mag_error(50.0, 40.0, 45.0)
-    assert err_low > err_high
-
-
-def test_tess_err_known_value():
-    G_snr, BP_snr, RP_snr = 100.0, 80.0, 90.0
-    G_err = (2.5 / math.log(10)) / G_snr
-    BP_err = (2.5 / math.log(10)) / BP_snr
-    RP_err = (2.5 / math.log(10)) / RP_snr
-    Bp_Rp_err = math.sqrt(BP_err ** 2 + RP_err ** 2)
-    expected = math.sqrt(G_err ** 2 + (Bp_Rp_err * 3) ** 2)
-    assert _tess_mag_error(G_snr, BP_snr, RP_snr) == pytest.approx(expected, abs=1e-12)
-
-
-# ===========================================================================
-# Fallback magnitude (no BP/RP)
-# ===========================================================================
-def test_no_bp_rp_fallback_formula():
-    G, G_flux = 14.0, 100.0
-    T, T_err = _tess_mag_no_bp_rp(G, G_flux)
-    assert T == pytest.approx(14.0 - 0.403, abs=1e-10)
-
-
-def test_no_bp_rp_fallback_error():
-    G, G_flux = 14.0, 100.0
-    _, T_err = _tess_mag_no_bp_rp(G, G_flux)
-    expected = (2.5 / math.log(10)) / G_flux
-    assert T_err == pytest.approx(expected, abs=1e-12)
-
-
-def test_no_bp_rp_fallback_is_fainter_than_g():
-    # T = G - 0.403 → T is numerically smaller than G
-    G = 12.0
-    T, _ = _tess_mag_no_bp_rp(G, 200.0)
-    assert T < G
+def test_flux_err_missing_value_is_nan():
+    from EclipsingBinaries.gaia import _magnitude_error
+    assert np.isnan(_magnitude_error(np.ma.masked_array([0.0], mask=[True]))[0])
 
 
 # ===========================================================================
@@ -441,7 +360,7 @@ def test_tess_mag_logs_completion():
 
 
 def test_tess_mag_returns_fallback_for_no_match():
-    """Stars with no TIC match within 3 arcsec should get 99.999 for both values."""
+    """Stars with no TIC match and no Gaia match either get 99.999 for both values."""
     from EclipsingBinaries.gaia import tess_mag
     cancel = MagicMock()
     cancel.is_set.return_value = False
@@ -453,7 +372,8 @@ def test_tess_mag_returns_fallback_for_no_match():
         "Tmag":    [11.0],
         "e_Tmag":  [0.01],
     })
-    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=far_df):
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=far_df), \
+            patch("EclipsingBinaries.gaia._query_gaia_archive", return_value=FakeGaia([])):
         T_list, T_err_list = tess_mag([0.8356], [78.961], None, cancel)
 
     assert T_list[0] == 99.999
@@ -461,13 +381,14 @@ def test_tess_mag_returns_fallback_for_no_match():
 
 
 def test_tess_mag_returns_fallback_for_empty_tic():
-    """Empty TIC result should produce 99.999 for every star."""
+    """Empty TIC and Gaia results should produce 99.999 for every star."""
     from EclipsingBinaries.gaia import tess_mag
     cancel = MagicMock()
     cancel.is_set.return_value = False
 
     empty_df = pd.DataFrame(columns=["_RAJ2000", "_DEJ2000", "Tmag", "e_Tmag"])
-    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=empty_df):
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=empty_df), \
+            patch("EclipsingBinaries.gaia._query_gaia_archive", return_value=FakeGaia([])):
         T_list, T_err_list = tess_mag([0.8356], [78.961], None, cancel)
 
     assert T_list == [99.999]
@@ -500,3 +421,142 @@ def test_tess_mag_logs_error_on_exception():
             tess_mag([0.8356], [78.961], messages.append, cancel)
 
     assert any("error" in m.lower() for m in messages)
+
+# ===========================================================================
+# tess_mag — Gaia DR3 as the backup for stars the TIC doesn't cover
+# ===========================================================================
+
+class FakeGaia:
+    """
+    Stands in for the GaiaData the archive query returns. Each source is a
+    dict with ra and dec in degrees (at Gaia's 2016 epoch) and optionally
+    pmra, pmdec, G, BP, RP and their flux over error values.
+    """
+
+    def __init__(self, sources):
+        import astropy.units as u
+
+        def column(key, default=np.nan):
+            return np.array([src.get(key, default) for src in sources], dtype=float)
+
+        self._n = len(sources)
+        self.ra = column("ra") * u.deg
+        self.dec = column("dec") * u.deg
+        self.pmra = column("pmra", 0.0) * u.mas / u.yr
+        self.pmdec = column("pmdec", 0.0) * u.mas / u.yr
+        self.phot_g_mean_mag = column("G") * u.mag
+        self.phot_bp_mean_mag = column("BP") * u.mag
+        self.phot_rp_mean_mag = column("RP") * u.mag
+        self.phot_g_mean_flux_over_error = column("G_snr", 1000.0)
+        self.phot_bp_mean_flux_over_error = column("BP_snr", 500.0)
+        self.phot_rp_mean_flux_over_error = column("RP_snr", 500.0)
+
+    def __len__(self):
+        return self._n
+
+
+# The test star sits at 0.8356 h, +78.961 deg (12.534 deg in RA)
+STAR = {"ra": 12.534, "dec": 78.961, "G": 12.0, "BP": 12.4, "RP": 11.6}
+
+
+def _no_tic():
+    return pd.DataFrame(columns=["_RAJ2000", "_DEJ2000", "Tmag", "e_Tmag"])
+
+
+def test_tess_mag_uses_gaia_when_the_tic_has_no_magnitude():
+    from EclipsingBinaries.gaia import tess_mag, gaia_tess_magnitude
+    messages = []
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=_no_tic()), \
+            patch("EclipsingBinaries.gaia._query_gaia_archive", return_value=FakeGaia([STAR])):
+        T_list, T_err_list = tess_mag([0.8356], [78.961], messages.append, None)
+    assert T_list[0] == pytest.approx(_tic_polynomial(12.0, 0.8), abs=1e-3)
+    assert T_err_list[0] == gaia_tess_magnitude(12.0, 0.8, _flux_to_mag_err(1000.0),
+                                                math.hypot(_flux_to_mag_err(500.0),
+                                                           _flux_to_mag_err(500.0)))[1]
+    assert any("worked out from Gaia DR3" in m for m in messages)
+    assert any("Gaia DR3 gave TESS magnitudes for 1 of those 1 stars" in m for m in messages)
+
+
+def test_tess_mag_only_asks_gaia_about_stars_the_tic_missed():
+    from EclipsingBinaries.gaia import tess_mag
+    tic = pd.DataFrame({"_RAJ2000": [13.5], "_DEJ2000": [79.0], "Tmag": [10.5], "e_Tmag": [0.007]})
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=tic), \
+            patch("EclipsingBinaries.gaia._query_gaia_archive", return_value=FakeGaia([STAR])) as gaia:
+        T_list, _ = tess_mag([0.8356, 0.9], [78.961, 79.0], None, None)
+    assert gaia.call_count == 1
+    assert T_list[1] == 10.5                        # the TIC value is kept
+    assert T_list[0] == pytest.approx(_tic_polynomial(12.0, 0.8), abs=1e-3)
+
+
+def test_tess_mag_does_not_ask_gaia_when_the_tic_covers_every_star():
+    from EclipsingBinaries.gaia import tess_mag
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=_make_mock_tic_df()), \
+            patch("EclipsingBinaries.gaia._query_gaia_archive") as gaia:
+        tess_mag([0.8356], [78.961], None, None)
+    gaia.assert_not_called()
+
+
+def test_gaia_backup_moves_sources_back_to_j2000():
+    from EclipsingBinaries.gaia import tess_mag
+    # A star moving 300 mas/yr north sits 4.8 arcsec north of its J2000 position in 2016,
+    # past the 3 arcsec match, until its proper motion is taken off
+    moved = dict(STAR, dec=78.961 + 4.8 / 3600, pmdec=300.0)
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=_no_tic()), \
+            patch("EclipsingBinaries.gaia._query_gaia_archive", return_value=FakeGaia([moved])):
+        T_list, _ = tess_mag([0.8356], [78.961], None, None)
+    assert T_list[0] != 99.999
+
+
+def test_gaia_backup_takes_the_nearest_source():
+    from EclipsingBinaries.gaia import tess_mag
+    near = dict(STAR, dec=78.961 + 0.5 / 3600)
+    farther = dict(STAR, dec=78.961 + 2.5 / 3600, G=9.0)
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=_no_tic()), \
+            patch("EclipsingBinaries.gaia._query_gaia_archive", return_value=FakeGaia([farther, near])):
+        T_list, _ = tess_mag([0.8356], [78.961], None, None)
+    assert T_list[0] == pytest.approx(_tic_polynomial(12.0, 0.8), abs=1e-3)
+
+
+def test_gaia_backup_without_bp_rp_uses_the_g_offset():
+    from EclipsingBinaries.gaia import tess_mag
+    no_colour = {"ra": 12.534, "dec": 78.961, "G": 13.0}
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=_no_tic()), \
+            patch("EclipsingBinaries.gaia._query_gaia_archive", return_value=FakeGaia([no_colour])):
+        T_list, T_err_list = tess_mag([0.8356], [78.961], None, None)
+    assert T_list[0] == pytest.approx(12.570, abs=1e-3)
+    assert T_err_list[0] == pytest.approx(0.6, abs=1e-3)
+
+
+def test_gaia_backup_query_covers_every_star():
+    from EclipsingBinaries.gaia import tess_mag
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=_no_tic()), \
+            patch("EclipsingBinaries.gaia._query_gaia_archive", return_value=FakeGaia([])) as gaia:
+        # Two stars about 17.7 arcminutes apart (0.02 h at +10 deg) across RA 0h
+        tess_mag([23.99, 0.01], [10.0, 10.0], None, None)
+    adql = gaia.call_args[0][0]
+    ra, dec, radius = [float(v) for v in
+                       adql.split("CIRCLE('ICRS',")[1].split(")")[0].split(",")]
+    assert dec == pytest.approx(10.0, abs=0.01)
+    assert min(ra, 360 - ra) < 0.01            # centred on 0h, not on 12h
+    assert 0.155 < radius < 0.16               # half the gap plus 30 arcsec for proper motion
+    assert "phot_g_mean_mag < 17" in adql
+
+
+def test_tess_mag_keeps_99999_when_gaia_is_down_too():
+    from EclipsingBinaries.gaia import tess_mag
+    messages = []
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=_no_tic()), \
+            patch("EclipsingBinaries.gaia._query_gaia_archive",
+                  side_effect=OSError("The Gaia archive at ESA didn't answer.")):
+        T_list, T_err_list = tess_mag([0.8356], [78.961], messages.append, None)
+    assert T_list == [99.999] and T_err_list == [99.999]
+    assert any("didn't answer" in m and "keep 99.999" in m for m in messages)
+
+
+def test_tess_mag_cancel_during_the_gaia_backup():
+    from EclipsingBinaries.gaia import tess_mag
+    cancel = MagicMock()
+    cancel.is_set.side_effect = [False, False, True]
+    with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=_no_tic()), \
+            patch("EclipsingBinaries.gaia._query_gaia_archive", return_value=None):
+        assert tess_mag([0.8356], [78.961], None, cancel) is None

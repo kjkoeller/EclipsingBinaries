@@ -821,3 +821,36 @@ def test_main_end_to_end_shares_stars_across_filters(tmp_path):
     assert [s.number for s in used] == [1, 2]
     for f in "BVR":
         assert len(pd.read_csv(tmp_path / f"T_{f}_data.csv")) == 3
+
+
+# --- the light curve's time axis --------------------------------------------------------------
+
+def _time_axis_offset(times):
+    import warnings
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    from EclipsingBinaries.multi_aperture_photometry import _IntOffsetFormatter
+
+    fig = Figure()
+    FigureCanvasAgg(fig)  # a bare Figure's canvas doesn't draw anything
+    ax = fig.add_subplot()
+    ax.plot(times, np.ones(len(times)))
+    ax.xaxis.set_major_formatter(_IntOffsetFormatter(useOffset=True))
+    with warnings.catch_warnings():
+        # The locs attribute is deprecated in Matplotlib 3.11 and removed in 3.13
+        warnings.simplefilter("error", DeprecationWarning)
+        fig.canvas.draw()
+        return ax.xaxis.get_major_formatter().get_offset()
+
+
+def test_time_axis_offset_is_a_whole_number():
+    assert _time_axis_offset([2460123.61, 2460123.65, 2460123.70]) == "+2460123"
+
+
+def test_time_axis_without_an_offset_shows_none():
+    assert _time_axis_offset([0.1, 0.5, 0.9]) == ""
+
+
+def test_offset_is_blank_before_any_ticks_are_set():
+    from EclipsingBinaries.multi_aperture_photometry import _IntOffsetFormatter
+    assert _IntOffsetFormatter(useOffset=True).get_offset() == ""

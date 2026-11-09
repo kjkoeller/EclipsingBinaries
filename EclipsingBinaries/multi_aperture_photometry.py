@@ -3,7 +3,7 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 04/27/2026
+Last Updated: 11/09/2026
 """
 
 # Python imports
@@ -344,8 +344,16 @@ def footprint_problem(x, y, radius, image_data):
 class _IntOffsetFormatter(ScalarFormatter):
     """Show the axis offset as a whole number, e.g. +2460000 rather than 1e6 notation."""
 
+    # Matplotlib 3.11 deprecated the formatter's locs attribute and 3.13 removes it,
+    # so the number of ticks is kept here instead.
+    _tick_count = 0
+
+    def set_locs(self, locs):
+        self._tick_count = len(locs)
+        super().set_locs(locs)
+
     def get_offset(self):
-        if len(self.locs) == 0 or self.offset == 0:
+        if self._tick_count == 0 or self.offset == 0:
             return ''
         return f"+{int(self.offset)}"
 

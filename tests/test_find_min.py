@@ -201,3 +201,86 @@ def test_guess_boundaries_surround_the_faintest_part(example_night):
     t, f, _ = example_night.points()
     inside = (t > lb) & (t < rb)
     assert f[inside].min() == pytest.approx(f.min(), rel=0.05)
+
+
+# --- continuous, sparse and repeated data (a TESS light curve pasted in twice) -----------
+
+def _tess_like(tmp_path, copies=1, period=0.78694, days=10.0):
+    """30-minute cadence with no daytime gaps, primary and secondary eclipses."""
+    t = 2458983.6586 + np.arange(0, days, 0.0208333)
+    ph = np.mod((t - 2458983.9) / period, 1)
+    mag = (3.0 + 0.7 * np.exp(-(np.minimum(ph, 1 - ph) / 0.07) ** 2)
+           + 0.3 * np.exp(-((ph - 0.5) / 0.07) ** 2))
+    rows = pd.DataFrame({"t": t, "m": mag, "e": 0.0005})
+    rows = pd.concat([rows] * copies, ignore_index=True)
+    path = tmp_path / "tess.txt"
+    rows.to_csv(path, sep="\t", header=False, index=False)
+    return path
+
+
+def test_repeated_rows_are_dropped_and_reported(tmp_path):
+    path = _tess_like(tmp_path, copies=2)
+    notes = []
+    t, _m, _e = fm.read_light_curve(path, notes)
+    assert len(t) == len(np.unique(t))
+    assert notes and "repeat earlier ones and were left out" in notes[0]
+
+
+def test_points_at_the_same_time_dont_break_the_fit():
+    t, f = _eclipse(seed=3)
+    once = fm.kwee_van_woerden(t, f)
+    twice = fm.kwee_van_woerden(np.concatenate([t, t]), np.concatenate([f, f]))
+    assert twice.t_kw == pytest.approx(once.t_kw, abs=1e-9)
+    assert twice.error is not None
+
+
+def test_continuous_data_is_cut_into_overlapping_pieces():
+    t = np.arange(0, 5.0, 0.02)
+    ranges = fm.split_into_nights(t)
+    assert len(ranges) > 3
+    for (a0, a1), (b0, _b1) in zip(ranges, ranges[1:]):
+        assert b0 < a1   # each piece starts before the last one ends
+    assert ranges[0][0] == pytest.approx(0) and ranges[-1][1] == pytest.approx(t[-1])
+
+
+def test_ground_based_nights_split_at_the_daytime_gaps():
+    t = np.concatenate([np.linspace(0.55, 0.9, 50), np.linspace(1.55, 1.95, 50)])
+    assert fm.split_into_nights(t) == [(pytest.approx(0.55), pytest.approx(0.9)),
+                                       (pytest.approx(1.55), pytest.approx(1.95))]
+
+
+def test_a_night_across_noon_ut_stays_together():
+    """Observers in Asia or Australia have night at noon UT; their nights used to be cut in two."""
+    t = 2458000 + np.linspace(0.40, 0.75, 60)
+    assert len(fm.split_into_nights(t)) == 1
+
+
+def test_tess_like_data_gives_minima(tmp_path):
+    path = _tess_like(tmp_path, copies=2)
+    nights = fm.load_nights([path], ["V"])
+    saved = 0
+    for night in nights:
+        lb, rb = fm.guess_boundaries(night)
+        try:
+            minimum = fm.measure_minimum(night, lb, rb)
+        except fm.MinimumError:
+            continue
+        if minimum.error is not None:
+            saved += 1
+            phase = ((minimum.hjd - 2458983.9) / 0.78694) % 1
+            assert min(phase, 1 - phase) < 0.01   # the primary eclipse, measured properly
+    assert saved >= len(nights) - 2
+
+
+def test_starting_boundaries_follow_the_cadence(tmp_path):
+    """At 30-minute cadence, +-0.04 d held only about four points; the boundaries now widen to match."""
+    checked = 0
+    for night in fm.load_nights([_tess_like(tmp_path)], ["V"]):
+        t = night.points()[0]
+        lb, rb = fm.guess_boundaries(night)
+        if lb <= t.min() or rb >= t.max():
+            continue   # the faintest point is at the piece's edge, so the window is cut short there
+        assert rb - lb == pytest.approx(2 * 6 * 0.0208333, rel=0.01)
+        assert ((t > lb) & (t < rb)).sum() >= 11
+        checked += 1
+    assert checked >= 3

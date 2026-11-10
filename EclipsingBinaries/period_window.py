@@ -65,7 +65,10 @@ class PeriodWindow(tk.Toplevel):
                  method=pr.DEFAULT_METHOD, log=print, send=None):
         super().__init__(master)
         self.files = [str(f) for f in files]
-        self.curve = pr.load_light_curves(files, labels)
+        notes = []
+        self.curve = pr.load_light_curves(files, labels, notes=notes)
+        for note in notes:
+            log(note)
         self.output_folder = Path(output_folder)
         self.obj_name = obj_name
         self.log = log

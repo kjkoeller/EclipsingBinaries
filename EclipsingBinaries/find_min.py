@@ -33,6 +33,15 @@ DEFAULT_RESOLUTION = 200   # trial times tried across the boundaries
 DEFAULT_NPAIRS = 20        # pairs of points compared either side of each trial time
 fontsize = 9
 
+# Splitting a light curve into nights. A gap longer than NIGHT_GAP days starts a new
+# night. Data with no daytime gaps, such as TESS, would otherwise be one long night, so
+# any stretch longer than LONG_STRETCH days is cut into pieces PIECE_LENGTH days long
+# that overlap by PIECE_OVERLAP days, so an eclipse near a cut is whole in one of them.
+NIGHT_GAP = 0.2
+LONG_STRETCH = 1.5
+PIECE_LENGTH = 1.25
+PIECE_OVERLAP = 0.25
+
 # Column names accepted in light curve files that have a header row, shared
 # with O'Connell Effect and Color Light Curve
 TIME_NAMES = LIGHT_CURVE_TIME_NAMES
@@ -136,6 +145,12 @@ def kwee_van_woerden(times, flux, resolution=DEFAULT_RESOLUTION, para_range=None
     """
     times = np.asarray(times, dtype=float)
     flux = np.asarray(flux, dtype=float)
+    # Points taken at the same time (several filters, or a file with rows repeated) would
+    # make the interpolation in calc_S divide by zero, so they're averaged into one
+    unique_times, which = np.unique(times, return_inverse=True)
+    if len(unique_times) < len(times):
+        flux = np.bincount(which, weights=flux) / np.bincount(which)
+        times = unique_times
     if len(times) < 5:
         raise MinimumError(f"Only {len(times)} points between the boundaries; widen them.")
 
@@ -249,14 +264,16 @@ def _pick(columns, names):
     return pick_column(columns, names)
 
 
-def read_light_curve(path):
+def read_light_curve(path, notes=None):
     """
     Read a light curve file and return (time, magnitude, error) arrays sorted
     by time.
 
     Files without a header use the first three columns, as Night Filters
     writes them (examples/test_B.txt). Files with a header, such as the CSV
-    files Multi-Aperture Photometry saves, are read by column name.
+    files Multi-Aperture Photometry saves, are read by column name. Rows that
+    repeat an earlier row exactly are left out; if notes is a list, a line
+    saying how many is added to it for the log.
     """
     path = Path(path)
     if not path.is_file():
@@ -289,6 +306,11 @@ def read_light_curve(path):
     df = df.apply(pd.to_numeric, errors="coerce").dropna()
     if df.empty:
         raise MinimumError(f"{path.name} has no rows with numbers in them.")
+    before = len(df)
+    df = df.drop_duplicates()
+    if len(df) < before and notes is not None:
+        notes.append(f"{path.name}: {before - len(df)} of its {before} rows repeat earlier ones "
+                     "and were left out.")
     df = df.sort_values(df.columns[0], kind="stable")
     return tuple(df.iloc[:, i].to_numpy(dtype=float) for i in range(3))
 
@@ -305,9 +327,10 @@ class Band:
 @dataclass
 class Night:
     """
-    The observations from one night. Nights run noon to noon UT, so a night
-    is every point sharing the same whole Julian day; times are stored as
-    days after that whole day (the offset).
+    The observations from one night: a stretch with no gap longer than
+    NIGHT_GAP days, or one piece of a long continuous stretch (see
+    split_into_nights). Times are stored as days after the whole Julian day
+    the night starts in (the offset).
     """
     index: int
     offset: int
@@ -315,7 +338,7 @@ class Night:
 
     @property
     def date(self):
-        """Calendar date of the evening the night started (UT)."""
+        """UT date of the Julian day the night starts in, which begins at noon UT."""
         return Time(self.offset, format="jd").to_value("iso", subfmt="date")
 
     def points(self, labels=None):
@@ -341,33 +364,75 @@ class Night:
                 f"{self.span_hours(labels):.1f} h")
 
 
-def load_nights(files, labels=None, norm_method="norm"):
+def split_into_nights(times):
+    """
+    Where each night starts and ends, as a list of (first time, last time).
+
+    A gap longer than NIGHT_GAP days ends a night, so ground-based nights are
+    split at the daytime gaps wherever the observer is, even when their night
+    crosses noon UT. A stretch longer than LONG_STRETCH days, as continuous
+    space data gives, is cut into pieces PIECE_LENGTH days long that start
+    PIECE_LENGTH - PIECE_OVERLAP days apart, the last one ending at the end of
+    the stretch. Overlapping pieces mean every eclipse is whole in at least
+    one piece.
+    """
+    times = np.sort(np.asarray(times, dtype=float))
+    if len(times) == 0:
+        return []
+    breaks = np.flatnonzero(np.diff(times) > NIGHT_GAP)
+    starts = np.concatenate([[0], breaks + 1])
+    ends = np.concatenate([breaks, [len(times) - 1]])
+    ranges = []
+    for first, last in zip(times[starts], times[ends]):
+        if last - first <= LONG_STRETCH:
+            ranges.append((float(first), float(last)))
+            continue
+        step = PIECE_LENGTH - PIECE_OVERLAP
+        start = first
+        while start + PIECE_LENGTH < last:
+            ranges.append((float(start), float(start + PIECE_LENGTH)))
+            start += step
+        ranges.append((float(max(first, last - PIECE_LENGTH)), float(last)))
+    return ranges
+
+
+def load_nights(files, labels=None, norm_method="norm", notes=None):
     """
     Read one light curve per filter and split them into nights.
 
     Magnitudes become relative flux, 10^(-0.4 (m - m_ref)), where m_ref is
     the filter's brightest magnitude ("norm") or its mean ("subavg"). The
     filters are kept apart so the window can fit any combination of them.
+    Nights are found from all the filters' times together (split_into_nights).
 
     :param files: light curve file paths, one per filter
     :param labels: a name for each file, such as "B"; defaults to File 1, File 2...
+    :param notes: optional list that notes for the log, such as repeated rows, are added to
     :return: list of Night, in time order
     """
     files = list(files)
     if not files:
         raise MinimumError("Add at least one light curve file.")
     labels = list(labels) if labels else [f"File {i + 1}" for i in range(len(files))]
-    by_day = {}
+    curves = []
     for path, label in zip(files, labels):
-        time, mag, err = read_light_curve(path)
+        time, mag, err = read_light_curve(path, notes)
         reference = np.mean(mag) if norm_method == "subavg" else np.min(mag)
         flux = 10 ** (-0.4 * (mag - reference))
         flux_err = 0.4 * np.log(10) * err * flux
-        days = np.floor(time).astype(int)
-        for day in np.unique(days):
-            mask = days == day
-            by_day.setdefault(int(day), {})[label] = Band(label, time[mask] - day, flux[mask], flux_err[mask])
-    return [Night(index=i, offset=day, bands=by_day[day]) for i, day in enumerate(sorted(by_day))]
+        curves.append((label, time, flux, flux_err))
+
+    nights = []
+    for first, last in split_into_nights(np.concatenate([c[1] for c in curves])):
+        offset = int(np.floor(first))
+        bands = {}
+        for label, time, flux, flux_err in curves:
+            mask = (time >= first) & (time <= last)
+            if mask.any():
+                bands[label] = Band(label, time[mask] - offset, flux[mask], flux_err[mask])
+        if bands:
+            nights.append(Night(index=len(nights), offset=offset, bands=bands))
+    return nights
 
 
 # ---------------------------------------------------------------------------
@@ -419,16 +484,24 @@ def measure_minimum(night, lb, rb, labels=None, order=DEFAULT_ORDER, resolution=
 def guess_boundaries(night, labels=None, half_width=0.04):
     """
     Starting boundaries around the faintest stretch of the night: the lowest
-    point of a running median, give or take half_width days (narrower on
-    short nights).
+    point of a running median, give or take half_width days. The window is
+    widened to at least six observations either side for sparse data (such as
+    30-minute cadence), and narrowed on short nights. Where it can, the centre
+    is picked away from the ends of the night, so the window holds a whole
+    eclipse rather than one cut off at the edge of the data.
     """
     t, f, _e = night.points(labels)
     if len(t) < 3:
         return (t.min(), t.max()) if len(t) else (0.0, 1.0)
     window = max(3, len(f) // 15) | 1
     smooth = pd.Series(f).rolling(window, center=True, min_periods=1).median().to_numpy()
-    centre = t[int(np.argmin(smooth))]
-    width = min(half_width, (t.max() - t.min()) / 4)
+    step = float(np.median(np.diff(t))) if len(t) > 1 else 0.0
+    width = min(max(half_width, 6 * step), (t.max() - t.min()) / 4)
+    inner = np.flatnonzero((t >= t.min() + width) & (t <= t.max() - width))
+    if len(inner) >= 3:
+        centre = t[inner[int(np.argmin(smooth[inner]))]]
+    else:
+        centre = t[int(np.argmin(smooth))]
     lb = max(centre - width, t.min())
     rb = min(centre + width, t.max())
     return float(lb), float(rb)

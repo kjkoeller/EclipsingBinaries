@@ -107,7 +107,7 @@ def test_phase_binning_runs_on_an_aij_csv(tmp_path, original):
 def test_find_minimum_reads_hjd_utc(tmp_path, original):
     path = _aij_table(original, tmp_path / "Table_V.csv")
     t, m, e = find_min.read_light_curve(path)
-    assert np.allclose(t, np.sort(original[0]))
+    assert np.allclose(t, np.sort(original.drop_duplicates()[0]))   # test_V.txt repeats a few rows
 
 
 # The start of a real AIJ measurement table's header (an ASAS target measured at BSU).
@@ -142,4 +142,4 @@ def test_real_aij_header_uses_bjd_tdb(tmp_path, original):
     path = tmp_path / "ASAS J221652+2229.6_Table_V.csv"
     pd.DataFrame(rows, columns=columns).to_csv(path, index=False)
     assert _same(io.importFile_pd(str(path)), original)
-    assert len(find_min.read_light_curve(path)[0]) == len(original)
+    assert len(find_min.read_light_curve(path)[0]) == len(original.drop_duplicates())

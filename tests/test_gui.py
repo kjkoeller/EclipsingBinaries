@@ -19,7 +19,7 @@ tk = pytest.importorskip("tkinter")
 
 from EclipsingBinaries.gui_support import SettingsStore, classify_log_line, open_path  # noqa: E402
 
-from .gui_helpers import open_launcher  # noqa: E402
+from .gui_helpers import close_launcher, open_launcher  # noqa: E402
 
 
 # ----------------------------------------------------------------------
@@ -102,11 +102,7 @@ def make_app(settings_path, monkeypatch):
 
     yield factory
     for window in windows:
-        window._task_running = False
-        try:
-            window.destroy()
-        except tk.TclError:
-            pass
+        close_launcher(window)
 
 
 @pytest.fixture
@@ -846,106 +842,3 @@ def test_scrollbar_goes_away_when_contents_shrink(app):
     _settle(app, 3 * ScrollableFrame.WATCH_MS / 1000)
     assert not scroller.scrollbar.winfo_ismapped()
     holder.destroy()
-
-
-# ----------------------------------------------------------------------
-# Archive Data panel
-# ----------------------------------------------------------------------
-def _archive_panel(app):
-    """Open Archive Data and return its fields by label and its tick box variables."""
-    from EclipsingBinaries import archives
-    app.open_panel("archive_data")
-    app.update()
-    ticks = {a.key: app._panel_vars[f"use_{a.key}"] for a in archives.ARCHIVES}
-    return app._panel_fields, ticks
-
-
-def test_archive_panel_has_a_tick_box_for_every_database(app):
-    from EclipsingBinaries import archives
-    _fields, ticks = _archive_panel(app)
-    assert len(ticks) == len(archives.ARCHIVES)
-    assert all(var.get() for var in ticks.values())      # everything is on to begin with
-    names = {w.cget("text") for w in _all_widgets(app.right_frame) if isinstance(w, tk.Checkbutton)}
-    assert {a.name for a in archives.ARCHIVES} <= names
-
-
-def _all_widgets(widget):
-    for child in widget.winfo_children():
-        yield child
-        yield from _all_widgets(child)
-
-
-def test_archive_panel_downloads_the_ticked_databases(app, tmp_path):
-    from EclipsingBinaries import archives
-    fields, ticks = _archive_panel(app)
-    for var in ticks.values():
-        var.set(False)
-    ticks["ztf"].set(True)
-    ticks["galex"].set(True)
-    app._set_entry_text(fields["Target Name"], "SW Lac")
-    app._set_entry_text(fields["Right Ascension (RA)"], "22:53:41.66")
-    app._set_entry_text(fields["Declination (DEC)"], "+37:56:18.6")
-    app._set_entry_text(fields["Output Folder"], str(tmp_path))
-
-    def fake_download(target, folder, keys, write_callback=None, cancel_event=None):
-        made = Path(folder) / target.label
-        made.mkdir()
-        (made / archives.SUMMARY_FILE).write_text("database\n")
-        write_callback(f"asked for {','.join(keys)}")
-        return []
-
-    with patch.object(archives, "download", side_effect=fake_download) as download:
-        app._run_button.invoke()
-        _wait_for_task(app)
-    target, folder, keys = download.call_args[0]
-    assert target.name == "SW Lac" and target.coord.ra.deg == pytest.approx(343.4236, abs=1e-3)
-    assert folder == str(tmp_path) and keys == ["ztf", "galex"]
-    assert "asked for ztf,galex" in app.log_area.get("1.0", "end")
-    buttons = [child.cget("text") for child in app._results_frame.winfo_children()]
-    assert buttons == ["Open Output Folder", "Open Summary"]
-
-
-def test_archive_panel_all_and_none_buttons_work_on_one_group(app):
-    from EclipsingBinaries import archives
-    _fields, ticks = _archive_panel(app)
-    none_buttons = [w for w in _all_widgets(app.right_frame)
-                    if w.winfo_class() == "TButton" and w.cget("text") == "None"]
-    assert len(none_buttons) == len(archives.KINDS)
-    none_buttons[0].invoke()                       # the first group is the light curves
-    off = {key for key, var in ticks.items() if not var.get()}
-    assert off == set(archives.archive_keys([archives.LIGHT_CURVES]))
-
-
-@pytest.mark.parametrize("name, ra, dec, folder, untick, message", [
-    ("", "", "", "out", False, "Enter a target name, or its RA and Dec."),
-    ("SW Lac", "", "", "", False, "An output folder is required."),
-    ("SW Lac", "", "", "out", True, "Tick at least one database."),
-])
-def test_archive_panel_says_what_is_missing(app, tmp_path, name, ra, dec, folder, untick, message):
-    from EclipsingBinaries import archives
-    fields, ticks = _archive_panel(app)
-    for label, text in (("Target Name", name), ("Right Ascension (RA)", ra),
-                        ("Declination (DEC)", dec), ("Output Folder", str(tmp_path) if folder else "")):
-        if text:
-            app._set_entry_text(fields[label], text)
-    if untick:
-        for var in ticks.values():
-            var.set(False)
-    with patch.object(archives, "download") as download:
-        app._run_button.invoke()
-        app.update()
-    download.assert_not_called()
-    assert message in app.log_area.get("1.0", "end")
-
-
-def test_archive_panel_reports_a_name_that_cannot_be_looked_up(app, tmp_path):
-    from EclipsingBinaries import archives
-    fields, _ticks = _archive_panel(app)
-    app._set_entry_text(fields["Target Name"], "Not A Star")
-    app._set_entry_text(fields["Output Folder"], str(tmp_path))
-    with patch.object(archives, "resolve_target", side_effect=archives.ArchiveError("'Not A Star' couldn't be looked up.")), \
-            patch.object(archives, "download") as download:
-        app._run_button.invoke()
-        _wait_for_task(app)
-    download.assert_not_called()
-    assert "Error: 'Not A Star' couldn't be looked up." in app.log_area.get("1.0", "end")

@@ -81,6 +81,44 @@ def _reason(error):
     return text.splitlines()[0][:120] if text else type(error).__name__
 
 
+class VizierServers:
+    """
+    Which VizieR servers to try, and in what order, across several queries.
+
+    A server that answers goes to the front for the next query. One that
+    times out or refuses the connection is left out from then on, so later
+    queries don't wait on it again. A server that answers with an error
+    about one query (VizieR's "Request has been interrupted", say) is kept,
+    since the next query may well work there.
+    """
+
+    def __init__(self, servers=VIZIER_SERVERS):
+        self._servers = list(servers)
+        self.unreachable = set()
+        self.answered = None
+
+    def order(self):
+        """The servers to try next, best first."""
+        usable = [s for s in self._servers if s not in self.unreachable]
+        if self.answered in usable:
+            usable.remove(self.answered)
+            usable.insert(0, self.answered)
+        return usable
+
+    def record(self, server, reason=None):
+        """Note how a server did: reason is None when it answered properly."""
+        if reason is None:
+            self.answered = server
+        elif reason in ("timed out", "couldn't connect"):
+            self.unreachable.add(server)
+            if self.answered == server:
+                self.answered = None
+
+    @property
+    def all_unreachable(self):
+        return not self.order()
+
+
 def query_region_tables(catalog, coordinates, *, columns, column_filters=None, radius=None, width=None,
                         servers=VIZIER_SERVERS, write_callback=None, cancel_event=None):
     """
@@ -92,8 +130,13 @@ def query_region_tables(catalog, coordinates, *, columns, column_filters=None, r
     square box). An empty dictionary means the server answered properly but
     found nothing. Raises VizierUnavailable if every server failed, and
     returns None if cancel_event gets set.
+
+    servers is a list of server names, or a VizierServers to share what's
+    been learned about the servers with other queries.
     """
     log = make_logger(write_callback)
+    memory = servers if isinstance(servers, VizierServers) else None
+    servers = memory.order() if memory is not None else list(servers)
     failures = []
     for number, server in enumerate(servers):
         if cancel_event is not None and cancel_event.is_set():
@@ -113,10 +156,14 @@ def query_region_tables(catalog, coordinates, *, columns, column_filters=None, r
                 raise OSError("the answer wasn't a VOTable")
         except (request_exceptions.RequestException, OSError, TableParseError) as error:
             failures.append((server, _reason(error)))
+            if memory is not None:
+                memory.record(server, failures[-1][1])
             if number + 1 < len(servers):
                 log(f"VizieR at {server} didn't answer properly ({failures[-1][1]}); "
                     f"trying {servers[number + 1]}.")
             continue
+        if memory is not None:
+            memory.record(server)
         if number > 0:
             log(f"Got the {catalog} results from {server}.")
         return {name: tables[name] for name in tables.keys()}

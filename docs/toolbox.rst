@@ -21,7 +21,7 @@ The sidebar lists:
 + **Comparison stars** — AIJ Comparison Star Selector
 + **Photometry** — Multi-Aperture Photometry, Night Filters
 + **Analysis** — Period Search, Find Minimum, O-C Plotting, O'Connell Effect, Color Light Curve
-+ **Archives** — TESS Search and Download, Gaia Search
++ **Archives** — Archive Data, TESS Search and Download, Gaia Search
 
 To quit, use **File > Exit** (or the application menu on macOS).
 
@@ -39,6 +39,7 @@ Find Minimum                       Open Output Folder (where the minimum files a
 Period Search                      (the window's own Save Period and Send to buttons)
 O-C Plotting                       Open Output Folder, View O-C Plot
 Gaia Search                        Open Output Folder, Open Results (``gaia_results.csv``)
+Archive Data                       Open Output Folder, Open Summary (``archive_summary.csv``)
 O'Connell Effect                   Open Output Folder, View Plot
 Color Light Curve                  Open Output Folder, View Plot
 =================================  =====================================================
@@ -249,6 +250,238 @@ Some cameras need care, and the corrections handle these:
 + Running it twice keeps the camera's original ``SECZ`` in ``SECZ_ORG``.
 + If the target comes out below the horizon, ``SECZ`` and ``EAIRMASS`` are left alone and
   a warning suggests checking ``OBSERVAT``, ``DATE-OBS`` and RA/DEC.
+
+Archive Data
+------------
+
+Archive Data downloads what the public archives hold on one target, from X-ray to radio,
+in one go: light curves, catalogue magnitudes for a spectral energy distribution, spectra,
+and X-ray and radio detections. There are 24 databases to choose from.
+
+Enter:
+
++ **Target Name** — any name SIMBAD, NED or VizieR knows, such as ``SW Lac``. It's looked
+  up to get the position, and names the output folder.
++ **Right Ascension (RA)** and **Declination (DEC)** — optional J2000 coordinates, RA in
+  hours (``HH:MM:SS.SS``) and Dec in degrees. Fill these in for a target the name lookup
+  doesn't know, or to skip the lookup; the name is then only a label and can be left empty.
++ **Output Folder** — a folder named after the target is made here.
++ **The databases** — one tick box each, grouped by kind. **All** and **None** tick or
+  clear a whole group, and hovering over a database says what it covers. Your choices are
+  remembered for next time.
+
+Click **Download**. Each database is tried in turn and the log says what it returned. One
+that has nothing on the target, or can't be reached, is noted and the rest carry on, so
+it's fine to leave everything ticked. When it finishes, **Open Summary** opens
+``archive_summary.csv``, which lists every database tried with its status (``found``,
+``nothing``, ``failed`` or ``skipped``), the number of rows, the files saved, and a note
+such as the search radius or the time system.
+
+**Light curves**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 18 30 34
+
+   * - Database
+     - Wavelength
+     - What it is
+     - What's saved
+
+   * - ZTF
+     - Optical (g, r, i)
+     - Zwicky Transient Facility, since 2018, northern sky to Dec -30.
+     - ``ztf_all.csv`` and one light curve per filter (``ztf_g.txt``, ``ztf_r.txt``, ``ztf_i.txt``). Time is HJD.
+
+   * - TESS, Kepler and K2
+     - Optical (red)
+     - Space photometry from MAST: SPOC, TESS-SPOC and QLP light curves.
+     - The FITS light curves in a ``mast`` folder and a text light curve for each. Time is BJD (TDB).
+
+   * - Gaia DR3 epoch photometry
+     - Optical (G, BP, RP)
+     - Gaia's individual measurements, released for variable stars.
+     - ``gaia_lc_all.csv`` and ``gaia_lc_G.txt``, ``_BP.txt``, ``_RP.txt``. Time is BJD (TCB).
+
+   * - NEOWISE
+     - Infrared (3.4, 4.6 um)
+     - WISE single exposures, twice a year since 2013.
+     - ``neowise_all.csv``, ``neowise_W1.txt`` and ``neowise_W2.txt``. Time is JD (UTC), not heliocentric.
+
+
+**Catalogue magnitudes**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 18 30 34
+
+   * - Database
+     - Wavelength
+     - What it is
+     - What's saved
+
+   * - SIMBAD
+     - Names and type
+     - Identifiers and object type.
+     - ``simbad.csv``: sources within 5 arcsec, nearest first.
+
+   * - AAVSO VSX
+     - Variability
+     - Variable star type, period and epoch.
+     - ``vsx.csv``: sources within 5 arcsec, nearest first.
+
+   * - GALEX
+     - Ultraviolet (FUV, NUV)
+     - GALEX all-sky imaging survey, GR6+7.
+     - ``galex.csv``: sources within 5 arcsec, nearest first.
+
+   * - SDSS DR16
+     - Optical (u, g, r, i, z)
+     - Sloan Digital Sky Survey photometry.
+     - ``sdss.csv``: sources within 3 arcsec, nearest first.
+
+   * - Pan-STARRS1
+     - Optical (g, r, i, z, y)
+     - Pan-STARRS1 DR1, Dec above -30.
+     - ``panstarrs.csv``: sources within 3 arcsec, nearest first.
+
+   * - APASS DR9
+     - Optical (B, V, g, r, i)
+     - AAVSO Photometric All-Sky Survey.
+     - ``apass.csv``: sources within 5 arcsec, nearest first.
+
+   * - Gaia DR3
+     - Optical (G, BP, RP)
+     - Mean photometry, parallax and proper motion.
+     - ``gaia.csv``: sources within 3 arcsec, nearest first.
+
+   * - 2MASS
+     - Near infrared (J, H, Ks)
+     - Two Micron All Sky Survey point sources.
+     - ``twomass.csv``: sources within 3 arcsec, nearest first.
+
+   * - AllWISE
+     - Infrared (3.4 to 22 um)
+     - WISE all-sky catalogue.
+     - ``allwise.csv``: sources within 5 arcsec, nearest first.
+
+
+**Spectra**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 18 30 34
+
+   * - Database
+     - Wavelength
+     - What it is
+     - What's saved
+
+   * - SDSS spectra
+     - Optical
+     - SDSS DR17 optical spectra as FITS files.
+     - One FITS file per spectrum and ``sdss_spectra_list.csv``.
+
+   * - Gaia DR3 spectra
+     - Optical (330 to 1050 nm)
+     - BP/RP low-resolution and RVS spectra.
+     - ``gaia_spectra_xp.csv`` (BP/RP, sampled) and ``gaia_spectra_rvs.csv`` where Gaia released them.
+
+   * - LAMOST DR5
+     - Optical
+     - Catalogue of LAMOST spectra with their parameters.
+     - The LAMOST observations and their parameters; the spectra are on lamost.org under the ``obsid``.
+
+   * - APOGEE DR17
+     - Near infrared (H band)
+     - Catalogue of APOGEE spectra with stellar parameters and radial velocities.
+     - The APOGEE observations with stellar parameters and radial velocities.
+
+
+**X-ray and radio**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 18 30 34
+
+   * - Database
+     - Wavelength
+     - What it is
+     - What's saved
+
+   * - ROSAT 2RXS
+     - X-ray (0.1 to 2.4 keV)
+     - Second ROSAT all-sky survey source catalogue.
+     - ``rosat.csv``: sources within 30 arcsec, nearest first.
+
+   * - XMM-Newton 4XMM-DR13
+     - X-ray (0.2 to 12 keV)
+     - XMM-Newton serendipitous source catalogue.
+     - ``xmm.csv``: sources within 15 arcsec, nearest first.
+
+   * - Chandra CSC 2
+     - X-ray (0.5 to 7 keV)
+     - Chandra Source Catalog release 2.
+     - ``chandra.csv``: sources within 5 arcsec, nearest first.
+
+   * - eROSITA eRASS1
+     - X-ray (0.2 to 8 keV)
+     - First eROSITA all-sky survey, western Galactic half.
+     - ``erosita.csv``: sources within 15 arcsec, nearest first.
+
+   * - NVSS
+     - Radio (1.4 GHz)
+     - NRAO VLA Sky Survey, Dec above -40.
+     - ``nvss.csv``: sources within 30 arcsec, nearest first.
+
+   * - FIRST
+     - Radio (1.4 GHz)
+     - VLA FIRST survey, mostly the northern Galactic cap.
+     - ``first.csv``: sources within 5 arcsec, nearest first.
+
+   * - VLASS
+     - Radio (3 GHz)
+     - VLA Sky Survey epoch 1 quick look catalogue, Dec above -40.
+     - ``vlass.csv``: sources within 5 arcsec, nearest first.
+
+
+.. note::
+    Each light curve is also saved as a plain text file with three columns (time,
+    magnitude, error), which Period Search, Find Minimum, O'Connell Effect and Color
+    Light Curve read directly. The time system differs between surveys, as listed above
+    and in the summary: HJD for ZTF, BJD for TESS, Kepler, K2 and Gaia, and plain JD for
+    NEOWISE. The difference between HJD and BJD is a few seconds, but don't mix surveys in
+    an O-C study without converting them to one system first. TESS, Kepler and K2
+    magnitudes are the pipeline's flux scaled around the star's catalogue magnitude, with
+    points the pipeline flagged as bad left out.
+
+Catalogue searches use a small radius around the target (3 to 5 arcseconds for optical
+and infrared, up to 30 for X-ray and radio surveys with coarser positions) and list the
+nearest source first, with its distance in the ``_r`` column. In a crowded field, check
+that the nearest source is the target. A few catalogues hold more than one table (4XMM,
+eROSITA, VLASS, LAMOST and APOGEE); each table with a match is saved in its own file,
+named after the table, such as ``xmm_xmm4d13s.csv``. The VizieR catalogues use the same mirrors as the
+AIJ Comparison Star Selector, so a CDS outage doesn't stop them; if every mirror is down,
+the remaining VizieR catalogues are skipped rather than each waiting in turn.
+
+The same download can be run without the app:
+
+.. code-block:: bash
+
+    python -m EclipsingBinaries.archives "SW Lac" ~/Data/archives
+    python -m EclipsingBinaries.archives "My Star" ~/Data/archives --ra 22:53:41.66 --dec +37:56:18.6 --only ztf,mast,galex
+
+or from Python:
+
+.. code-block:: python
+
+    from EclipsingBinaries import archives
+
+    target = archives.resolve_target("SW Lac")
+    results = archives.download(target, "~/Data/archives", keys=["ztf", "gaia_lc", "twomass"])
+
+To add a database, add an entry to ``ARCHIVES`` in ``archives.py``. A catalogue hosted on
+VizieR needs only its catalogue number and a search radius.
 
 TESS Search and Download
 -------------------------

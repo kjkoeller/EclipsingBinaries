@@ -81,15 +81,17 @@ def _reason(error):
     return text.splitlines()[0][:120] if text else type(error).__name__
 
 
-def query_region(catalog, coordinates, *, columns, column_filters=None, radius=None, width=None,
-                 servers=VIZIER_SERVERS, write_callback=None, cancel_event=None):
+def query_region_tables(catalog, coordinates, *, columns, column_filters=None, radius=None, width=None,
+                        servers=VIZIER_SERVERS, write_callback=None, cancel_event=None):
     """
-    Search one VizieR catalogue around a position.
+    Search a VizieR catalogue around a position and return every table that
+    has rows there, as a dictionary of astropy Tables keyed by table name.
 
-    Pass either radius (a cone) or width (a square box). Returns the
-    catalogue's astropy Table, or None when the server answered properly but
-    found nothing in the area. Raises VizierUnavailable if every server
-    failed, and returns None straight away if cancel_event gets set.
+    catalog can be one table ("II/246/out") or a whole catalogue ("IX/69"),
+    which may hold several tables. Pass either radius (a cone) or width (a
+    square box). An empty dictionary means the server answered properly but
+    found nothing. Raises VizierUnavailable if every server failed, and
+    returns None if cancel_event gets set.
     """
     log = make_logger(write_callback)
     failures = []
@@ -117,8 +119,26 @@ def query_region(catalog, coordinates, *, columns, column_filters=None, radius=N
             continue
         if number > 0:
             log(f"Got the {catalog} results from {server}.")
-        # An empty field comes back with no table at all, which isn't an error
-        if catalog in tables.keys():
-            return tables[catalog]
-        return tables[0] if len(tables) == 1 else None
+        return {name: tables[name] for name in tables.keys()}
     raise VizierUnavailable(catalog, failures)
+
+
+def query_region(catalog, coordinates, *, columns, column_filters=None, radius=None, width=None,
+                 servers=VIZIER_SERVERS, write_callback=None, cancel_event=None):
+    """
+    Search one VizieR catalogue around a position.
+
+    Pass either radius (a cone) or width (a square box). Returns the
+    catalogue's astropy Table, or None when the server answered properly but
+    found nothing in the area. Raises VizierUnavailable if every server
+    failed, and returns None straight away if cancel_event gets set.
+    """
+    tables = query_region_tables(catalog, coordinates, columns=columns, column_filters=column_filters,
+                                 radius=radius, width=width, servers=servers,
+                                 write_callback=write_callback, cancel_event=cancel_event)
+    if not tables:
+        return None
+    # An empty field comes back with no table at all, which isn't an error
+    if catalog in tables:
+        return tables[catalog]
+    return next(iter(tables.values())) if len(tables) == 1 else None

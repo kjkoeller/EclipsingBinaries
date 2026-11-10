@@ -533,6 +533,139 @@ def test_find_minimum_window_keys(app, tmp_path):
     window.destroy()
 
 
+def _artists(window):
+    """What's drawn on the light curve: its lines, point sets and text (with wrapped lines joined up)."""
+    ax = window.ax_lc
+    return ax.get_lines(), ax.collections, [" ".join(t.get_text().split()) for t in ax.texts]
+
+
+def test_find_minimum_clicks_no_longer_move_the_boundaries(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    before = window.boundaries[0]
+    canvas = window.canvas
+    x, y = window.ax_lc.transData.transform((sum(before) / 2, 0.8))
+    from matplotlib.backend_bases import MouseEvent
+    for button in (1, 3):
+        MouseEvent("button_press_event", canvas, x, y, button)._process()
+    window.update()
+    assert window.boundaries[0] == before
+    window.destroy()
+
+
+def test_find_minimum_boundaries_are_marked_pointing_inwards(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    lb, rb = window.boundaries[0]
+    marks = {t.get_text(): t for t in window.ax_lc.texts if t.get_text() in (">", "<")}
+    assert set(marks) == {">", "<"}
+    assert marks[">"].xy[0] == lb and marks[">"].get_horizontalalignment() == "right"   # >| outside the left line
+    assert marks["<"].xy[0] == rb and marks["<"].get_horizontalalignment() == "left"    # |< outside the right line
+    window.destroy()
+
+
+def test_find_minimum_points_outside_the_boundaries_are_grey(app, tmp_path):
+    from EclipsingBinaries.find_min import OUTSIDE_COLOUR
+    from matplotlib.colors import to_rgba
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    lb, rb = window.boundaries[0]
+    grey = to_rgba(OUTSIDE_COLOUR)[:3]
+    points = [line for line in window.ax_lc.get_lines() if line.get_linestyle() == "None"]
+    inside = [p for p in points if to_rgba(p.get_color())[:3] != grey]
+    outside = [p for p in points if to_rgba(p.get_color())[:3] == grey]
+    assert inside and outside
+    for line in inside:
+        assert ((line.get_xdata() >= lb) & (line.get_xdata() <= rb)).all()
+    for line in outside:
+        assert not ((line.get_xdata() >= lb) & (line.get_xdata() <= rb)).any()
+    window.destroy()
+
+
+def test_find_minimum_connect_points_and_polynomial_boxes(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    assert window.minimum is not None
+
+    def joined():
+        # Lines through the points, not the vertical line marking the minimum
+        return [line for line in window.ax_lc.get_lines()
+                if line.get_linestyle() == "-" and len(line.get_xdata()) > 2]
+
+    def polynomial():
+        return [line for line in window.ax_lc.get_lines() if line.get_color() == "#c0392b"]
+
+    assert window.connect_var.get() and joined()          # connected by default
+    assert not window.poly_var.get() and not polynomial()   # no polynomial by default
+    assert not window.order_frame.winfo_ismapped()
+    window.connect_var.set(False)
+    window.redraw()
+    assert not joined()
+
+    window.poly_var.set(True)
+    window._poly_toggled()
+    window.update()
+    assert polynomial() and window.order_frame.winfo_ismapped()
+    window.poly_var.set(False)
+    window._poly_toggled()
+    window.update()
+    assert not polynomial() and not window.order_frame.winfo_ismapped()
+    window.destroy()
+
+
+def test_find_minimum_warns_on_the_plot(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    lb, _rb = window.boundaries[0]
+    window.set_boundary("left", lb)
+    window.set_boundary("right", lb + 0.0004)              # far too few points to measure
+    assert any("Widen them" in text for text in _artists(window)[2])
+    window.set_boundary("right", lb + 0.03)                # enough for a time but maybe not an error
+    texts = " ".join(_artists(window)[2])
+    if window.minimum is not None and window.minimum.error is None:
+        assert "too few for an error" in texts and window.save_button.instate(["disabled"])
+    window.show_night(window.current)
+    window.set_boundary("left", window.boundaries[0][0])
+    window.destroy()
+
+
+def test_find_minimum_error_warning_appears_when_there_is_no_error_estimate(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    m = window.minimum
+    window.minimum = None
+    from dataclasses import replace
+    with patch("EclipsingBinaries.find_min_window.measure_minimum", return_value=replace(m, error=None)):
+        window.remeasure()
+    assert any("too few for an error estimate" in text for text in _artists(window)[2])
+    assert window.save_button.instate(["disabled"])
+    window.destroy()
+
+
+def test_find_minimum_plot_takes_the_keyboard_when_the_pointer_enters(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    widget = window.canvas.get_tk_widget()
+    widget.event_generate("<Enter>")
+    window.update()
+    assert window.focus_get() is widget
+    window.destroy()
+
+
 def test_find_minimum_validation(app, tmp_path):
     app.open_panel("find_min")
     app._run_button.invoke()

@@ -576,15 +576,97 @@ def test_find_minimum_points_outside_the_boundaries_are_grey(app, tmp_path):
     app.update()
     window = _finder(app)
     lb, rb = window.boundaries[0]
+    start, end = window.minimum.kwee.used_range
+    first, last = max(lb, start), min(rb, end)
     grey = to_rgba(OUTSIDE_COLOUR)[:3]
     points = [line for line in window.ax_lc.get_lines() if line.get_linestyle() == "None"]
     inside = [p for p in points if to_rgba(p.get_color())[:3] != grey]
     outside = [p for p in points if to_rgba(p.get_color())[:3] == grey]
     assert inside and outside
     for line in inside:
-        assert ((line.get_xdata() >= lb) & (line.get_xdata() <= rb)).all()
+        assert ((line.get_xdata() >= first) & (line.get_xdata() <= last)).all()
     for line in outside:
-        assert not ((line.get_xdata() >= lb) & (line.get_xdata() <= rb)).any()
+        assert not ((line.get_xdata() >= first) & (line.get_xdata() <= last)).any()
+    window.destroy()
+
+
+def _shaded(window, shade=None):
+    """The shaded stretches on the light curve, as (start, end), optionally only those of one shade."""
+    from EclipsingBinaries.find_min import UNUSED_SHADE
+    from matplotlib.colors import to_rgba
+    shade = to_rgba(shade or UNUSED_SHADE)
+    spans = []
+    for patch_ in window.ax_lc.patches:
+        if to_rgba(patch_.get_facecolor()) != shade:
+            continue
+        if hasattr(patch_, "get_width"):         # a Rectangle in newer matplotlib
+            xs = [patch_.get_x(), patch_.get_x() + patch_.get_width()]
+        else:                                    # a Polygon in older ones
+            xs = list(patch_.get_xy()[:, 0])
+        spans.append((min(xs), max(xs)))
+    return spans
+
+
+def _dotted(window):
+    return [line.get_xdata()[0] for line in window.ax_lc.get_lines() if line.get_linestyle() == ":"]
+
+
+@pytest.mark.parametrize("move", ["right", "left"])
+def test_find_minimum_shades_what_the_fit_does_not_reach(app, tmp_path, move):
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    window.show_night(1)
+    lb, rb = window.boundaries[1]
+    # Push one boundary well out, as with the right boundary at 0.65 on this night
+    if move == "right":
+        window.set_boundary("right", rb + 0.025)
+    else:
+        window.set_boundary("left", lb - 0.01)
+    lb, rb = window.boundaries[1]
+    kwee = window.minimum.kwee
+    t = window.nights[1].points(window.minimum.labels)[0]
+    inside = t[(t > lb) & (t < rb)]
+    assert kwee.reach == pytest.approx(min(kwee.t_kw - inside.min(), inside.max() - kwee.t_kw))
+    start, end = kwee.used_range
+    edge, bound = (end, rb) if move == "right" else (start, lb)
+    assert _dotted(window) == [pytest.approx(edge)]                 # one faint line, where the pairs stop
+    assert _shaded(window) == [(pytest.approx(min(edge, bound)), pytest.approx(max(edge, bound)))]
+    used = int(((t >= max(lb, start)) & (t <= min(rb, end))).sum())
+    assert f"{used} used by the fit" in window.result_var.get()
+    assert used < window.minimum.n_points
+    window.destroy()
+
+
+def test_find_minimum_has_no_shading_without_a_measurement(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    lb, _rb = window.boundaries[0]
+    window.set_boundary("left", lb)
+    window.set_boundary("right", lb + 0.0004)       # too few points to measure
+    assert window.minimum is None
+    assert _shaded(window) == [] and _dotted(window) == []
+    window.destroy()
+
+
+def test_find_minimum_shades_outside_the_boundaries_darker(app, tmp_path):
+    from EclipsingBinaries.find_min import OUTSIDE_SHADE, UNUSED_SHADE
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    lb, rb = window.boundaries[0]
+    left, right = window.ax_lc.get_xlim()
+    outside = _shaded(window, OUTSIDE_SHADE)
+    assert len(outside) == 2
+    (a0, a1), (b0, b1) = sorted(outside)
+    assert a0 < left and a1 == pytest.approx(lb)       # to the left edge of the plot and beyond
+    assert b0 == pytest.approx(rb) and b1 > right
+    assert window.ax_lc.get_xlim() == (left, right)     # the shading doesn't widen the view
+    assert float(OUTSIDE_SHADE) < float(UNUSED_SHADE)   # darker than the unused stretch
     window.destroy()
 
 

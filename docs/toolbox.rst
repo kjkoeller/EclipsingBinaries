@@ -300,7 +300,7 @@ such as the search radius or the time system.
 
    * - Gaia DR3 epoch photometry
      - Optical (G, BP, RP)
-     - Gaia's individual measurements, released for variable stars.
+     - Gaia's individual measurements, released for variable stars. From ESA, or VizieR's copy if ESA fails.
      - ``gaia_lc_all.csv`` and ``gaia_lc_G.txt``, ``_BP.txt``, ``_RP.txt``. Time is BJD (TCB).
 
    * - NEOWISE
@@ -332,7 +332,7 @@ such as the search radius or the time system.
 
    * - GALEX
      - Ultraviolet (FUV, NUV)
-     - GALEX all-sky imaging survey, GR6+7.
+     - GALEX all-sky imaging survey, from MAST (VizieR if MAST fails).
      - ``galex.csv``: sources within 5 arcsec, nearest first.
 
    * - SDSS DR16
@@ -342,7 +342,7 @@ such as the search radius or the time system.
 
    * - Pan-STARRS1
      - Optical (g, r, i, z, y)
-     - Pan-STARRS1 DR1, Dec above -30.
+     - Pan-STARRS1 DR2 mean photometry from MAST (DR1 on VizieR if MAST fails), Dec above -30.
      - ``panstarrs.csv``: sources within 3 arcsec, nearest first.
 
    * - APASS DR9
@@ -384,7 +384,7 @@ such as the search radius or the time system.
 
    * - Gaia DR3 spectra
      - Optical (330 to 1050 nm)
-     - BP/RP low-resolution and RVS spectra.
+     - BP/RP low-resolution and RVS spectra. From ESA, or VizieR's copy of the BP/RP spectra if ESA fails.
      - ``gaia_spectra_xp.csv`` (BP/RP, sampled) and ``gaia_spectra_rvs.csv`` where Gaia released them.
 
    * - LAMOST DR5
@@ -411,7 +411,7 @@ such as the search radius or the time system.
 
    * - ROSAT 2RXS
      - X-ray (0.1 to 2.4 keV)
-     - Second ROSAT all-sky survey source catalogue.
+     - Second ROSAT all-sky survey source catalogue (Boller et al. 2016).
      - ``rosat.csv``: sources within 30 arcsec, nearest first.
 
    * - XMM-Newton 4XMM-DR13
@@ -460,12 +460,17 @@ and infrared, up to 30 for X-ray and radio surveys with coarser positions) and l
 nearest source first, with its distance in the ``_r`` column. In a crowded field, check
 that the nearest source is the target. A few catalogues hold more than one table (4XMM,
 eROSITA, VLASS, LAMOST and APOGEE); each table with a match is saved in its own file,
-named after the table, such as ``xmm_xmm4d13s.csv``. The VizieR catalogues use the same mirrors as the AIJ Comparison Star Selector, so a CDS
+named after the table, such as ``xmm_xmm4d13s.csv``.
+
+The VizieR catalogues use the same mirrors as the AIJ Comparison Star Selector, so a CDS
 outage doesn't stop them. Within one download, a mirror that answers is tried first for
 the next catalogue, and one that times out or refuses the connection isn't waited on
 again; if none can be reached, the remaining VizieR catalogues are skipped. SIMBAD falls
-back to its Harvard mirror the same way, and Gaia's light curves and spectra are asked
-for again in a second format if the first gives an error.
+back to its Harvard mirror the same way. GALEX and Pan-STARRS come from MAST, their home
+archive, because VizieR's mirrors often give up on queries to such large tables; VizieR
+is used if MAST fails. Gaia's light curves and spectra come from ESA's data service, and
+from VizieR's copy if that fails, as it did on several days in October and November 2026.
+When a backup is used, the summary says so.
 
 ZTF saturates around magnitude 12.5 to 13, so a star brighter than that has few usable
 ZTF points, and the summary says so. TESS and Gaia cover bright stars well.

@@ -300,7 +300,7 @@ such as the search radius or the time system.
 
    * - Gaia DR3 epoch photometry
      - Optical (G, BP, RP)
-     - Gaia's individual measurements, released for variable stars. From ESA, or VizieR's copy if ESA fails.
+     - Gaia's individual measurements, released for variable stars.
      - ``gaia_lc_all.csv`` and ``gaia_lc_G.txt``, ``_BP.txt``, ``_RP.txt``. Time is BJD (TCB).
 
    * - NEOWISE
@@ -332,7 +332,7 @@ such as the search radius or the time system.
 
    * - GALEX
      - Ultraviolet (FUV, NUV)
-     - GALEX all-sky imaging survey, from MAST (VizieR if MAST fails).
+     - GALEX all-sky imaging survey, GR6+7.
      - ``galex.csv``: sources within 5 arcsec, nearest first.
 
    * - SDSS DR16
@@ -342,7 +342,7 @@ such as the search radius or the time system.
 
    * - Pan-STARRS1
      - Optical (g, r, i, z, y)
-     - Pan-STARRS1 DR2 mean photometry from MAST (DR1 on VizieR if MAST fails), Dec above -30.
+     - Pan-STARRS1 DR1, Dec above -30.
      - ``panstarrs.csv``: sources within 3 arcsec, nearest first.
 
    * - APASS DR9
@@ -384,7 +384,7 @@ such as the search radius or the time system.
 
    * - Gaia DR3 spectra
      - Optical (330 to 1050 nm)
-     - BP/RP low-resolution and RVS spectra. From ESA, or VizieR's copy of the BP/RP spectra if ESA fails.
+     - BP/RP low-resolution and RVS spectra.
      - ``gaia_spectra_xp.csv`` (BP/RP, sampled) and ``gaia_spectra_rvs.csv`` where Gaia released them.
 
    * - LAMOST DR5
@@ -411,7 +411,7 @@ such as the search radius or the time system.
 
    * - ROSAT 2RXS
      - X-ray (0.1 to 2.4 keV)
-     - Second ROSAT all-sky survey source catalogue (Boller et al. 2016).
+     - Second ROSAT all-sky survey source catalogue.
      - ``rosat.csv``: sources within 30 arcsec, nearest first.
 
    * - XMM-Newton 4XMM-DR13
@@ -460,17 +460,12 @@ and infrared, up to 30 for X-ray and radio surveys with coarser positions) and l
 nearest source first, with its distance in the ``_r`` column. In a crowded field, check
 that the nearest source is the target. A few catalogues hold more than one table (4XMM,
 eROSITA, VLASS, LAMOST and APOGEE); each table with a match is saved in its own file,
-named after the table, such as ``xmm_xmm4d13s.csv``.
-
-The VizieR catalogues use the same mirrors as the AIJ Comparison Star Selector, so a CDS
+named after the table, such as ``xmm_xmm4d13s.csv``. The VizieR catalogues use the same mirrors as the AIJ Comparison Star Selector, so a CDS
 outage doesn't stop them. Within one download, a mirror that answers is tried first for
 the next catalogue, and one that times out or refuses the connection isn't waited on
 again; if none can be reached, the remaining VizieR catalogues are skipped. SIMBAD falls
-back to its Harvard mirror the same way. GALEX and Pan-STARRS come from MAST, their home
-archive, because VizieR's mirrors often give up on queries to such large tables; VizieR
-is used if MAST fails. Gaia's light curves and spectra come from ESA's data service, and
-from VizieR's copy if that fails, as it did on several days in October and November 2026.
-When a backup is used, the summary says so.
+back to its Harvard mirror the same way, and Gaia's light curves and spectra are asked
+for again in a second format if the first gives an error.
 
 ZTF saturates around magnitude 12.5 to 13, so a star brighter than that has few usable
 ZTF points, and the summary says so. TESS and Gaia cover bright stars well.
@@ -908,9 +903,23 @@ The GUI panel accepts the following inputs:
 **Open Minimum Finder** opens a window showing one night at a time, with the relative flux
 below and the Kwee-van Woerden S statistic above:
 
-+ **Click** on the light curve to set the left boundary; **right-click** or **Shift-click**
-  sets the right one. Over the plot, the **a** and **d** keys do the same at the pointer.
-  The minimum is measured again every time a boundary moves.
++ Point at the light curve and press **a** to put the left boundary there, or **d** for
+  the right one. Clicking doesn't move them, so a stray click can't undo your work. The
+  left boundary is marked ``>|`` and the right one ``|<``, pointing at each other. The
+  minimum is measured again every time a boundary moves.
++ Points the Kwee-van Woerden fit uses are drawn in their filter's colour; the rest are
+  grey. The fit pairs points the same distance either side of the minimum, so it only
+  reaches as far as the nearer boundary. On the other side, a faint dotted line marks
+  where the pairs stop. Outside the boundaries the plot is shaded dark grey, and between
+  a boundary and where the pairs stop it's shaded light grey: those points are between
+  the boundaries but not used. The result shows both counts, such as
+  "128 points between the boundaries, 106 used by the fit". To use more of the eclipse,
+  move the nearer boundary out rather than the farther one.
++ **Connect points**, on by default, joins each filter's points with straight lines,
+  grey where the points aren't used.
++ When there are too few points between the boundaries, a red message on the plot says
+  so: either too few to measure at all, or enough for a time but not for an error, in
+  which case the minimum can't be saved. Widen the boundaries.
 + Keep both boundaries on the sides of the eclipse, not out on the flat parts around it,
   where the method can't tell one time from another.
 + **Previous Night** and **Next Night** (or the **n** and **p** keys, or the dropdown)
@@ -919,9 +928,11 @@ below and the Kwee-van Woerden S statistic above:
   the usual gap between points either side).
 + The **Filters** checkboxes choose which filters are fitted together. Each combination
   saves to its own file, so for per-filter O-C files tick one filter at a time.
-+ **Polynomial order**, **Pairs** and **Trial times** set the drawn polynomial, the number
-  of point pairs compared, and how many trial times are tried. The defaults are 5, 20 and
-  200.
++ **Pairs** and **Trial times** set the number of point pairs compared and how many trial
+  times are tried; the defaults are 20 and 200.
++ **Draw polynomial**, off by default, draws a polynomial through the eclipse in red and
+  shows its **Polynomial order** (5 by default). It's only a guide for the eye; the time
+  of minimum comes from the Kwee-van Woerden fit either way.
 + **Save Minimum** (or Enter) adds the minimum to the list. Measuring the same eclipse
   again replaces it. **Remove Selected** takes one off.
 + Scroll over the light curve to zoom; the toolbar under the plot pans, zooms and saves

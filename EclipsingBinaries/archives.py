@@ -200,6 +200,23 @@ def save_light_curve(path, time, mag, err):
 # Catalogues on VizieR
 # ---------------------------------------------------------------------------
 
+def _vizier_tables(catalog, target, run, radius_arcsec):
+    """
+    Every table of a VizieR catalogue with rows near the target, sharing the
+    run's record of which servers answer. Raises OSError if none can be reached.
+    """
+    servers = run.cache.setdefault("vizier_servers", VizierServers())
+    if servers.all_unreachable:
+        raise OSError("No VizieR server could be reached in this run; try again later.")
+    try:
+        tables = query_region_tables(catalog, target.coord, columns=["*", "+_r"],
+                                     radius=radius_arcsec * u.arcsec, servers=servers,
+                                     write_callback=run.log, cancel_event=run.cancel_event)
+    except VizierUnavailable as error:
+        raise OSError(str(error)) from error
+    return {name: table for name, table in (tables or {}).items() if len(table)}
+
+
 def _vizier(catalog, radius_arcsec, note=""):
     """
     A fetch function for a catalogue VizieR hosts. catalog is one table or a
@@ -230,6 +247,43 @@ def _vizier(catalog, radius_arcsec, note=""):
         if not files:
             return "nothing", 0, [], f"No source within {radius_arcsec:g} arcsec."
         return "found", rows, files, note or f"Sources within {radius_arcsec:g} arcsec, nearest first."
+    return fetch
+
+
+def _with_backup(first, second, first_name, second_name):
+    """
+    A fetch function that uses first, and second only if first raises an error.
+    An answer of "nothing here" from first is taken as it is.
+    """
+    def fetch(target, folder, run, key):
+        try:
+            return first(target, folder, run, key)
+        except Exception as first_error:  # whatever first ran into, second may still work
+            run.log(f"{first_name} didn't work ({_first_line(first_error)}); trying {second_name}.")
+            try:
+                status, rows, files, note = second(target, folder, run, key)
+            except Exception as second_error:
+                raise OSError(f"{first_name}: {_first_line(first_error)} {second_name}: "
+                              f"{_first_line(second_error)}") from second_error
+            return status, rows, files, f"From {second_name}, as {first_name} gave an error. {note}"
+    return fetch
+
+
+def _mast_catalog(catalog, radius_arcsec, **criteria):
+    """
+    A fetch function for a catalogue MAST hosts (GALEX and Pan-STARRS are MAST
+    missions). Every source within radius_arcsec is saved, nearest first.
+    """
+    def fetch(target, folder, run, key):
+        from astroquery.mast import Catalogs
+        table = Catalogs.query_region(target.coord, radius=radius_arcsec * u.arcsec, catalog=catalog,
+                                      **criteria)
+        if table is None or len(table) == 0:
+            return "nothing", 0, [], f"No source within {radius_arcsec:g} arcsec."
+        if "distance" in table.colnames:
+            table.sort("distance")
+        files = [_save_table(table, folder / f"{key}.csv")]
+        return "found", len(table), files, f"Sources within {radius_arcsec:g} arcsec from MAST, nearest first."
     return fetch
 
 
@@ -355,26 +409,76 @@ def _fetch_gaia_light_curve(target, folder, run, key):
     if not tables:
         return "nothing", 0, [], "Gaia sent back no epoch photometry."
     frame = pd.concat([t.to_pandas() for t in tables], ignore_index=True)
+    files, made = _gaia_epochs_to_files(frame, folder, key)
+    note = f"Gaia DR3 {source['source_id']}. "
+    if made:
+        note += "Time is BJD (TCB). Points Gaia rejected are left out of the text files."
+    else:
+        note += "Saved as returned; the expected columns weren't there."
+    return "found", len(frame), files, note
+
+
+# Gaia epoch times are days since 2010-01-01 (TCB), i.e. BJD - 2455197.5
+GAIA_TIME_ZERO = 2455197.5
+
+
+def _gaia_epochs_to_files(frame, folder, key):
+    """
+    Save Gaia epoch photometry, all of it as CSV and each band as a text light
+    curve. Works with the ESA layout (one row per measurement, with band, time
+    and mag columns) and with tables that give each band its own columns
+    (TimeG and Gmag, say). Returns the files and whether light curves were made.
+    """
     files = [folder / f"{key}_all.csv"]
     frame.to_csv(files[0], index=False)
+    made = False
 
     time, mag, band = (_column(frame, n) for n in ("time", "mag", "band"))
-    snr, rejected = _column(frame, "flux_over_error"), _column(frame, "rejected_by_photometry")
-    if None in (time, mag, band):
-        return "found", len(frame), files, "Saved as returned; the expected columns weren't there."
-    keep = pd.Series(True, index=frame.index)
-    if rejected is not None:
-        keep &= ~frame[rejected].astype(str).str.lower().isin(["true", "1"])
-    with np.errstate(divide="ignore", invalid="ignore"):
-        error = 2.5 / np.log(10) / pd.to_numeric(frame[snr], errors="coerce") if snr else pd.Series(0.0, index=frame.index)
-    for code in sorted(frame[band].astype(str).unique()):
-        chosen = keep & (frame[band].astype(str) == code)
+    if None not in (time, mag, band):
+        snr, rejected = _column(frame, "flux_over_error"), _column(frame, "rejected_by_photometry")
+        keep = pd.Series(True, index=frame.index)
+        if rejected is not None:
+            keep &= ~frame[rejected].astype(str).str.lower().isin(["true", "1"])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            error = (2.5 / np.log(10) / pd.to_numeric(frame[snr], errors="coerce") if snr
+                     else pd.Series(0.0, index=frame.index))
+        for code in sorted(frame[band].astype(str).unique()):
+            chosen = keep & (frame[band].astype(str) == code)
+            path = folder / f"{key}_{code}.txt"
+            if save_light_curve(path, frame[time][chosen] + GAIA_TIME_ZERO, frame[mag][chosen], error[chosen]):
+                files.append(path)
+                made = True
+        return files, made
+
+    for code in ("G", "BP", "RP"):
+        time = _column(frame, f"Time{code}", f"{code}Time", f"t{code}")
+        mag = _column(frame, f"{code}mag", f"mag{code}", f"{code}_mag")
+        err = _column(frame, f"e_{code}mag", f"{code}magerr", f"e{code}mag")
+        if time is None or mag is None:
+            continue
+        error = frame[err] if err is not None else pd.Series(0.0, index=frame.index)
         path = folder / f"{key}_{code}.txt"
-        # Gaia gives time as days since 2010-01-01, in barycentric coordinate time
-        if save_light_curve(path, frame[time][chosen] + 2455197.5, frame[mag][chosen], error[chosen]):
+        if save_light_curve(path, pd.to_numeric(frame[time], errors="coerce") + GAIA_TIME_ZERO,
+                            pd.to_numeric(frame[mag], errors="coerce"), pd.to_numeric(error, errors="coerce")):
             files.append(path)
-    return "found", len(frame), files, (f"Gaia DR3 {source['source_id']}. Time is BJD (TCB). Points Gaia "
-                                        "rejected are left out of the text files.")
+            made = True
+    return files, made
+
+
+def _fetch_gaia_light_curve_vizier(target, folder, run, key):
+    """
+    VizieR's copy of Gaia DR3 epoch photometry (I/355/epphot), for when ESA's
+    data service is down. Light curves are made if its columns are recognised;
+    the table is saved either way.
+    """
+    tables = _vizier_tables("I/355/epphot", target, run, 3)
+    if not tables:
+        return "nothing", 0, [], "VizieR's copy has no epoch photometry within 3 arcsec."
+    frame = pd.concat([t.to_pandas() for t in tables.values()], ignore_index=True)
+    files, made = _gaia_epochs_to_files(frame, folder, key)
+    note = ("Time is BJD (TCB)." if made else
+            "Saved as VizieR gives it; the columns weren't recognised, so no text light curves were made.")
+    return "found", len(frame), files, note
 
 
 def _flux_light_curve(path, fits_path):
@@ -514,6 +618,16 @@ def _fetch_gaia_spectra(target, folder, run, key):
     return "found", len(files), files, note
 
 
+def _fetch_gaia_spectra_vizier(target, folder, run, key):
+    """VizieR's copy of the Gaia DR3 sampled BP/RP spectra (I/355/xpsample), for when ESA is down."""
+    tables = _vizier_tables("I/355/xpsample", target, run, 3)
+    if not tables:
+        return "nothing", 0, [], "VizieR's copy has no BP/RP spectrum within 3 arcsec."
+    files = [_save_table(table, folder / f"{key}_xp.csv") for table in tables.values()]
+    return "found", sum(len(t) for t in tables.values()), files, ("BP/RP sampled spectrum as VizieR gives it. "
+                                                                 "RVS spectra aren't in VizieR's copy.")
+
+
 def _fetch_simbad(target, folder, run, key):
     """
     What SIMBAD lists at the position: identifier and object type. SIMBAD runs at CDS
@@ -552,7 +666,9 @@ ARCHIVES = (
     Archive("mast", "TESS, Kepler and K2", LIGHT_CURVES, "Optical (red)",
             "Space photometry from MAST: SPOC, TESS-SPOC and QLP light curves.", _fetch_mast),
     Archive("gaia_lc", "Gaia DR3 epoch photometry", LIGHT_CURVES, "Optical (G, BP, RP)",
-            "Gaia's individual measurements, released for variable stars.", _fetch_gaia_light_curve),
+            "Gaia's individual measurements, released for variable stars.",
+            _with_backup(_fetch_gaia_light_curve, _fetch_gaia_light_curve_vizier,
+                         "ESA's Gaia archive", "VizieR's copy")),
     Archive("neowise", "NEOWISE", LIGHT_CURVES, "Infrared (3.4, 4.6 um)",
             "WISE single exposures, twice a year since 2013.", _fetch_neowise),
 
@@ -562,11 +678,14 @@ ARCHIVES = (
     Archive("vsx", "AAVSO VSX", MAGNITUDES, "Variability",
             "Variable star type, period and epoch.", _vizier("B/vsx/vsx", 5)),
     Archive("galex", "GALEX", MAGNITUDES, "Ultraviolet (FUV, NUV)",
-            "GALEX all-sky imaging survey, GR6+7.", _vizier("II/335/galex_ais", 5)),
+            "GALEX all-sky imaging survey, GR6+7.",
+            _with_backup(_mast_catalog("Galex", 5), _vizier("II/335/galex_ais", 5), "MAST", "VizieR")),
     Archive("sdss", "SDSS DR16", MAGNITUDES, "Optical (u, g, r, i, z)",
             "Sloan Digital Sky Survey photometry.", _vizier("V/154/sdss16", 3)),
     Archive("panstarrs", "Pan-STARRS1", MAGNITUDES, "Optical (g, r, i, z, y)",
-            "Pan-STARRS1 DR1, Dec above -30.", _vizier("II/349/ps1", 3)),
+            "Pan-STARRS1 DR2 mean photometry, Dec above -30.",
+            _with_backup(_mast_catalog("Panstarrs", 3, data_release="dr2", table="mean"),
+                         _vizier("II/349/ps1", 3), "MAST", "VizieR")),
     Archive("apass", "APASS DR9", MAGNITUDES, "Optical (B, V, g, r, i)",
             "AAVSO Photometric All-Sky Survey.", _vizier("II/336/apass9", 5)),
     Archive("gaia", "Gaia DR3", MAGNITUDES, "Optical (G, BP, RP)",
@@ -580,7 +699,8 @@ ARCHIVES = (
     Archive("sdss_spectra", "SDSS spectra", SPECTRA, "Optical",
             "SDSS DR17 optical spectra as FITS files.", _fetch_sdss_spectra),
     Archive("gaia_spectra", "Gaia DR3 spectra", SPECTRA, "Optical (330 to 1050 nm)",
-            "BP/RP low-resolution and RVS spectra.", _fetch_gaia_spectra),
+            "BP/RP low-resolution and RVS spectra.",
+            _with_backup(_fetch_gaia_spectra, _fetch_gaia_spectra_vizier, "ESA's Gaia archive", "VizieR's copy")),
     Archive("lamost", "LAMOST DR5", SPECTRA, "Optical",
             "Catalogue of LAMOST spectra with their parameters.",
             _vizier("V/164", 3, "LAMOST observations within 3 arcsec. The spectra themselves are "
@@ -592,7 +712,8 @@ ARCHIVES = (
 
     # X-ray and radio
     Archive("rosat", "ROSAT 2RXS", HIGH_ENERGY, "X-ray (0.1 to 2.4 keV)",
-            "Second ROSAT all-sky survey source catalogue.", _vizier("IX/47/2rxs", 30)),
+            "Second ROSAT all-sky survey source catalogue (Boller et al. 2016).",
+            _vizier("J/A+A/588/A103/cat2rxs", 30)),
     Archive("xmm", "XMM-Newton 4XMM-DR13", HIGH_ENERGY, "X-ray (0.2 to 12 keV)",
             "XMM-Newton serendipitous source catalogue.", _vizier("IX/69", 15)),
     Archive("chandra", "Chandra CSC 2", HIGH_ENERGY, "X-ray (0.5 to 7 keV)",

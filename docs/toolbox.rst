@@ -460,9 +460,15 @@ and infrared, up to 30 for X-ray and radio surveys with coarser positions) and l
 nearest source first, with its distance in the ``_r`` column. In a crowded field, check
 that the nearest source is the target. A few catalogues hold more than one table (4XMM,
 eROSITA, VLASS, LAMOST and APOGEE); each table with a match is saved in its own file,
-named after the table, such as ``xmm_xmm4d13s.csv``. The VizieR catalogues use the same mirrors as the
-AIJ Comparison Star Selector, so a CDS outage doesn't stop them; if every mirror is down,
-the remaining VizieR catalogues are skipped rather than each waiting in turn.
+named after the table, such as ``xmm_xmm4d13s.csv``. The VizieR catalogues use the same mirrors as the AIJ Comparison Star Selector, so a CDS
+outage doesn't stop them. Within one download, a mirror that answers is tried first for
+the next catalogue, and one that times out or refuses the connection isn't waited on
+again; if none can be reached, the remaining VizieR catalogues are skipped. SIMBAD falls
+back to its Harvard mirror the same way, and Gaia's light curves and spectra are asked
+for again in a second format if the first gives an error.
+
+ZTF saturates around magnitude 12.5 to 13, so a star brighter than that has few usable
+ZTF points, and the summary says so. TESS and Gaia cover bright stars well.
 
 The same download can be run without the app:
 

@@ -284,3 +284,15 @@ def test_starting_boundaries_follow_the_cadence(tmp_path):
         assert ((t > lb) & (t < rb)).sum() >= 11
         checked += 1
     assert checked >= 3
+
+
+def test_kwee_reach_is_the_distance_to_the_nearer_end():
+    # An eclipse at 0.30 with the data running from 0.20 to 0.45: the pairs only reach
+    # 0.10 either side, out to 0.40, so the points from 0.40 to 0.45 aren't used
+    times = np.linspace(0.20, 0.45, 251)
+    flux = 1 - 0.5 * np.exp(-((times - 0.30) / 0.08) ** 2)
+    result = fm.kwee_van_woerden(times, flux)
+    assert result.t_kw == pytest.approx(0.30, abs=1e-3)
+    assert result.reach == pytest.approx(result.t_kw - 0.20)
+    start, end = result.used_range
+    assert start == pytest.approx(0.20) and end == pytest.approx(2 * result.t_kw - 0.20)

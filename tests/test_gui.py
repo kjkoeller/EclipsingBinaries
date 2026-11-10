@@ -19,7 +19,7 @@ tk = pytest.importorskip("tkinter")
 
 from EclipsingBinaries.gui_support import SettingsStore, classify_log_line, open_path  # noqa: E402
 
-from .gui_helpers import open_launcher  # noqa: E402
+from .gui_helpers import close_launcher, open_launcher  # noqa: E402
 
 
 # ----------------------------------------------------------------------
@@ -102,11 +102,7 @@ def make_app(settings_path, monkeypatch):
 
     yield factory
     for window in windows:
-        window._task_running = False
-        try:
-            window.destroy()
-        except tk.TclError:
-            pass
+        close_launcher(window)
 
 
 @pytest.fixture

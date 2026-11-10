@@ -55,7 +55,10 @@ class MinimumFinderWindow(tk.Toplevel):
         self.log = log
         self.output_folder = Path(output_folder)
         self.obj_name = obj_name
-        self.nights = load_nights(files, labels)
+        notes = []
+        self.nights = load_nights(files, labels, notes=notes)
+        for note in notes:
+            log(note)
         if not self.nights:
             self.destroy()
             raise MinimumError("The light curve files have no observations in them.")

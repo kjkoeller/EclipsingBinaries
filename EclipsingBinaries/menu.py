@@ -45,6 +45,7 @@ from .apass import comparison_selector
 from .multi_aperture_photometry import (main as multi_ap, auto_optimize_radii, calculate_target_snr,
                                         DEFAULT_READ_NOISE, read_noise_from_header)
 from .gaia import target_star as gaia
+from . import archives
 from .OC_plot import BSUO, TESS_OC, all_data, data_fit
 from .OConnell import main as oconnell
 from .color_light_curve import color_plot
@@ -961,6 +962,7 @@ class ProgramLauncher(tk.Tk):
                 ("color", "Color Light Curve", self.show_color_light_curve, None),
             ]),
             ("Archives", [
+                ("archive_data", "Archive Data", self.show_archive_data, None),
                 ("tess", "TESS Search and Download", self.show_tess_search, None),
                 ("gaia", "Gaia Search", self.show_gaia_query, None),
             ]),
@@ -2531,6 +2533,108 @@ class ProgramLauncher(tk.Tk):
                 self.write_to_log(traceback.format_exc())
 
         self.run_task(oc_plot)
+
+    # ------------------------------------------------------------------
+    # Archive data
+    # ------------------------------------------------------------------
+    def show_archive_data(self):
+        """Display the Archive Data panel: one target, any number of databases."""
+        self.clear_right_frame()
+        self._panel_title("Archive Data", "archive_data")
+
+        name = self.create_input_field(self.right_frame, "Target Name:", "e.g. SW Lac", row=1, optional=True,
+                                       tooltip="Any name SIMBAD, NED or VizieR knows. It's looked up to get "
+                                               "the position unless RA and Dec are filled in, and names "
+                                               "the output folder.")
+        ra = self.create_input_field(self.right_frame, "Right Ascension (RA):", "HH:MM:SS.SS (optional)",
+                                     row=2, optional=True,
+                                     tooltip="Target RA in hours (J2000). Leave RA and Dec empty to look "
+                                             "the name up instead.")
+        dec = self.create_input_field(self.right_frame, "Declination (DEC):", "DD:MM:SS.S (optional)",
+                                      row=3, optional=True,
+                                      tooltip="Target Dec in degrees (J2000).")
+        output_folder = self.create_input_field(self.right_frame, "Output Folder:", _example_path("archives"),
+                                                row=4, error_message="Please enter a folder.",
+                                                browse_type="folder",
+                                                tooltip="A folder named after the target is made here, holding "
+                                                        "one file or more per database and "
+                                                        "archive_summary.csv.")
+
+        choices = self._archive_checkboxes(row=5)
+
+        self.create_run_button(self.right_frame, self.run_archive_data, row=6, text="Download",
+                               name=name, ra=ra, dec=dec, output_folder=output_folder, choices=choices)
+        self._log_section(7)
+
+    def _archive_checkboxes(self, row):
+        """
+        A tick box for every database, grouped by kind, each group with All and
+        None buttons. Returns {database key: BooleanVar}.
+        """
+        box = tk.Frame(self.right_frame, bg=BG_PANEL)
+        box.grid(row=row, column=0, columnspan=3, padx=16, pady=(8, 0), sticky="ew")
+        columns = 3
+        for column in range(columns):
+            box.grid_columnconfigure(column, weight=1, uniform="archive")
+
+        choices = {}
+        line = 0
+        for kind in archives.KINDS:
+            members = [a for a in archives.ARCHIVES if a.kind == kind]
+            header = tk.Frame(box, bg=BG_PANEL)
+            header.grid(row=line, column=0, columnspan=columns, pady=(8, 2), sticky="w")
+            tk.Label(header, text=kind, font=self.strong_font, bg=BG_PANEL, fg=FG_TEXT).pack(side="left")
+
+            def set_all(value, members=members):
+                for archive in members:
+                    choices[archive.key].set(value)
+            self._button(header, "All", lambda f=set_all: f(True), style="Secondary.TButton").pack(
+                side="left", padx=(12, 4))
+            self._button(header, "None", lambda f=set_all: f(False), style="Secondary.TButton").pack(side="left")
+            line += 1
+
+            for number, archive in enumerate(members):
+                var = self._remember_var(f"use_{archive.key}", tk.BooleanVar(master=self, value=True))
+                choices[archive.key] = var
+                tick = tk.Checkbutton(box, text=archive.name, variable=var, font=self.label_font,
+                                      bg=BG_PANEL, fg=FG_TEXT, anchor="w")
+                tick.grid(row=line + number // columns, column=number % columns, sticky="w")
+                self._tooltip(tick, f"{archive.band}. {archive.about}")
+            line += (len(members) + columns - 1) // columns
+        return choices
+
+    def run_archive_data(self, name, ra, dec, output_folder, choices):
+        """Validate the Archive Data inputs, then download on a worker thread."""
+        name_value, ra_value, dec_value = (self._entry_value(e) for e in (name, ra, dec))
+        output_path = self._path_value(output_folder)
+        keys = [key for key, var in choices.items() if var.get()]
+
+        if not output_path:
+            self.write_to_log("Error: An output folder is required.")
+            return
+        if not name_value and not (ra_value and dec_value):
+            self.write_to_log("Error: Enter a target name, or its RA and Dec.")
+            return
+        if not keys:
+            self.write_to_log("Error: Tick at least one database.")
+            return
+
+        def archive_download():
+            try:
+                target = archives.resolve_target(name_value, ra_value, dec_value)
+                archives.download(target, output_path, keys, write_callback=self.write_to_log,
+                                  cancel_event=self.cancel_event)
+                folder = Path(output_path) / target.label
+                summary = folder / archives.SUMMARY_FILE
+                if summary.exists():
+                    self.offer_results(folder, [("Open Summary", lambda: self._open_in_system(summary))])
+            except archives.ArchiveError as e:
+                self.write_to_log(f"Error: {e}")
+            except Exception as e:
+                self.write_to_log(f"An error occurred during the archive download: {type(e).__name__}: {e}")
+                self.write_to_log(traceback.format_exc())
+
+        self.run_task(archive_download)
 
     # ------------------------------------------------------------------
     # Gaia query

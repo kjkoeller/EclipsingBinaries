@@ -14,7 +14,7 @@ import pytest
 
 tk = pytest.importorskip("tkinter")
 
-from .gui_helpers import open_launcher  # noqa: E402
+from .gui_helpers import close_launcher, open_launcher  # noqa: E402
 
 
 def _native(path):
@@ -35,8 +35,7 @@ def app(tmp_path, monkeypatch):
     window.withdraw()
     window.show_multi_aperture_photometry()
     yield window
-    window._task_running = False
-    window.destroy()
+    close_launcher(window)
 
 
 def _pump(window, seconds=0.3):

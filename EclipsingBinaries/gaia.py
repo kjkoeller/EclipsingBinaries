@@ -12,7 +12,7 @@ https://arxiv.org/pdf/2012.01916.pdf
 """
 
 from pyia import GaiaData
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, UnitSphericalRepresentation
 import astropy.units as u
 import pandas as pd
 import numpy as np
@@ -38,6 +38,37 @@ MAX_TARGET_ROWS = 4
 # Seconds to wait before each retry when the Gaia archive drops the connection
 GAIA_RETRY_WAITS = (5, 15)
 TIC_CATALOG = "IV/39/tic82"
+# Comparison stars and catalogue sources this close together are the same star
+CATALOG_MATCH_ARCSEC = 3.0
+# Gaia sources fainter than this are left out of the backup query. APASS comparison
+# stars are brighter than V = 14, which is about G = 14 to 15.
+GAIA_BACKUP_G_LIMIT = 17.0
+# Gaia colours where the TIC relation was fitted (Stassun et al. 2019); outside it the
+# polynomial is extrapolated and 0.1 mag is added to the error in quadrature
+TIC_COLOUR_RANGE = (-0.2, 3.5)
+
+
+def _finite(values, fill):
+    """Plain floats from a Gaia column, with missing and 1e20 placeholder values set to fill."""
+    values = np.ma.filled(np.ma.asarray(values, dtype=float), np.nan)
+    return np.where(np.isfinite(values) & (np.abs(values) < 1e10), values, fill)
+
+
+def _gaia_positions_j2000(g):
+    """
+    Gaia sources moved from Gaia's 2016 epoch back to J2000 using their own
+    proper motions, so they line up with J2000 coordinates. Sources without a
+    proper motion are left where they are.
+    """
+    years = GAIA_DR3_EPOCH - INPUT_EPOCH
+    ra_gaia = np.asarray(g.ra.to_value(u.deg), dtype=float)
+    dec_gaia = np.asarray(g.dec.to_value(u.deg), dtype=float)
+    pmra = _finite(g.pmra.to_value(u.mas / u.yr), 0.0)  # already includes cos(dec)
+    pmdec = _finite(g.pmdec.to_value(u.mas / u.yr), 0.0)
+
+    dec_j2000 = dec_gaia - pmdec * years / 3.6e6
+    ra_j2000 = ra_gaia - pmra * years / 3.6e6 / np.cos(np.radians(dec_gaia))
+    return SkyCoord(ra_j2000 * u.deg, dec_j2000 * u.deg)
 
 
 def _rank_by_separation(g, ra_deg, dec_deg):
@@ -50,21 +81,8 @@ def _rank_by_separation(g, ra_deg, dec_deg):
 
     :return: (indices into g, separations in arcsec), closest first
     """
-    def finite_or_zero(values):
-        values = np.ma.filled(np.ma.asarray(values, dtype=float), np.nan)
-        return np.where(np.isfinite(values) & (np.abs(values) < 1e10), values, 0.0)
-
-    years = GAIA_DR3_EPOCH - INPUT_EPOCH
-    ra_gaia = np.asarray(g.ra.to_value(u.deg), dtype=float)
-    dec_gaia = np.asarray(g.dec.to_value(u.deg), dtype=float)
-    pmra = finite_or_zero(g.pmra.to_value(u.mas / u.yr))  # already includes cos(dec)
-    pmdec = finite_or_zero(g.pmdec.to_value(u.mas / u.yr))
-
-    dec_j2000 = dec_gaia - pmdec * years / 3.6e6
-    ra_j2000 = ra_gaia - pmra * years / 3.6e6 / np.cos(np.radians(dec_gaia))
-
     target = SkyCoord(ra_deg * u.deg, dec_deg * u.deg)
-    separation = target.separation(SkyCoord(ra_j2000 * u.deg, dec_j2000 * u.deg)).arcsec
+    separation = target.separation(_gaia_positions_j2000(g)).arcsec
 
     order = np.argsort(separation)
     order = order[separation[order] <= TARGET_MATCH_ARCSEC][:MAX_TARGET_ROWS]
@@ -323,7 +341,7 @@ def _match_tic_magnitudes(
     )
 
     nearest_indices, separations, _ = input_coords.match_to_catalog_sky(catalog_coords)
-    max_match_sep = 3.0 * u.arcsec
+    max_match_sep = CATALOG_MATCH_ARCSEC * u.arcsec
 
     tmag_list = []
     tmag_error_list = []
@@ -350,9 +368,114 @@ def _match_tic_magnitudes(
     return tmag_list, tmag_error_list
 
 
+def gaia_tess_magnitude(g_mag, bp_rp=np.nan, g_mag_err=np.nan, bp_rp_err=np.nan):
+    """
+    TESS magnitude and its error from Gaia photometry, the way the TIC (v8)
+    works it out when it has Gaia data (Stassun et al. 2019, AJ 158, 138,
+    equations 1 and 2).
+
+    With a BP - RP colour, T comes from the colour polynomial, which has a
+    formal scatter of 0.006 mag. Outside the colours it was fitted for
+    (-0.2 to 3.5), the polynomial is extrapolated and 0.1 mag is added to the
+    error. Without a colour, T = G - 0.430 (right for a Sun-like star) with an
+    error of 0.6 mag, as in the TIC.
+
+    :return: (T, T_err), or (99.999, 99.999) when there's no G magnitude
+    """
+    if not np.isfinite(g_mag):
+        return 99.999, 99.999
+    g_err = g_mag_err if np.isfinite(g_mag_err) else 0.0
+
+    if not np.isfinite(bp_rp):
+        return round(g_mag - 0.430, 3), round(float(np.hypot(g_err, 0.6)), 3)
+
+    x = bp_rp
+    t = g_mag - 0.00522555 * x ** 3 + 0.0891337 * x ** 2 - 0.633923 * x + 0.0324473
+    # How much T changes with the colour, to carry the colour's error through
+    slope = -3 * 0.00522555 * x ** 2 + 2 * 0.0891337 * x - 0.633923
+    colour_err = bp_rp_err if np.isfinite(bp_rp_err) else 0.0
+    t_err = np.sqrt(g_err ** 2 + (slope * colour_err) ** 2 + 0.006 ** 2)
+    if not TIC_COLOUR_RANGE[0] < x < TIC_COLOUR_RANGE[1]:
+        t_err = np.hypot(t_err, 0.1)
+    return round(float(t), 3), round(float(t_err), 3)
+
+
+def _magnitude_error(flux_over_error):
+    """Magnitude error from Gaia's flux over error, NaN where there isn't one."""
+    snr = _finite(flux_over_error, np.nan)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(snr > 0, 2.5 / np.log(10) / snr, np.nan)
+
+
+def _gaia_tess_magnitudes(ra_hours, dec_degrees, write_callback=None, cancel_event=None):
+    """
+    TESS magnitudes worked out from Gaia DR3 photometry, for stars the TIC
+    didn't give one for.
+
+    One query covers all the stars, and each star takes the nearest Gaia
+    source within CATALOG_MATCH_ARCSEC once Gaia's positions are moved back to
+    J2000. Stars with no match get 99.999.
+
+    :return: (T list, T error list), or None if canceled
+    """
+    stars = SkyCoord(ra=np.asarray(ra_hours, dtype=float) * 15.0 * u.deg,
+                     dec=np.asarray(dec_degrees, dtype=float) * u.deg)
+    # The middle of the stars, found on the sphere so it also works across RA 0h
+    middle = stars.cartesian.mean().represent_as(UnitSphericalRepresentation)
+    centre = SkyCoord(middle.lon, middle.lat)
+    # Reach every star, plus room for stars that have moved since J2000
+    radius = (centre.separation(stars).max() + TARGET_QUERY_ARCSEC * u.arcsec).to_value(u.deg)
+
+    g = _query_gaia_archive("""
+        SELECT TOP 5000 gaia_source.source_id,gaia_source.ra,gaia_source.dec,
+        gaia_source.pmra,gaia_source.pmdec,
+        gaia_source.phot_g_mean_mag,gaia_source.phot_g_mean_flux_over_error,
+        gaia_source.phot_bp_mean_mag,gaia_source.phot_bp_mean_flux_over_error,
+        gaia_source.phot_rp_mean_mag,gaia_source.phot_rp_mean_flux_over_error
+        FROM gaiadr3.gaia_source
+        WHERE
+        CONTAINS(
+            POINT('ICRS',gaiadr3.gaia_source.ra,gaiadr3.gaia_source.dec),
+            CIRCLE('ICRS',{},{},{})
+        )=1
+        AND gaia_source.phot_g_mean_mag < {}""".format(
+        centre.ra.deg, centre.dec.deg, radius, GAIA_BACKUP_G_LIMIT), write_callback, cancel_event)
+    if g is None:
+        return None
+
+    missing = [99.999] * len(stars)
+    if len(g) == 0:
+        return missing, list(missing)
+
+    g_mag = _finite(g.phot_g_mean_mag.value, np.nan)
+    bp = _finite(g.phot_bp_mean_mag.value, np.nan)
+    rp = _finite(g.phot_rp_mean_mag.value, np.nan)
+    g_err = _magnitude_error(g.phot_g_mean_flux_over_error)
+    colour_err = np.hypot(_magnitude_error(g.phot_bp_mean_flux_over_error),
+                          _magnitude_error(g.phot_rp_mean_flux_over_error))
+
+    nearest, separation, _ = stars.match_to_catalog_sky(_gaia_positions_j2000(g))
+    t_list, t_err_list = [], []
+    for index, sep in zip(nearest, separation.arcsec):
+        if sep > CATALOG_MATCH_ARCSEC:
+            t, t_err = 99.999, 99.999
+        else:
+            t, t_err = gaia_tess_magnitude(g_mag[index], bp[index] - rp[index],
+                                           g_err[index], colour_err[index])
+        t_list.append(t)
+        t_err_list.append(t_err)
+    return t_list, t_err_list
+
+
 def tess_mag(ra, dec, write_callback, cancel_event, apass_vmag=None):
     """
-    Calculates TESS magnitudes for comparison stars
+    TESS magnitudes for the comparison stars.
+
+    They're taken from the TESS Input Catalog (TIC v8.2) on VizieR. Any star
+    the TIC doesn't give a magnitude for, including every star when VizieR
+    can't be reached, has its TESS magnitude worked out from Gaia DR3
+    photometry instead (see gaia_tess_magnitude). Stars neither one covers
+    get 99.999.
 
     :param ra: List of RA's for comparison stars
     :param dec: List of DEC's for comparison stars
@@ -404,6 +527,25 @@ def tess_mag(ra, dec, write_callback, cancel_event, apass_vmag=None):
 
         log("Finished cataloging the Vizier results.")
         log("Finished TIC v8.2 search and extraction of TESS magnitudes.")
+
+        missing = [i for i, t in enumerate(t_list) if t == 99.999]
+        if missing:
+            log(f"{len(missing)} of {len(t_list)} stars have no TIC magnitude, so they're "
+                "worked out from Gaia DR3 instead.")
+            try:
+                backup = _gaia_tess_magnitudes(ra_hours[missing], dec_degrees[missing],
+                                               write_callback, cancel_event)
+            except OSError as error:
+                log(f"{error} Those stars keep 99.999.")
+                backup = None
+            if backup is None and cancel_event and cancel_event.is_set():
+                log("Task canceled.")
+                return
+            if backup is not None:
+                for i, t, t_err in zip(missing, *backup):
+                    t_list[i], t_err_list[i] = t, t_err
+                found = sum(t != 99.999 for t in backup[0])
+                log(f"Gaia DR3 gave TESS magnitudes for {found} of those {len(missing)} stars.")
 
         return t_list, t_err_list
     except Exception as e:

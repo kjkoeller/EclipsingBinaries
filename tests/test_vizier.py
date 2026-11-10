@@ -215,13 +215,29 @@ def test_apass_reports_when_vizier_is_down(servers):
 
 # --- TESS magnitudes from the TIC ------------------------------------------------------------
 
-def test_tess_magnitudes_are_left_missing_when_vizier_is_down(servers):
+def test_tess_magnitudes_come_from_gaia_when_vizier_is_down(servers):
+    from EclipsingBinaries.gaia import tess_mag
+    from tests.test_gaia import FakeGaia
+    servers(_everyone(OUTAGE))
+    stars = [{"ra": 0.6767 * 15, "dec": 20.25, "G": 12.0, "BP": 12.4, "RP": 11.6},
+             {"ra": 0.68 * 15, "dec": 20.3, "G": 13.0, "BP": 13.4, "RP": 12.6}]
+    messages = []
+    with patch("EclipsingBinaries.gaia._query_gaia_archive", return_value=FakeGaia(stars)):
+        T, T_err = tess_mag([0.6767, 0.68], [20.25, 20.3], messages.append, None)
+    assert all(t != 99.999 for t in T) and all(e != 99.999 for e in T_err)
+    assert any("try again later" in m for m in messages)
+    assert any("Gaia DR3 gave TESS magnitudes for 2 of those 2 stars" in m for m in messages)
+
+
+def test_tess_magnitudes_are_left_missing_when_vizier_and_gaia_are_down(servers):
     from EclipsingBinaries.gaia import tess_mag
     servers(_everyone(OUTAGE))
     messages = []
-    T, T_err = tess_mag([0.6767, 0.68], [20.25, 20.3], messages.append, None)
+    with patch("EclipsingBinaries.gaia._query_gaia_archive",
+               side_effect=OSError("The Gaia archive at ESA didn't answer.")):
+        T, T_err = tess_mag([0.6767, 0.68], [20.25, 20.3], messages.append, None)
     assert T == [99.999, 99.999] and T_err == [99.999, 99.999]
-    assert any("99.999" in m and "try again later" in m for m in messages)
+    assert any("keep 99.999" in m for m in messages)
 
 
 def test_tic_outage_does_not_fall_back_to_one_star_at_a_time(servers):

@@ -69,11 +69,12 @@ class LightCurve:
         return float(self.time.max() - self.time.min()) if len(self.time) else 0.0
 
 
-def load_light_curves(files, labels=None):
+def load_light_curves(files, labels=None, notes=None):
     """
     Read one light curve per filter (the same files Find Minimum takes) into
     one LightCurve. Filters differ in brightness, so each filter's median
-    magnitude is subtracted before they're put together.
+    magnitude is subtracted before they're put together. If notes is a list,
+    notes for the log (such as repeated rows left out) are added to it.
     """
     files = list(files)
     if not files:
@@ -82,7 +83,7 @@ def load_light_curves(files, labels=None):
     times, mags, errs, which = [], [], [], []
     for path, label in zip(files, labels):
         try:
-            t, m, e = read_light_curve(path)
+            t, m, e = read_light_curve(path, notes)
         except MinimumError as exc:
             raise PeriodError(str(exc)) from exc
         times.append(t)

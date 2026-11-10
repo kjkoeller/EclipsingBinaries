@@ -23,9 +23,10 @@ from .find_min import (DEFAULT_NPAIRS, DEFAULT_ORDER, DEFAULT_RESOLUTION, Minimu
                        draw_night, guess_boundaries, load_nights, measure_minimum, minimum_file_name)
 
 HELP_TEXT = ("Point at the plot and press a to put the left boundary (>|) there, or d for the right "
-             "one (|<). Keep both on the sides of the eclipse rather than out on the flat parts; "
-             "grey points are outside the boundaries and aren't used. n and p change night, Enter "
-             "saves the minimum, and the scroll wheel or the toolbar zooms.")
+             "one (|<). Keep both on the sides of the eclipse rather than out on the flat parts. "
+             "Shaded points aren't used: dark grey is outside the boundaries, light grey is past "
+             "where the fit's pairs reach. n and p change night, Enter saves the minimum, and the "
+             "scroll wheel or the toolbar zooms.")
 
 
 def _style(widget, name, fallback):
@@ -277,10 +278,17 @@ class MinimumFinderWindow(tk.Toplevel):
             return
         error = f"± {m.error:.6f}" if m.error is not None else "(no error estimate: widen the boundaries)"
         self.result_var.set(f"HJD {m.hjd:.6f} {error}\n"
-                            f"{m.n_points} points in {', '.join(m.labels)}, "
+                            f"{m.n_points} points in {', '.join(m.labels)} between the boundaries, "
+                            f"{self._points_used(m)} used by the fit\n"
                             f"K = {self._settings()[1]}, R² = {m.kwee.R2:.5f}")
         self.result_label.configure(foreground="#1b2430" if m.error is not None else "#b3261e")
         self.save_button.state(["!disabled"] if m.error is not None else ["disabled"])
+
+    def _points_used(self, m):
+        """How many points fall where the fit's pairs reach, the same distance either side of the minimum."""
+        t = self.nights[self.current].points(m.labels)[0]
+        start, end = m.kwee.used_range
+        return int(((t >= max(m.lb, start)) & (t <= min(m.rb, end))).sum())
 
     def save_minimum(self):
         if self.minimum is None:

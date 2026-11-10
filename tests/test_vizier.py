@@ -308,3 +308,41 @@ def test_gaia_archive_wait_can_be_canceled():
             patch.object(gaia.time, "sleep"):
         assert gaia._query_gaia_archive("SELECT 1", cancel_event=cancel) is None
     assert query.call_count == 1
+
+
+# --- remembering servers across queries ----------------------------------------------------
+
+def test_server_record_puts_the_one_that_answered_first():
+    servers = _vizier.VizierServers()
+    servers.record("vizier.nao.ac.jp")
+    assert servers.order()[0] == "vizier.nao.ac.jp"
+    assert len(servers.order()) == len(_vizier.VIZIER_SERVERS)
+
+
+def test_server_record_drops_servers_that_did_not_respond():
+    servers = _vizier.VizierServers()
+    servers.record("vizier.cds.unistra.fr", "timed out")
+    servers.record("vizier.inasan.ru", "couldn't connect")
+    servers.record("vizier.idia.ac.za", "VizieR error: (pipe) Request has been interrupted")
+    assert "vizier.cds.unistra.fr" not in servers.order()
+    assert "vizier.inasan.ru" not in servers.order()
+    assert "vizier.idia.ac.za" in servers.order()       # it answered, just not that query
+    assert not servers.all_unreachable
+
+
+def test_server_record_with_every_server_unreachable():
+    servers = _vizier.VizierServers()
+    for server in _vizier.VIZIER_SERVERS:
+        servers.record(server, "timed out")
+    assert servers.all_unreachable and servers.order() == []
+
+
+def test_query_shares_its_server_record(servers):
+    answers = _everyone(GOOD)
+    answers["vizier.cds.unistra.fr"] = requests.exceptions.ConnectTimeout("connect timed out")
+    fake = servers(answers)
+    record = _vizier.VizierServers()
+    query_region("II/336/apass9", CENTRE, columns=COLUMNS, width="30m", servers=record)
+    query_region("II/336/apass9", CENTRE, columns=COLUMNS, width="30m", servers=record)
+    assert [call[0] for call in fake.calls] == ["vizier.cds.unistra.fr", "vizier.idia.ac.za",
+                                               "vizier.idia.ac.za"]

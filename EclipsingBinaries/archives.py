@@ -40,7 +40,7 @@ from astropy.coordinates import SkyCoord
 from astropy.coordinates.name_resolve import NameResolveError
 
 from ._log import make_logger
-from ._vizier import VizierUnavailable, query_region_tables
+from ._vizier import VizierServers, VizierUnavailable, query_region_tables
 
 LIGHT_CURVES = "Light curves"
 MAGNITUDES = "Catalogue magnitudes"
@@ -52,6 +52,10 @@ SUMMARY_FILE = "archive_summary.csv"
 ZTF_URL = "https://irsa.ipac.caltech.edu/cgi-bin/ZTF/nph_light_curves"
 # Seconds to wait for a connection, then for each piece of the answer
 TIMEOUT = (10, 120)
+# ZTF images saturate around this magnitude, so brighter stars get few usable points
+ZTF_SATURATION = 13.0
+# Seconds a SIMBAD query may take before the next server is tried
+SIMBAD_TIMEOUT = 60
 # Light curve products from these MAST pipelines are downloaded; MAST holds many
 # other community light curves for the same stars, which would repeat the data
 MAST_PIPELINES = ("SPOC", "TESS-SPOC", "QLP", "Kepler", "K2")
@@ -150,6 +154,13 @@ def resolve_target(name="", ra="", dec=""):
 # Saving
 # ---------------------------------------------------------------------------
 
+def _first_line(error):
+    """An error's first line, or its type when it has no message."""
+    text = str(error).strip() if error is not None else ""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[0] if lines else type(error).__name__
+
+
 def _save_table(table, path):
     """Write an astropy Table as CSV. Columns holding arrays are saved by astropy instead of pandas."""
     path = Path(path)
@@ -196,15 +207,16 @@ def _vizier(catalog, radius_arcsec, note=""):
     row first, with VizieR's default columns.
     """
     def fetch(target, folder, run, key):
-        if "vizier_down" in run.cache:
-            return "skipped", 0, [], run.cache["vizier_down"]
+        # Shared by every VizieR catalogue in the run, so a server that answered is tried
+        # first and one that didn't respond isn't waited on again
+        servers = run.cache.setdefault("vizier_servers", VizierServers())
+        if servers.all_unreachable:
+            return "skipped", 0, [], "No VizieR server could be reached in this run; try again later."
         try:
             tables = query_region_tables(catalog, target.coord, columns=["*", "+_r"],
-                                         radius=radius_arcsec * u.arcsec,
+                                         radius=radius_arcsec * u.arcsec, servers=servers,
                                          write_callback=run.log, cancel_event=run.cancel_event)
         except VizierUnavailable as error:
-            # Every mirror was tried, so the other VizieR catalogues would only wait as long again
-            run.cache["vizier_down"] = "VizieR couldn't be reached; try again later."
             raise OSError(str(error)) from error
         if not tables:
             return "nothing", 0, [], f"No source within {radius_arcsec:g} arcsec."
@@ -257,7 +269,12 @@ def _fetch_ztf(target, folder, run, key):
         path = folder / f"{key}_{code.lstrip('z') or code}.txt"
         if save_light_curve(path, time[chosen], frame[mag][chosen], frame[err][chosen] if err else np.zeros(chosen.sum())):
             files.append(path)
-    return "found", len(frame), files, f"Time is {system}. One text file per filter, all ZTF fields combined."
+    note = f"Time is {system}. One text file per filter, all ZTF fields combined."
+    brightest = pd.to_numeric(frame[mag], errors="coerce").median()
+    if brightest < ZTF_SATURATION:
+        note += (f" The star is about magnitude {brightest:.1f} in ZTF, near where ZTF saturates "
+                 f"({ZTF_SATURATION:g}), so expect few points and treat them with care.")
+    return "found", len(frame), files, note
 
 
 def _gaia_source(target, run):
@@ -291,20 +308,34 @@ def _gaia_source(target, run):
     return source
 
 
+# Formats asked for from Gaia's data service, in order. VOTable is astroquery's
+# default and the one ESA documents for every product; CSV is tried if it fails.
+GAIA_FORMATS = ("votable", "csv")
+
+
 def _gaia_products(source_id, retrieval_type, folder):
     """Gaia DataLink products for one source, as a list of astropy Tables."""
     from astroquery.gaia import Gaia
+    products, first_error = None, None
     # load_data unpacks its download into the current folder, which may not be writable
     with _folder_lock:
         before = os.getcwd()
         os.chdir(folder)
         try:
-            with contextlib.redirect_stdout(io.StringIO()):
-                products = Gaia.load_data(ids=[source_id], data_release="Gaia DR3",
-                                          retrieval_type=retrieval_type, data_structure="INDIVIDUAL",
-                                          format="csv")
+            for data_format in GAIA_FORMATS:
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        products = Gaia.load_data(ids=[source_id], data_release="Gaia DR3",
+                                                  retrieval_type=retrieval_type,
+                                                  data_structure="INDIVIDUAL", format=data_format)
+                    break
+                except (requests.exceptions.RequestException, OSError) as error:
+                    first_error = first_error or error
         finally:
             os.chdir(before)
+    if products is None:
+        raise OSError(f"Gaia's data service gave an error for {retrieval_type} ({_first_line(first_error)}). "
+                      "It may be down for a while; try again later.") from first_error
     tables = []
     for value in (products or {}).values():
         for item in (value if isinstance(value, (list, tuple)) else [value]):
@@ -484,9 +515,26 @@ def _fetch_gaia_spectra(target, folder, run, key):
 
 
 def _fetch_simbad(target, folder, run, key):
-    """What SIMBAD lists at the position: identifier, object type and the other names it goes by."""
-    from astroquery.simbad import Simbad
-    table = Simbad.query_region(target.coord, radius=5 * u.arcsec)
+    """
+    What SIMBAD lists at the position: identifier and object type. SIMBAD runs at CDS
+    with a mirror at Harvard, which is tried when CDS doesn't answer.
+    """
+    from astroquery.simbad import SimbadClass, conf
+    table, errors = None, []
+    for server in conf.servers_list:
+        # Passing timeout to SimbadClass would ask the CDS server for its limits, which
+        # fails when CDS is down; the config value is used without asking
+        with conf.set_temp("timeout", SIMBAD_TIMEOUT):
+            simbad = SimbadClass()
+        simbad.server = server
+        try:
+            table = simbad.query_region(target.coord, radius=5 * u.arcsec)
+            break
+        except Exception as error:  # pyvo raises its own errors when a server is down
+            errors.append(f"{server}: {_first_line(error)}")
+            run.log(f"SIMBAD at {server} didn't answer ({_first_line(error)}).")
+    else:
+        raise OSError(f"SIMBAD couldn't be reached ({'; '.join(errors)}). Try again later.")
     if table is None or len(table) == 0:
         return "nothing", 0, [], "SIMBAD has no object within 5 arcsec."
     files = [_save_table(table, folder / f"{key}.csv")]
@@ -601,7 +649,7 @@ def download(target, output_folder, keys=None, write_callback=None, cancel_event
             status, rows, files, note = archive.fetch(target, folder, run, archive.key)
         except Exception as error:  # one database failing mustn't stop the others
             status, rows, files = "failed", 0, []
-            note = str(error).strip().splitlines()[0][:300] if str(error).strip() else type(error).__name__
+            note = _first_line(error)
         results.append(Result(archive.key, archive.name, archive.kind, status, rows,
                               [Path(f) for f in files], note))
         if status == "found":

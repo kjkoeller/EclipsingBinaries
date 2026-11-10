@@ -174,13 +174,59 @@ def test_x_ray_catalogues_search_wider_than_optical_ones(tmp_path):
     assert seen == {"IX/47/2rxs": 30, "I/355/gaiadr3": 3}
 
 
-def test_vizier_outage_skips_the_other_vizier_catalogues(tmp_path, vizier):
-    fake = vizier(OUTAGE)
-    messages = []
-    results = download(TARGET, tmp_path, ["galex", "twomass", "allwise"], messages.append)
+def test_vizier_servers_that_do_not_respond_are_not_waited_on_again(tmp_path, monkeypatch):
+    fake = FakeServers({server: requests.exceptions.ReadTimeout("read timed out")
+                        for server in _vizier.VIZIER_SERVERS})
+    monkeypatch.setattr(type(_vizier.Vizier), "query_region_async", lambda self, *a, **k: fake(self, *a, **k))
+    results = download(TARGET, tmp_path, ["galex", "twomass", "allwise"])
     assert [r.status for r in results] == ["failed", "skipped", "skipped"]
-    assert len(fake.calls) == len(_vizier.VIZIER_SERVERS)     # the mirrors were only tried once
+    assert len(fake.calls) == len(_vizier.VIZIER_SERVERS)     # each server was only waited on once
     assert "try again later" in results[1].note
+
+
+def test_a_mirror_that_answered_is_tried_first_for_the_next_catalogue(tmp_path, monkeypatch):
+    answers = {server: GOOD for server in _vizier.VIZIER_SERVERS}
+    answers["vizier.cds.unistra.fr"] = requests.exceptions.ReadTimeout("read timed out")
+    fake = FakeServers(answers)
+    monkeypatch.setattr(type(_vizier.Vizier), "query_region_async", lambda self, *a, **k: fake(self, *a, **k))
+    results = download(TARGET, tmp_path, ["galex", "twomass", "allwise"])
+    assert [r.status for r in results] == ["found", "found", "found"]
+    assert [call[0] for call in fake.calls] == ["vizier.cds.unistra.fr"] + ["vizier.idia.ac.za"] * 3
+
+
+def test_one_catalogue_failing_everywhere_does_not_stop_the_next(tmp_path, monkeypatch):
+    # What happened for GALEX on 9 November: CDS timed out, the South African mirror
+    # gave up on that one query, and the others timed out or refused the connection
+    state = {"galex_done": False}
+
+    def answer(vizier, *args, **kwargs):
+        server = vizier.VIZIER_SERVER
+        if server == "vizier.idia.ac.za":
+            if not state["galex_done"]:
+                state["galex_done"] = True
+                return _vizier_reply(b'<INFO name="Error" value="(pipe) Request has been interrupted"/>')
+            return _vizier_reply(GOOD)
+        raise requests.exceptions.ReadTimeout("read timed out")
+    monkeypatch.setattr(type(_vizier.Vizier), "query_region_async", answer)
+    results = download(TARGET, tmp_path, ["galex", "twomass"])
+    assert [r.status for r in results] == ["failed", "found"]
+    assert "Request has been interrupted" in results[0].note
+
+
+def _vizier_reply(content):
+    if not content.startswith(b"<?xml"):
+        content = b'<?xml version="1.0"?><VOTABLE version="1.4">' + content + b"</VOTABLE>"
+    response = requests.Response()
+    response._content = content
+    response.status_code = 200
+    return response
+
+
+def test_failure_notes_are_not_cut_short(tmp_path, monkeypatch):
+    fake = FakeServers({server: OUTAGE for server in _vizier.VIZIER_SERVERS})
+    monkeypatch.setattr(type(_vizier.Vizier), "query_region_async", lambda self, *a, **k: fake(self, *a, **k))
+    results = download(TARGET, tmp_path, ["galex"])
+    assert results[0].note.endswith("try again later.")
 
 
 # --- ZTF --------------------------------------------------------------------------------------------
@@ -210,6 +256,21 @@ def test_ztf_saves_everything_and_one_light_curve_per_filter(tmp_path):
     params = get.call_args.kwargs["params"]
     assert params["POS"].startswith("CIRCLE 343.423600 37.938500 0.000833")
     assert params["FORMAT"] == "CSV" and get.call_args.kwargs["timeout"] == archives.TIMEOUT
+
+
+def test_ztf_warns_when_the_star_is_near_saturation(tmp_path):
+    # NSVS 896797 is about V = 10.6, and ZTF kept only 8 points for it
+    bright = ZTF_CSV.replace(",12.31,", ",10.61,").replace(",12.80,", ",10.70,").replace(",11.90,", ",10.40,")
+    with patch.object(archives.requests, "get", return_value=_response(bright)):
+        _status, _rows, _files, note = _fetch("ztf", tmp_path)
+    assert "about magnitude 10.6 in ZTF, near where ZTF saturates (13)" in note
+
+
+def test_ztf_does_not_warn_for_fainter_stars(tmp_path):
+    faint = ZTF_CSV.replace(",12.31,", ",14.31,").replace(",12.80,", ",14.80,").replace(",11.90,", ",13.90,")
+    with patch.object(archives.requests, "get", return_value=_response(faint)):
+        _status, _rows, _files, note = _fetch("ztf", tmp_path)
+    assert "saturates" not in note
 
 
 def test_ztf_with_no_object_at_the_position(tmp_path):
@@ -309,6 +370,27 @@ def test_gaia_source_is_only_looked_up_once_per_run(tmp_path):
     assert lookup.call_count == 1
     assert status == "found" and [f.name for f in files] == ["gaia_spectra_xp.csv"]
     assert "No RVS spectrum" in note
+
+
+def test_gaia_products_are_asked_for_as_votable_first(tmp_path):
+    with patch("astroquery.gaia.Gaia.load_data", return_value={"x": [EPOCHS]}) as load:
+        archives._gaia_products(7, "EPOCH_PHOTOMETRY", tmp_path)
+    assert load.call_count == 1 and load.call_args.kwargs["format"] == "votable"
+
+
+def test_gaia_products_fall_back_to_csv(tmp_path):
+    error = requests.exceptions.HTTPError("Error 500:")
+    with patch("astroquery.gaia.Gaia.load_data", side_effect=[error, {"x": [EPOCHS]}]) as load:
+        tables = archives._gaia_products(7, "EPOCH_PHOTOMETRY", tmp_path)
+    assert [c.kwargs["format"] for c in load.call_args_list] == ["votable", "csv"]
+    assert len(tables[0]) == 4
+
+
+def test_gaia_data_service_errors_are_explained(tmp_path):
+    error = requests.exceptions.HTTPError("Error 500:")
+    with patch("astroquery.gaia.Gaia.load_data", side_effect=error):
+        with pytest.raises(OSError, match="Gaia's data service gave an error for RVS .Error 500:.*try again later"):
+            archives._gaia_products(7, "RVS", tmp_path)
 
 
 def test_gaia_download_unpacks_inside_the_output_folder(tmp_path):
@@ -421,9 +503,34 @@ def test_sdss_with_no_spectrum(tmp_path):
 
 def test_simbad_is_saved(tmp_path):
     table = Table({"main_id": ["V* SW Lac"], "otype": ["EB*"]})
-    with patch("astroquery.simbad.Simbad.query_region", return_value=table):
+    with patch("astroquery.simbad.SimbadClass.query_region", return_value=table):
         status, rows, files, _note = _fetch("simbad", tmp_path)
     assert (status, rows) == ("found", 1) and pd.read_csv(files[0])["otype"][0] == "EB*"
+
+
+def test_simbad_uses_the_harvard_mirror_when_cds_is_down(tmp_path):
+    table = Table({"main_id": ["V* SW Lac"], "otype": ["EB*"]})
+    servers = []
+
+    def query(self, *args, **kwargs):
+        servers.append(self.server)
+        if self.server == "simbad.cds.unistra.fr":
+            raise Exception("Unable to access the capabilities endpoint at:\n- https://...")
+        return table
+    messages = []
+    with patch("astroquery.simbad.SimbadClass.query_region", query):
+        status, _rows, _files, _note = _fetch("simbad", tmp_path, _run(messages))
+    assert status == "found"
+    assert servers == ["simbad.cds.unistra.fr", "simbad.harvard.edu"]
+    assert messages == ["SIMBAD at simbad.cds.unistra.fr didn't answer "
+                        "(Unable to access the capabilities endpoint at:)."]
+
+
+def test_simbad_down_everywhere(tmp_path):
+    with patch("astroquery.simbad.SimbadClass.query_region", side_effect=Exception("no capabilities")):
+        with pytest.raises(OSError, match="SIMBAD couldn't be reached .simbad.cds.unistra.fr: no capabilities; "
+                                          "simbad.harvard.edu: no capabilities.. Try again later."):
+            _fetch("simbad", tmp_path)
 
 
 # --- a whole download -----------------------------------------------------------------------------------------

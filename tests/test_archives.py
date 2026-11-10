@@ -27,6 +27,17 @@ from tests.test_vizier import EMPTY, GOOD, OUTAGE, FakeServers
 TARGET = Target("SW Lac", SkyCoord(343.4236 * u.deg, 37.9385 * u.deg))
 
 
+@pytest.fixture(autouse=True)
+def mast_catalogues_down(monkeypatch):
+    """
+    GALEX and Pan-STARRS go to MAST first. Unless a test says otherwise, MAST
+    fails here, so the tests written for VizieR still exercise VizieR.
+    """
+    def down(*args, **kwargs):
+        raise requests.exceptions.ConnectionError("MAST is down in this test")
+    monkeypatch.setattr("astroquery.mast.Catalogs.query_region", down)
+
+
 def _run(messages=None, cancel=None):
     return Run(log=(messages.append if messages is not None else lambda m: None), cancel_event=cancel)
 
@@ -171,7 +182,7 @@ def test_x_ray_catalogues_search_wider_than_optical_ones(tmp_path):
     with patch.object(archives, "query_region_tables", side_effect=record):
         _fetch("rosat", tmp_path)
         _fetch("gaia", tmp_path)
-    assert seen == {"IX/47/2rxs": 30, "I/355/gaiadr3": 3}
+    assert seen == {"J/A+A/588/A103/cat2rxs": 30, "I/355/gaiadr3": 3}
 
 
 def test_vizier_servers_that_do_not_respond_are_not_waited_on_again(tmp_path, monkeypatch):
@@ -601,3 +612,115 @@ def test_command_line_rejects_unknown_databases(tmp_path, capsys):
     with pytest.raises(SystemExit):
         archives.main(["SW Lac", str(tmp_path), "--only", "ztf,nonsense"])
     assert "unknown database keys: nonsense" in capsys.readouterr().err
+
+
+# --- MAST catalogues and backups ----------------------------------------------------------------
+
+def test_galex_comes_from_mast(tmp_path, monkeypatch, vizier):
+    fake = vizier(GOOD)
+    table = Table({"objID": [1, 2], "nuv_mag": [14.2, 18.0], "distance": [4.1, 0.3]})
+    seen = {}
+
+    def query(coordinates, **kwargs):
+        seen.update(kwargs)
+        return table
+    monkeypatch.setattr("astroquery.mast.Catalogs.query_region", query)
+    status, rows, files, note = _fetch("galex", tmp_path)
+    assert (status, rows) == ("found", 2) and "from MAST" in note
+    assert list(pd.read_csv(files[0])["distance"]) == [0.3, 4.1]          # nearest first
+    assert seen["catalog"] == "Galex" and seen["radius"].to_value(u.arcsec) == pytest.approx(5)
+    assert fake.calls == []                                               # VizieR wasn't needed
+
+
+def test_panstarrs_asks_mast_for_dr2_mean_photometry(tmp_path, monkeypatch):
+    seen = {}
+
+    def query(coordinates, **kwargs):
+        seen.update(kwargs)
+        return Table({"objID": [], "distance": []})
+    monkeypatch.setattr("astroquery.mast.Catalogs.query_region", query)
+    status, _rows, _files, note = _fetch("panstarrs", tmp_path)
+    assert status == "nothing" and "3 arcsec" in note
+    assert (seen["catalog"], seen["data_release"], seen["table"]) == ("Panstarrs", "dr2", "mean")
+
+
+def test_galex_falls_back_to_vizier_when_mast_fails(tmp_path, vizier):
+    vizier(GOOD)
+    messages = []
+    status, rows, _files, note = _fetch("galex", tmp_path, _run(messages))
+    assert (status, rows) == ("found", 2)
+    assert note.startswith("From VizieR, as MAST gave an error.")
+    assert messages[0] == "MAST didn't work (MAST is down in this test); trying VizieR."
+
+
+def test_backup_is_not_used_when_the_first_source_finds_nothing(tmp_path, monkeypatch, vizier):
+    fake = vizier(GOOD)
+    monkeypatch.setattr("astroquery.mast.Catalogs.query_region", lambda *a, **k: Table({"objID": []}))
+    assert _fetch("galex", tmp_path)[0] == "nothing"
+    assert fake.calls == []
+
+
+def test_both_sources_failing_names_both(tmp_path, vizier):
+    vizier(OUTAGE)
+    with pytest.raises(OSError, match="MAST: MAST is down in this test VizieR: VizieR couldn't be reached"):
+        _fetch("galex", tmp_path)
+
+
+VIZIER_EPOCHS_ROWS = Table({"Source": [7, 7, 7], "Band": ["G", "G", "RP"], "Time": [1700.25, 1701.25, 1700.25],
+                            "mag": [12.0, 12.5, 11.4], "flux_over_error": [1000.0, 500.0, 300.0]})
+VIZIER_EPOCHS_COLUMNS = Table({"Source": [7, 7], "TimeG": [1700.25, 1701.25], "Gmag": [12.0, 12.5],
+                               "e_Gmag": [0.001, 0.002], "TimeRP": [1700.3, 1701.3], "RPmag": [11.4, 11.5]})
+
+
+def _esa_down(*args, **kwargs):
+    raise OSError("Gaia's data service gave an error for EPOCH_PHOTOMETRY (Error 500:).")
+
+
+def test_gaia_light_curve_falls_back_to_vizier_when_esa_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(archives, "_fetch_gaia_light_curve", _esa_down)
+    archive = _archive("gaia_lc")
+    rebuilt = archives._with_backup(archives._fetch_gaia_light_curve, archives._fetch_gaia_light_curve_vizier,
+                                    "ESA's Gaia archive", "VizieR's copy")
+    with patch.object(archives, "query_region_tables", return_value={"I/355/epphot": VIZIER_EPOCHS_ROWS}) as q:
+        status, rows, files, note = rebuilt(TARGET, tmp_path, _run(), archive.key)
+    assert q.call_args[0][0] == "I/355/epphot"
+    assert (status, rows) == ("found", 3)
+    assert sorted(f.name for f in files) == ["gaia_lc_G.txt", "gaia_lc_RP.txt", "gaia_lc_all.csv"]
+    assert np.loadtxt(tmp_path / "gaia_lc_G.txt")[0, 0] == pytest.approx(1700.25 + 2455197.5)
+    assert note.startswith("From VizieR's copy, as ESA's Gaia archive gave an error. Time is BJD (TCB).")
+
+
+def test_gaia_light_curve_from_a_table_with_columns_per_band(tmp_path):
+    with patch.object(archives, "query_region_tables", return_value={"I/355/epphot": VIZIER_EPOCHS_COLUMNS}):
+        status, _rows, files, note = archives._fetch_gaia_light_curve_vizier(TARGET, tmp_path, _run(), "gaia_lc")
+    assert status == "found" and note == "Time is BJD (TCB)."
+    assert sorted(f.name for f in files) == ["gaia_lc_G.txt", "gaia_lc_RP.txt", "gaia_lc_all.csv"]
+    g = np.loadtxt(tmp_path / "gaia_lc_G.txt")
+    assert g[:, 1].tolist() == [12.0, 12.5] and g[1, 2] == pytest.approx(0.002)
+
+
+def test_gaia_table_with_unrecognised_columns_is_still_saved(tmp_path):
+    odd = Table({"Source": [7], "something": [1.0]})
+    with patch.object(archives, "query_region_tables", return_value={"I/355/epphot": odd}):
+        status, _rows, files, note = archives._fetch_gaia_light_curve_vizier(TARGET, tmp_path, _run(), "gaia_lc")
+    assert status == "found" and [f.name for f in files] == ["gaia_lc_all.csv"]
+    assert "columns weren't recognised" in note
+
+
+def test_gaia_spectra_fall_back_to_vizier(tmp_path):
+    spectrum = Table({"Source": [7], "Flux": [[1.0, 2.0]]})
+    with patch.object(archives, "query_region_tables", return_value={"I/355/xpsample": spectrum}) as q:
+        status, _rows, files, note = archives._fetch_gaia_spectra_vizier(TARGET, tmp_path, _run(), "gaia_spectra")
+    assert q.call_args[0][0] == "I/355/xpsample"
+    assert status == "found" and files[0].name == "gaia_spectra_xp.csv" and "RVS" in note
+
+
+def test_rosat_uses_the_2rxs_catalogue():
+    seen = {}
+
+    def record(catalog, coordinates, **kwargs):
+        seen["catalog"] = catalog
+        return {}
+    with patch.object(archives, "query_region_tables", side_effect=record):
+        _archive("rosat").fetch(TARGET, None, _run(), "rosat")
+    assert seen["catalog"] == "J/A+A/588/A103/cat2rxs"

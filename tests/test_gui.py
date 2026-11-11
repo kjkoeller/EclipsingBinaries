@@ -742,9 +742,12 @@ def test_find_minimum_plot_takes_the_keyboard_when_the_pointer_enters(app, tmp_p
     app.update()
     window = _finder(app)
     widget = window.canvas.get_tk_widget()
-    widget.event_generate("<Enter>")
-    window.update()
-    assert window.focus_get() is widget
+    # Whether the window really gets the keyboard is up to the desktop: Windows only gives it
+    # to the window in front, which a test window on CI isn't. So this checks the plot asks.
+    with patch.object(widget, "focus_set") as focus_set:
+        widget.event_generate("<Enter>")
+        window.update()
+    focus_set.assert_called()
     window.destroy()
 
 

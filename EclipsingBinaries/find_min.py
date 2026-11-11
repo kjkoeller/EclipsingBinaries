@@ -32,7 +32,9 @@ from .vseq_updated import (calc, FT, pick_column, LIGHT_CURVE_ERR_NAMES, LIGHT_C
 DEFAULT_ORDER = 5          # polynomial drawn through the eclipse (not used for the minimum itself)
 DEFAULT_RESOLUTION = 200   # trial times tried across the boundaries
 DEFAULT_NPAIRS = 20        # pairs of points compared either side of each trial time
-fontsize = 9
+fontsize = 11            # axis labels
+TICK_SIZE = 10           # tick labels
+NOTE_SIZE = 9.5          # the R² note, the legend and warnings
 
 # Splitting a light curve into nights. A gap longer than NIGHT_GAP days starts a new
 # night. Data with no daytime gaps, such as TESS, would otherwise be one long night, so
@@ -536,7 +538,7 @@ def draw_S(ax, result, npairs=DEFAULT_NPAIRS, entire_S=False):
         ax.set_xlim(min(result.para_times) - t_range * 0.025, max(result.para_times) + t_range * 0.025)
     ax.set_ylabel("S", fontsize=fontsize)
     ax.text(0.99, 0.95, f"$R^2$ = {result.R2:.5f}, K = {npairs} ({int(result.Z * 2)})",
-            transform=ax.transAxes, ha="right", va="top", fontsize=7)
+            transform=ax.transAxes, ha="right", va="top", fontsize=NOTE_SIZE)
 
 
 # Colours for the Find Minimum plot
@@ -628,17 +630,17 @@ def draw_night(ax_s, ax_lc, night, lb, rb, minimum=None, labels=None, colours=No
         ax_s.set_yticks([])
     if message:
         ax_lc.text(0.5, 0.9, textwrap.fill(message, 64), transform=ax_lc.transAxes, ha="center", va="top",
-                   fontsize=9, color=WARNING_COLOUR, zorder=20, linespacing=1.4,
+                   fontsize=NOTE_SIZE + 0.5, color=WARNING_COLOUR, zorder=20, linespacing=1.4,
                    bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor=WARNING_COLOUR, alpha=0.95))
     ax_lc.set_xlabel(f"HJD - {night.offset}", fontsize=fontsize)
     ax_lc.set_ylabel("Relative flux", fontsize=fontsize)
     ax_lc.grid(alpha=0.3)
     if len(night.bands) > 1:
-        ax_lc.legend(fontsize=7, loc="lower left", frameon=False)
+        ax_lc.legend(fontsize=NOTE_SIZE, loc="lower left", frameon=False)
     ax_s.xaxis.set_label_position("top")
     ax_s.xaxis.tick_top()
     for ax in (ax_s, ax_lc):
-        ax.tick_params(labelsize=7)
+        ax.tick_params(labelsize=TICK_SIZE)
 
 
 # ---------------------------------------------------------------------------

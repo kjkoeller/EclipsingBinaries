@@ -125,8 +125,11 @@ class MinimumFinderWindow(tk.Toplevel):
 
         plot_frame = ttk.Frame(body)
         plot_frame.grid(row=0, column=0, sticky="nsew")
-        self.figure = Figure(figsize=(7, 5.5))
-        grid = self.figure.add_gridspec(2, 1, height_ratios=[1, 3], hspace=0.08)
+        # Constrained layout sizes the margins to the labels actually drawn, so the plots
+        # fill the window instead of sitting inside matplotlib's fixed default margins
+        self.figure = Figure(figsize=(7, 5.5), layout="constrained")
+        self.figure.get_layout_engine().set(w_pad=0.06, h_pad=0.06, hspace=0.02)
+        grid = self.figure.add_gridspec(2, 1, height_ratios=[1, 3])
         self.ax_s = self.figure.add_subplot(grid[0])
         self.ax_lc = self.figure.add_subplot(grid[1])
         self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)

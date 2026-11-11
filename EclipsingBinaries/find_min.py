@@ -12,10 +12,11 @@ Created:  07/03/2021
 Original Author: Alec Neal
 
 Last Edits Done By: Kyle Koeller
-Last Edited: 10/19/2026
+Last Edited: 11/10/2026
 """
 
 import statistics
+import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -126,6 +127,14 @@ class KweeResult:
     para_times: np.ndarray      # trial times used for the parabola
     para_S: np.ndarray
     R2: float                   # how well the parabola fits
+    # How far either side of t_kw the pairs reach: out to the nearer end of the data, so
+    # points past t_kw + reach or before t_kw - reach on the longer side aren't used
+    reach: float = 0.0
+
+    @property
+    def used_range(self):
+        """The times the fit actually compares, from t_kw - reach to t_kw + reach."""
+        return self.t_kw - self.reach, self.t_kw + self.reach
 
 
 def kwee_van_woerden(times, flux, resolution=DEFAULT_RESOLUTION, para_range=None, npairs=DEFAULT_NPAIRS,
@@ -213,8 +222,11 @@ def kwee_van_woerden(times, flux, resolution=DEFAULT_RESOLUTION, para_range=None
         if np.isfinite(value):
             error = value
 
+    # calc_S pairs points out to the nearer end of the data from T_kw, as worked out here
+    reach = float(min(T_kw - times.min(), times.max() - T_kw))
     return KweeResult(t_kw=float(T_kw), error=error, Z=Z, guesses=guesses, S=Slist,
-                      parabola=np.asarray(coef), para_times=paraHJD, para_S=paraS, R2=float(R2))
+                      parabola=np.asarray(coef), para_times=paraHJD, para_S=paraS, R2=float(R2),
+                      reach=reach)
 
 
 def KvW(fracHJD, flux, discard=0.1, resolution=100, para_range=None, plot=False,
@@ -527,28 +539,97 @@ def draw_S(ax, result, npairs=DEFAULT_NPAIRS, entire_S=False):
             transform=ax.transAxes, ha="right", va="top", fontsize=7)
 
 
-def draw_night(ax_s, ax_lc, night, lb, rb, minimum=None, labels=None, colours=None):
+# Colours for the Find Minimum plot
+BOUNDARY_COLOUR = "#2e9e48"
+OUTSIDE_COLOUR = "0.6"        # points and lines the fit doesn't use
+OUTSIDE_SHADE = "0.82"        # the background outside the boundaries
+UNUSED_SHADE = "0.93"         # the lighter background between a boundary and where the pairs stop
+REACH_COLOUR = "0.55"         # the line where the fit's pairs stop
+WARNING_COLOUR = "#b3261e"
+
+
+def _draw_boundaries(ax, lb, rb):
+    """
+    The two boundary lines, each with an arrowhead just outside it pointing
+    in: ">|" for the left one and "|<" for the right, so the pair reads >| |<.
+    """
+    for x, arrow, side, nudge in ((lb, ">", "right", -2), (rb, "<", "left", 2)):
+        ax.axvline(x, color=BOUNDARY_COLOUR, ls="--", lw=1)
+        ax.annotate(arrow, xy=(x, 1.0), xycoords=("data", "axes fraction"), xytext=(nudge, -3),
+                    textcoords="offset points", ha=side, va="top", color=BOUNDARY_COLOUR,
+                    fontsize=13, fontweight="bold", annotation_clip=False)
+
+
+def draw_night(ax_s, ax_lc, night, lb, rb, minimum=None, labels=None, colours=None,
+               connect=True, show_poly=False, message=""):
     """
     The light curve for one night with the boundaries, and, when a minimum
     was measured, the S curve above it and the minimum marked on both.
+
+    Points the Kwee-van Woerden fit uses are drawn in their filter's colour
+    and the rest in grey. The fit pairs points the same distance either side
+    of the minimum, so it only reaches as far as the nearer boundary: on the
+    other side, a faint grey line marks where the pairs stop. The background
+    is shaded darker grey outside the boundaries and lighter grey between a
+    boundary and where the pairs stop, since neither stretch is used. Filters that
+    aren't ticked are faded. connect joins each filter's points with straight
+    lines, show_poly draws the polynomial through the eclipse, and message
+    (such as "too few points") is written in red across the plot.
     """
     colours = colours or {"B": "#2f5aa8", "V": "#2d7d46", "R": "#b23a2e"}
     ax_s.clear()
     ax_lc.clear()
+    # Where the fit's pairs reach, which can be narrower than the boundaries on one side
+    first, last = lb, rb
+    if minimum is not None and minimum.kwee.reach > 0:
+        start, end = minimum.kwee.used_range
+        first, last = max(lb, start), min(rb, end)
+        # The pairs run out to the nearest point on the near side, a hair inside that
+        # boundary, so only the side that's cut short is marked
+        if last - first > 0 and (rb - last) > (first - lb):
+            edge, bound = last, rb
+        else:
+            edge, bound = first, lb
+        if abs(bound - edge) > 1e-9:
+            ax_lc.axvspan(min(edge, bound), max(edge, bound), color=UNUSED_SHADE, lw=0, zorder=0)
+            ax_lc.axvline(edge, color=REACH_COLOUR, ls=":", lw=1.2, zorder=0.5)
     for label, band in night.bands.items():
         used = labels is None or label in labels
-        ax_lc.errorbar(band.time, band.flux, band.flux_err, fmt="o", ms=3, elinewidth=0.6, capsize=0,
-                       color=colours.get(label, "0.2"), alpha=1.0 if used else 0.25,
+        colour = colours.get(label, "0.2")
+        fade = 1.0 if used else 0.25
+        order = np.argsort(band.time, kind="stable")
+        time, flux, flux_err = band.time[order], band.flux[order], band.flux_err[order]
+        inside = (time >= first) & (time <= last)
+        if connect:
+            ax_lc.plot(time, flux, "-", color=OUTSIDE_COLOUR, lw=0.8, alpha=fade, zorder=1)
+            if inside.any():
+                ax_lc.plot(time[inside], flux[inside], "-", color=colour, lw=0.8, alpha=0.6 * fade, zorder=2)
+        if (~inside).any():
+            ax_lc.errorbar(time[~inside], flux[~inside], flux_err[~inside], fmt="o", ms=3, elinewidth=0.6,
+                           capsize=0, color=OUTSIDE_COLOUR, alpha=fade, zorder=3)
+        ax_lc.errorbar(time[inside], flux[inside], flux_err[inside], fmt="o", ms=3, elinewidth=0.6,
+                       capsize=0, color=colour, alpha=fade, zorder=4,
                        label=label if len(night.bands) > 1 else None)
-    for x in (lb, rb):
-        ax_lc.axvline(x, color="#2e9e48", ls="--", lw=1)
+    # Darker grey outside the boundaries, out past the edges of the plot. The view is
+    # fixed first so the shading doesn't widen it.
+    left, right = ax_lc.get_xlim()
+    far = 10 * (right - left)
+    ax_lc.axvspan(min(left, lb) - far, lb, color=OUTSIDE_SHADE, lw=0, zorder=0)
+    ax_lc.axvspan(rb, max(right, rb) + far, color=OUTSIDE_SHADE, lw=0, zorder=0)
+    ax_lc.set_xlim(left, right)
+    _draw_boundaries(ax_lc, lb, rb)
     if minimum is not None:
-        px, py = calc.poly.polylist(minimum.poly, minimum.lb, minimum.rb, 200)
-        ax_lc.plot(px, py, color="#c0392b", lw=1, zorder=10)
+        if show_poly:
+            px, py = calc.poly.polylist(minimum.poly, minimum.lb, minimum.rb, 200)
+            ax_lc.plot(px, py, color="#c0392b", lw=1, zorder=10)
         ax_lc.axvline(minimum.kwee.t_kw, color="#2f5aa8", lw=1)
         draw_S(ax_s, minimum.kwee)
     else:
         ax_s.set_yticks([])
+    if message:
+        ax_lc.text(0.5, 0.9, textwrap.fill(message, 64), transform=ax_lc.transAxes, ha="center", va="top",
+                   fontsize=9, color=WARNING_COLOUR, zorder=20, linespacing=1.4,
+                   bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor=WARNING_COLOUR, alpha=0.95))
     ax_lc.set_xlabel(f"HJD - {night.offset}", fontsize=fontsize)
     ax_lc.set_ylabel("Relative flux", fontsize=fontsize)
     ax_lc.grid(alpha=0.3)

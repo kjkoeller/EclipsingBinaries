@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 The Find Minimum window: step through the nights of a light curve, set the
-boundaries around an eclipse with the mouse, and save each time of minimum
-to a file O-C Plotting can read.
+boundaries around an eclipse with the a and d keys, and save each time of
+minimum to a file O-C Plotting can read.
 
 The calculations are in find_min.py; this file is only the window.
 
@@ -22,10 +22,11 @@ from matplotlib.figure import Figure
 from .find_min import (DEFAULT_NPAIRS, DEFAULT_ORDER, DEFAULT_RESOLUTION, MinimumError, MinimumFile,
                        draw_night, guess_boundaries, load_nights, measure_minimum, minimum_file_name)
 
-HELP_TEXT = ("Click to set the left boundary and right-click (or Shift-click) to set the right one. "
-             "Keep both on the sides of the eclipse rather than out on the flat parts. "
-             "Keys over the plot: a and d set the boundaries at the pointer, n and p change night, "
-             "Enter saves the minimum.")
+HELP_TEXT = ("Point at the plot and press a to put the left boundary (>|) there, or d for the right "
+             "one (|<). Keep both on the sides of the eclipse rather than out on the flat parts. "
+             "Shaded points aren't used: dark grey is outside the boundaries, light grey is past "
+             "where the fit's pairs reach. n and p change night, Enter saves the minimum, and the "
+             "scroll wheel or the toolbar zooms.")
 
 
 def _style(widget, name, fallback):
@@ -103,7 +104,16 @@ class MinimumFinderWindow(tk.Toplevel):
 
         settings = ttk.Frame(self, padding=(12, 0, 12, 4))
         settings.pack(fill="x")
-        self.order_var = self._spin(settings, "Polynomial order", self.order, 2, 9)
+        self.connect_var = tk.BooleanVar(master=self, value=True)
+        ttk.Checkbutton(settings, text="Connect points", variable=self.connect_var,
+                        command=self.redraw).pack(side="left", padx=(0, 12))
+        self.poly_var = tk.BooleanVar(master=self, value=False)
+        self.poly_check = ttk.Checkbutton(settings, text="Draw polynomial", variable=self.poly_var,
+                                          command=self._poly_toggled)
+        self.poly_check.pack(side="left", padx=(0, 8))
+        # The polynomial is only a guide for the eye, so its order is only shown when it's drawn
+        self.order_frame = ttk.Frame(settings)
+        self.order_var = self._spin(self.order_frame, "Polynomial order", self.order, 2, 9)
         self.pairs_var = self._spin(settings, "Pairs", self.npairs, 5, 60)
         self.resolution_var = self._spin(settings, "Trial times", self.resolution, 50, 1000, step=50)
         ttk.Label(settings, text=HELP_TEXT, wraplength=520, foreground="#5b6675").pack(side="left", padx=(16, 0))
@@ -124,8 +134,10 @@ class MinimumFinderWindow(tk.Toplevel):
         self.toolbar.update()
         self.toolbar.pack(side="bottom", fill="x")
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
-        self.canvas.mpl_connect("button_press_event", self._on_click)
         self.canvas.mpl_connect("key_press_event", self._on_key)
+        # The boundaries are set with keys, so the plot takes the keyboard as soon as the
+        # pointer is over it rather than only after a click
+        self.canvas.get_tk_widget().bind("<Enter>", lambda _e: self.canvas.get_tk_widget().focus_set(), add="+")
         self.canvas.mpl_connect("scroll_event", self._on_scroll)
 
         side = ttk.Frame(body, padding=(14, 0, 0, 0), width=320)
@@ -212,6 +224,13 @@ class MinimumFinderWindow(tk.Toplevel):
         self.boundaries[self.current] = tuple(sorted((lb, rb)))
         self.remeasure()
 
+    def _poly_toggled(self):
+        if self.poly_var.get():
+            self.order_frame.pack(side="left", after=self.poly_check)
+        else:
+            self.order_frame.pack_forget()
+        self.redraw()
+
     def _bands_changed(self):
         if not self.selected_labels():
             self.result_var.set("Tick at least one filter.")
@@ -232,9 +251,22 @@ class MinimumFinderWindow(tk.Toplevel):
                 message = str(e)
         else:
             message = "Tick at least one filter."
+        if self.minimum is not None and self.minimum.error is None:
+            # A time came out, but too few points for an error, so it can't be saved
+            message = (f"Only {self.minimum.n_points} points between the boundaries: too few for an "
+                       "error estimate, so this minimum can't be saved. Widen the boundaries.")
+        self._message = message
         self._show_result(message)
         self._refresh_table()
-        draw_night(self.ax_s, self.ax_lc, night, lb, rb, self.minimum, labels=labels)
+        self.redraw()
+
+    def redraw(self):
+        """Draw the current night again, keeping the measurement."""
+        night = self.nights[self.current]
+        lb, rb = self.boundaries[self.current]
+        draw_night(self.ax_s, self.ax_lc, night, lb, rb, self.minimum, labels=self.selected_labels(),
+                   connect=self.connect_var.get(), show_poly=self.poly_var.get(),
+                   message=getattr(self, "_message", ""))
         self.canvas.draw_idle()
 
     def _show_result(self, message):
@@ -246,10 +278,17 @@ class MinimumFinderWindow(tk.Toplevel):
             return
         error = f"± {m.error:.6f}" if m.error is not None else "(no error estimate: widen the boundaries)"
         self.result_var.set(f"HJD {m.hjd:.6f} {error}\n"
-                            f"{m.n_points} points in {', '.join(m.labels)}, "
+                            f"{m.n_points} points in {', '.join(m.labels)} between the boundaries, "
+                            f"{self._points_used(m)} used by the fit\n"
                             f"K = {self._settings()[1]}, R² = {m.kwee.R2:.5f}")
-        self.result_label.configure(foreground="#1b2430")
+        self.result_label.configure(foreground="#1b2430" if m.error is not None else "#b3261e")
         self.save_button.state(["!disabled"] if m.error is not None else ["disabled"])
+
+    def _points_used(self, m):
+        """How many points fall where the fit's pairs reach, the same distance either side of the minimum."""
+        t = self.nights[self.current].points(m.labels)[0]
+        start, end = m.kwee.used_range
+        return int(((t >= max(m.lb, start)) & (t <= min(m.rb, end))).sum())
 
     def save_minimum(self):
         if self.minimum is None:
@@ -289,14 +328,6 @@ class MinimumFinderWindow(tk.Toplevel):
     # ------------------------------------------------------------------
     # Mouse and keys on the plot
     # ------------------------------------------------------------------
-    def _on_click(self, event):
-        if event.inaxes is not self.ax_lc or event.xdata is None:
-            return
-        if self.toolbar.mode:  # zooming or panning with the toolbar
-            return
-        right = event.button == 3 or (event.button == 1 and event.key == "shift")
-        self.set_boundary("right" if right else "left", event.xdata)
-
     def _on_key(self, event):
         if event.key in ("a", "d") and event.inaxes is self.ax_lc and event.xdata is not None:
             self.set_boundary("left" if event.key == "a" else "right", event.xdata)

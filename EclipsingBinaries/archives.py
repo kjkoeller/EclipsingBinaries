@@ -269,6 +269,38 @@ def _with_backup(first, second, first_name, second_name):
     return fetch
 
 
+PANSTARRS_URL = "https://catalogs.mast.stsci.edu/api/v0.1/panstarrs/dr2/mean.csv"
+
+
+def _fetch_panstarrs(target, folder, run, key, radius_arcsec=3):
+    """
+    Pan-STARRS1 DR2 mean photometry from MAST's catalogue service. astroquery's
+    MAST query couldn't read this table (it fails on the text "None" in empty
+    columns), so the CSV is read directly; pandas takes "None" as missing.
+    """
+    response = requests.get(PANSTARRS_URL, timeout=TIMEOUT, params={
+        "ra": f"{target.coord.ra.deg:.7f}", "dec": f"{target.coord.dec.deg:.7f}",
+        "radius": f"{radius_arcsec / 3600:.10f}", "nDetections.gte": 1, "pagesize": 5001})
+    response.raise_for_status()
+    try:
+        frame = pd.read_csv(io.StringIO(response.text))
+    except pd.errors.EmptyDataError:
+        frame = pd.DataFrame()
+    except pd.errors.ParserError as error:
+        raise OSError(f"MAST's Pan-STARRS answer wasn't a table: {error}") from error
+    ra, dec = _column(frame, "raMean"), _column(frame, "decMean")
+    if len(frame) == 0 or ra is None or dec is None:
+        return "nothing", 0, [], f"No source within {radius_arcsec:g} arcsec."
+    found = SkyCoord(pd.to_numeric(frame[ra], errors="coerce").to_numpy() * u.deg,
+                     pd.to_numeric(frame[dec], errors="coerce").to_numpy() * u.deg)
+    frame.insert(0, "distance_arcsec", target.coord.separation(found).arcsec.round(3))
+    frame = frame.sort_values("distance_arcsec", kind="stable")
+    path = folder / f"{key}.csv"
+    frame.to_csv(path, index=False)
+    return "found", len(frame), [path], (f"Sources within {radius_arcsec:g} arcsec from MAST, nearest first. "
+                                         "Missing magnitudes are -999.")
+
+
 def _mast_catalog(catalog, radius_arcsec, **criteria):
     """
     A fetch function for a catalogue MAST hosts (GALEX and Pan-STARRS are MAST
@@ -362,9 +394,12 @@ def _gaia_source(target, run):
     return source
 
 
-# Formats asked for from Gaia's data service, in order. VOTable is astroquery's
-# default and the one ESA documents for every product; CSV is tried if it fails.
-GAIA_FORMATS = ("votable", "csv")
+# What's asked for from Gaia's data service, in order: (data structure, format).
+# On 14 October 2026 ESA renamed the per-source structure from INDIVIDUAL to
+# DATAMODEL_STANDARD, and since then INDIVIDUAL gives HTTP 500; astroquery 0.4.11
+# still sends INDIVIDUAL unless told otherwise. The old name is kept last in case
+# ESA restores it. VOTable is the format ESA documents for every product.
+GAIA_REQUESTS = (("DATAMODEL_STANDARD", "votable"), ("DATAMODEL_STANDARD", "csv"), ("INDIVIDUAL", "votable"))
 
 
 def _gaia_products(source_id, retrieval_type, folder):
@@ -376,12 +411,12 @@ def _gaia_products(source_id, retrieval_type, folder):
         before = os.getcwd()
         os.chdir(folder)
         try:
-            for data_format in GAIA_FORMATS:
+            for structure, data_format in GAIA_REQUESTS:
                 try:
                     with contextlib.redirect_stdout(io.StringIO()):
                         products = Gaia.load_data(ids=[source_id], data_release="Gaia DR3",
                                                   retrieval_type=retrieval_type,
-                                                  data_structure="INDIVIDUAL", format=data_format)
+                                                  data_structure=structure, format=data_format)
                     break
                 except (requests.exceptions.RequestException, OSError) as error:
                     first_error = first_error or error
@@ -560,7 +595,7 @@ def _fetch_neowise(target, folder, run, key):
     """NEOWISE single exposures at 3.4 and 4.6 microns from IRSA, two visits a year since 2013."""
     from astroquery.ipac.irsa import Irsa
     table = Irsa.query_region(target.coord, catalog="neowiser_p1bs_psd", spatial="Cone",
-                              radius=5 * u.arcsec, cache=False)
+                              radius=5 * u.arcsec)
     if table is None or len(table) == 0:
         return "nothing", 0, [], "No NEOWISE detection within 5 arcsec."
     files = [_save_table(table, folder / f"{key}_all.csv")]
@@ -684,7 +719,7 @@ ARCHIVES = (
             "Sloan Digital Sky Survey photometry.", _vizier("V/154/sdss16", 3)),
     Archive("panstarrs", "Pan-STARRS1", MAGNITUDES, "Optical (g, r, i, z, y)",
             "Pan-STARRS1 DR2 mean photometry, Dec above -30.",
-            _with_backup(_mast_catalog("Panstarrs", 3, data_release="dr2", table="mean"),
+            _with_backup(_fetch_panstarrs,
                          _vizier("II/349/ps1", 3), "MAST", "VizieR")),
     Archive("apass", "APASS DR9", MAGNITUDES, "Optical (B, V, g, r, i)",
             "AAVSO Photometric All-Sky Survey.", _vizier("II/336/apass9", 5)),

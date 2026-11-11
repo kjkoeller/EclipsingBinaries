@@ -18,8 +18,9 @@ from requests import exceptions as request_exceptions
 
 from ._log import make_logger
 
-# CDS first, then the official mirrors. CfA is left out because it passes every
-# query back to CDS, so it fails whenever CDS does.
+# CDS first, then the official mirrors. CfA comes last: during the October 2026
+# outage it passed queries back to CDS, but on 10 November its web page served
+# Pan-STARRS on a day CDS and the other mirrors couldn't.
 VIZIER_SERVERS = (
     "vizier.cds.unistra.fr",
     "vizier.idia.ac.za",
@@ -27,6 +28,7 @@ VIZIER_SERVERS = (
     "vizier.iucaa.in",
     "vizier.china-vo.org",
     "vizier.inasan.ru",
+    "vizier.cfa.harvard.edu",
 )
 
 # Seconds to wait for a connection, then for each piece of the answer. During

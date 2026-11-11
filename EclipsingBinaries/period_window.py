@@ -44,6 +44,12 @@ def _style(widget, name, fallback):
         return fallback
 
 
+# Text sizes on the plots, in points
+LABEL_SIZE = 11          # axis labels
+TICK_SIZE = 10           # tick labels
+NOTE_SIZE = 9.5          # the period caption and the legend
+
+
 class PeriodWindow(tk.Toplevel):
     """
     Interactive period search.
@@ -135,8 +141,12 @@ class PeriodWindow(tk.Toplevel):
 
         plot_frame = ttk.Frame(body)
         plot_frame.grid(row=0, column=0, sticky="nsew")
-        self.figure = Figure(figsize=(7.5, 6))
-        grid = self.figure.add_gridspec(2, 1, height_ratios=[2, 3], hspace=0.35)
+        # Constrained layout sizes the margins to the labels actually drawn, so the plots
+        # fill the window instead of sitting inside matplotlib's fixed default margins. It
+        # runs on each full draw, before the snapshot that dragging the period blits onto.
+        self.figure = Figure(figsize=(7.5, 6), layout="constrained")
+        self.figure.get_layout_engine().set(w_pad=0.06, h_pad=0.06, hspace=0.04)
+        grid = self.figure.add_gridspec(2, 1, height_ratios=[2, 3])
         self.ax_power = self.figure.add_subplot(grid[0])
         self.ax_fold = self.figure.add_subplot(grid[1])
         self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
@@ -362,8 +372,8 @@ class PeriodWindow(tk.Toplevel):
         if r is not None:
             ax.plot(r.periods, r.power, color="0.25", lw=0.7)
             ax.set_xlim(r.periods[0], r.periods[-1])
-            ax.set_xlabel("Trial period (days)", fontsize=9)
-            ax.set_ylabel(pr.statistic_name(r.method), fontsize=9)
+            ax.set_xlabel("Trial period (days)", fontsize=LABEL_SIZE)
+            ax.set_ylabel(pr.statistic_name(r.method), fontsize=LABEL_SIZE)
             ax.grid(alpha=0.3)
             # Semi-transparent so the peak under it still shows at full width
             self._marker_line = ax.axvline(r.best_period, color="#c0392b", lw=1, alpha=0.45, animated=True)
@@ -373,7 +383,7 @@ class PeriodWindow(tk.Toplevel):
             # Clearing the axis drops its callbacks, so hook the slider's range to the zoom again
             ax.callbacks.connect("xlim_changed", lambda _ax: self._sync_slider_range())
             self._sync_slider_range()
-        ax.tick_params(labelsize=8)
+        ax.tick_params(labelsize=TICK_SIZE)
         self._background = None
 
     def _draw_fold(self):
@@ -388,14 +398,14 @@ class PeriodWindow(tk.Toplevel):
                                                      animated=True)
             ax.set_ylim(np.nanmax(curve.mag) + 0.05, np.nanmin(curve.mag) - 0.05)  # brighter is up
             ax.set_xlim(-0.25, 1.25)
-            ax.set_xlabel("Phase", fontsize=9)
-            ax.set_ylabel("Magnitude minus median", fontsize=9)
-            self._fold_text = ax.text(0.01, 0.97, "", transform=ax.transAxes, va="top", fontsize=8,
+            ax.set_xlabel("Phase", fontsize=LABEL_SIZE)
+            ax.set_ylabel("Magnitude minus median", fontsize=LABEL_SIZE)
+            self._fold_text = ax.text(0.01, 0.97, "", transform=ax.transAxes, va="top", fontsize=NOTE_SIZE,
                                       animated=True)
             ax.grid(alpha=0.3)
             if len(curve.labels) > 1:
-                ax.legend(fontsize=7, loc="lower right", frameon=False)
-        ax.tick_params(labelsize=8)
+                ax.legend(fontsize=NOTE_SIZE, loc="lower right", frameon=False)
+        ax.tick_params(labelsize=TICK_SIZE)
         self._background = None
 
     def _animated_artists(self):

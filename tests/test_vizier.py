@@ -171,8 +171,10 @@ def test_every_server_timing_out_is_flagged(servers):
     assert caught.value.timed_out
 
 
-def test_cfa_is_not_tried():
-    assert "vizier.cfa.harvard.edu" not in _vizier.VIZIER_SERVERS
+def test_cfa_is_tried_last():
+    # It passed queries back to CDS in October, but answered on its own in November
+    assert _vizier.VIZIER_SERVERS[-1] == "vizier.cfa.harvard.edu"
+    assert _vizier.VIZIER_SERVERS[0] == "vizier.cds.unistra.fr"
 
 
 def test_cancel_stops_before_asking_another_server(servers):

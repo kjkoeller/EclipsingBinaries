@@ -383,18 +383,29 @@ def test_gaia_source_is_only_looked_up_once_per_run(tmp_path):
     assert "No RVS spectrum" in note
 
 
-def test_gaia_products_are_asked_for_as_votable_first(tmp_path):
+def test_gaia_products_use_the_structure_esa_renamed(tmp_path):
+    # ESA renamed INDIVIDUAL to DATAMODEL_STANDARD on 14 October 2026
     with patch("astroquery.gaia.Gaia.load_data", return_value={"x": [EPOCHS]}) as load:
         archives._gaia_products(7, "EPOCH_PHOTOMETRY", tmp_path)
-    assert load.call_count == 1 and load.call_args.kwargs["format"] == "votable"
+    assert load.call_count == 1
+    assert load.call_args.kwargs["data_structure"] == "DATAMODEL_STANDARD"
+    assert load.call_args.kwargs["format"] == "votable"
 
 
 def test_gaia_products_fall_back_to_csv(tmp_path):
     error = requests.exceptions.HTTPError("Error 500:")
     with patch("astroquery.gaia.Gaia.load_data", side_effect=[error, {"x": [EPOCHS]}]) as load:
         tables = archives._gaia_products(7, "EPOCH_PHOTOMETRY", tmp_path)
-    assert [c.kwargs["format"] for c in load.call_args_list] == ["votable", "csv"]
+    assert [(c.kwargs["data_structure"], c.kwargs["format"]) for c in load.call_args_list] == [
+        ("DATAMODEL_STANDARD", "votable"), ("DATAMODEL_STANDARD", "csv")]
     assert len(tables[0]) == 4
+
+
+def test_gaia_products_try_the_old_structure_name_last(tmp_path):
+    error = requests.exceptions.HTTPError("Error 500:")
+    with patch("astroquery.gaia.Gaia.load_data", side_effect=[error, error, {"x": [EPOCHS]}]) as load:
+        archives._gaia_products(7, "EPOCH_PHOTOMETRY", tmp_path)
+    assert load.call_args.kwargs["data_structure"] == "INDIVIDUAL"
 
 
 def test_gaia_data_service_errors_are_explained(tmp_path):
@@ -632,16 +643,48 @@ def test_galex_comes_from_mast(tmp_path, monkeypatch, vizier):
     assert fake.calls == []                                               # VizieR wasn't needed
 
 
-def test_panstarrs_asks_mast_for_dr2_mean_photometry(tmp_path, monkeypatch):
-    seen = {}
+# What MAST's Pan-STARRS service sends, including the "None" that astroquery couldn't read
+PANSTARRS_CSV = """objID,raMean,decMean,nDetections,gMeanPSFMag,gMeanPSFMagErr,rMeanPSFMag,objInfoFlag
+1,201.9610,75.66261,40,11.95,0.02,11.71,None
+2,201.96029,75.66262,55,10.92,0.01,10.71,None
+"""
 
-    def query(coordinates, **kwargs):
-        seen.update(kwargs)
-        return Table({"objID": [], "distance": []})
-    monkeypatch.setattr("astroquery.mast.Catalogs.query_region", query)
-    status, _rows, _files, note = _fetch("panstarrs", tmp_path)
-    assert status == "nothing" and "3 arcsec" in note
-    assert (seen["catalog"], seen["data_release"], seen["table"]) == ("Panstarrs", "dr2", "mean")
+
+def test_panstarrs_comes_from_mast_s_catalogue_service(tmp_path):
+    nsvs = Target("NSVS 896797", SkyCoord(201.96029 * u.deg, 75.66262 * u.deg))
+    with patch.object(archives.requests, "get", return_value=_response(PANSTARRS_CSV)) as get:
+        status, rows, files, note = _fetch("panstarrs", tmp_path, target=nsvs)
+    assert (status, rows) == ("found", 2) and "from MAST" in note
+    frame = pd.read_csv(files[0])
+    assert list(frame["objID"]) == [2, 1]                          # nearest first
+    assert frame["distance_arcsec"][0] == pytest.approx(0.0, abs=0.01)
+    assert frame["distance_arcsec"][1] == pytest.approx(0.634, abs=0.01)
+    assert frame["objInfoFlag"].isna().all()                        # "None" read as missing
+    assert get.call_args[0][0] == archives.PANSTARRS_URL
+    params = get.call_args.kwargs["params"]
+    assert float(params["radius"]) == pytest.approx(3 / 3600, rel=1e-6) and params["nDetections.gte"] == 1
+
+
+def test_panstarrs_with_nothing_there(tmp_path):
+    header_only = PANSTARRS_CSV.splitlines()[0] + "\n"
+    for answer in (header_only, ""):
+        with patch.object(archives.requests, "get", return_value=_response(answer)):
+            status, _rows, files, note = _fetch("panstarrs", tmp_path)
+        assert status == "nothing" and files == [] and "3 arcsec" in note
+
+
+def test_panstarrs_falls_back_to_vizier_when_mast_fails(tmp_path, vizier):
+    vizier(GOOD)
+    with patch.object(archives.requests, "get", return_value=_response("oops", 503)):
+        status, _rows, _files, note = _fetch("panstarrs", tmp_path)
+    assert status == "found" and note.startswith("From VizieR, as MAST gave an error.")
+
+
+def test_neowise_no_longer_passes_the_deprecated_cache_argument(tmp_path):
+    table = Table({"mjd": [57000.0], "w1mpro": [9.5], "w1sigmpro": [0.02], "w2mpro": [9.4], "w2sigmpro": [0.03]})
+    with patch("astroquery.ipac.irsa.Irsa.query_region", return_value=table) as query:
+        _fetch("neowise", tmp_path)
+    assert "cache" not in query.call_args.kwargs
 
 
 def test_galex_falls_back_to_vizier_when_mast_fails(tmp_path, vizier):

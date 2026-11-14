@@ -919,6 +919,10 @@ below and the Kwee-van Woerden S statistic above:
   the right one. Clicking doesn't move them, so a stray click can't undo your work. The
   left boundary is marked ``>|`` and the right one ``|<``, pointing at each other. The
   minimum is measured again every time a boundary moves.
++ Putting one boundary past the other moves the other one along with it, keeping the
+  same spacing. Pressing **a** past the right boundary moves the pair to the right, and
+  pressing **d** before the left boundary moves it to the left, which is a quick way to
+  carry the boundaries over to the next eclipse.
 + Keep both boundaries on the sides of the eclipse, not out on the flat parts around it,
   where the method can't tell one time from another.
 + Points the Kwee-van Woerden fit uses are drawn in their filter's colour; the rest are

@@ -25,8 +25,13 @@ from .find_min import (DEFAULT_NPAIRS, DEFAULT_ORDER, DEFAULT_RESOLUTION, Minimu
 HELP_TEXT = ("Point at the plot and press a to put the left boundary (>|) there, or d for the right "
              "one (|<). Keep both on the sides of the eclipse rather than out on the flat parts. "
              "Shaded points aren't used: dark grey is outside the boundaries, light grey is past "
-             "where the fit's pairs reach. n and p change night, Enter saves the minimum, and the "
+             "where the fit's pairs reach. Drag the plot, or use the scrollbar under it, to slide "
+             "along continuous data. n and p change night, Enter saves the minimum, and the "
              "scroll wheel or the toolbar zooms.")
+
+# How far past the view the points are drawn, as a fraction of the view's width either side.
+# Sliding further than that draws the plot again around the new view.
+DRAW_MARGIN = 1.0
 
 
 def _style(widget, name, fallback):
@@ -67,6 +72,10 @@ class MinimumFinderWindow(tk.Toplevel):
         self.order, self.resolution, self.npairs = order, resolution, npairs
         self.current = 0
         self.boundaries = {}       # night index: (lb, rb), so each night keeps its own
+        self.views = {}            # night index: (left, right) of the plot, once it's been moved
+        self._ylims = {}           # night index: (bottom, top), once it's been zoomed
+        self._drawn = None         # the stretch of time the points are drawn for
+        self._drag = None          # (pointer x, view) while dragging the plot
         self.minimum = None
         self._files = {}           # filter combination: MinimumFile
 
@@ -136,12 +145,17 @@ class MinimumFinderWindow(tk.Toplevel):
         self.toolbar = NavigationToolbar2Tk(self.canvas, plot_frame, pack_toolbar=False)
         self.toolbar.update()
         self.toolbar.pack(side="bottom", fill="x")
+        # Slides the plot along continuous data; only shown when there's more than fits
+        self.scrollbar = ttk.Scrollbar(plot_frame, orient="horizontal", command=self._on_scrollbar)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
         self.canvas.mpl_connect("key_press_event", self._on_key)
         # The boundaries are set with keys, so the plot takes the keyboard as soon as the
         # pointer is over it rather than only after a click
         self.canvas.get_tk_widget().bind("<Enter>", lambda _e: self.canvas.get_tk_widget().focus_set(), add="+")
         self.canvas.mpl_connect("scroll_event", self._on_scroll)
+        self.canvas.mpl_connect("button_press_event", self._on_press)
+        self.canvas.mpl_connect("motion_notify_event", self._on_motion)
+        self.canvas.mpl_connect("button_release_event", self._on_release)
 
         side = ttk.Frame(body, padding=(14, 0, 0, 0), width=320)
         side.grid(row=0, column=1, sticky="ns")
@@ -264,13 +278,81 @@ class MinimumFinderWindow(tk.Toplevel):
         self.redraw()
 
     def redraw(self):
-        """Draw the current night again, keeping the measurement."""
+        """Draw the current night again, keeping the measurement and where the plot is."""
         night = self.nights[self.current]
         lb, rb = self.boundaries[self.current]
+        view = self._view()
+        if view is None:
+            self._drawn = None
+        else:
+            width = view[1] - view[0]
+            self._drawn = (view[0] - DRAW_MARGIN * width, view[1] + DRAW_MARGIN * width)
         draw_night(self.ax_s, self.ax_lc, night, lb, rb, self.minimum, labels=self.selected_labels(),
                    connect=self.connect_var.get(), show_poly=self.poly_var.get(),
-                   message=getattr(self, "_message", ""))
+                   message=getattr(self, "_message", ""), time_range=self._drawn)
+        if view is not None:
+            self.ax_lc.set_xlim(*view)
+        if self.current in self._ylims:
+            self.ax_lc.set_ylim(*self._ylims[self.current])
+        self._update_scrollbar()
         self.canvas.draw_idle()
+
+    # ------------------------------------------------------------------
+    # Sliding along the data
+    #
+    # A piece of continuous data holds the whole stretch, but opens on its own
+    # 1.25 days. Dragging the plot or moving the scrollbar slides that view, so
+    # an eclipse cut off at the edge of a piece can be brought into view whole.
+    # ------------------------------------------------------------------
+    def _view(self):
+        """Where the light curve plot is: the night's own view until it's been moved, or None for all of it."""
+        if self.current in self.views:
+            return self.views[self.current]
+        view = self.nights[self.current].view
+        if view is None:
+            return None
+        pad = 0.02 * (view[1] - view[0])
+        return view[0] - pad, view[1] + pad
+
+    def set_view(self, left, right):
+        """Move the plot to show left to right, staying within reach of the data."""
+        lo, hi = self.nights[self.current].extent
+        width = right - left
+        edge = 0.05 * width
+        if width < (hi - lo) + 2 * edge:
+            left = min(max(left, lo - edge), hi + edge - width)
+            right = left + width
+        self.views[self.current] = (left, right)
+        if self._drawn is not None and (left < self._drawn[0] or right > self._drawn[1]):
+            self.redraw()          # slid past the points that are drawn
+            return
+        self.ax_lc.set_xlim(left, right)
+        self._update_scrollbar()
+        self.canvas.draw_idle()
+
+    def _update_scrollbar(self):
+        lo, hi = self.nights[self.current].extent
+        left, right = self.ax_lc.get_xlim()
+        total = hi - lo
+        if total <= 0 or (right - left) >= 0.98 * total:
+            self.scrollbar.pack_forget()
+            return
+        if not self.scrollbar.winfo_ismapped():
+            self.scrollbar.pack(side="bottom", fill="x", before=self.canvas.get_tk_widget())
+        first = min(max((left - lo) / total, 0.0), 1.0)
+        last = min(max((right - lo) / total, first), 1.0)
+        self.scrollbar.set(first, last)
+
+    def _on_scrollbar(self, action, amount, unit=None):
+        """The scrollbar's arrows, trough and thumb."""
+        lo, hi = self.nights[self.current].extent
+        left, right = self.ax_lc.get_xlim()
+        width = right - left
+        if action == "moveto":
+            left = lo + float(amount) * (hi - lo)
+        elif action == "scroll":
+            left += int(amount) * width * (0.9 if unit == "pages" else 0.1)
+        self.set_view(left, left + width)
 
     def _show_result(self, message):
         m = self.minimum
@@ -341,6 +423,21 @@ class MinimumFinderWindow(tk.Toplevel):
         elif event.key == "enter":
             self.save_minimum()
 
+    def _on_press(self, event):
+        """Start dragging the light curve plot sideways, unless the toolbar is zooming or panning."""
+        if event.button == 1 and event.inaxes is self.ax_lc and not self.toolbar.mode:
+            self._drag = (event.x, self.ax_lc.get_xlim(), self.ax_lc.get_window_extent().width)
+
+    def _on_motion(self, event):
+        if self._drag is None or event.x is None:
+            return
+        start_x, (left, right), width_px = self._drag
+        shift = -(event.x - start_x) * (right - left) / max(width_px, 1.0)
+        self.set_view(left + shift, right + shift)
+
+    def _on_release(self, _event):
+        self._drag = None
+
     def _on_scroll(self, event):
         """Scroll over the light curve to zoom in and out around the pointer."""
         if event.inaxes is not self.ax_lc or event.xdata is None:
@@ -351,9 +448,10 @@ class MinimumFinderWindow(tk.Toplevel):
         scale = 0.8 ** step
         x0, x1 = self.ax_lc.get_xlim()
         y0, y1 = self.ax_lc.get_ylim()
-        self.ax_lc.set_xlim(event.xdata - (event.xdata - x0) * scale, event.xdata + (x1 - event.xdata) * scale)
-        self.ax_lc.set_ylim(event.ydata - (event.ydata - y0) * scale, event.ydata + (y1 - event.ydata) * scale)
-        self.canvas.draw_idle()
+        self._ylims[self.current] = (event.ydata - (event.ydata - y0) * scale,
+                                     event.ydata + (y1 - event.ydata) * scale)
+        self.ax_lc.set_ylim(*self._ylims[self.current])
+        self.set_view(event.xdata - (event.xdata - x0) * scale, event.xdata + (x1 - event.xdata) * scale)
 
 
 def run_standalone(files, labels, output_folder, obj_name):

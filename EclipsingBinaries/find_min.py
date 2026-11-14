@@ -345,18 +345,28 @@ class Night:
     NIGHT_GAP days, or one piece of a long continuous stretch (see
     split_into_nights). Times are stored as days after the whole Julian day
     the night starts in (the offset).
+
+    A piece of a continuous stretch holds the whole stretch's points, so an
+    eclipse at the edge of the piece can still be seen by sliding the plot
+    along and measured with boundaries past the edge. view is the piece's
+    own stretch of time, which the window opens on; it's None for an
+    ordinary night, which is all view.
     """
     index: int
     offset: int
     bands: dict = field(default_factory=dict)
+    view: tuple | None = None
 
     @property
     def date(self):
         """UT date of the Julian day the night starts in, which begins at noon UT."""
         return Time(self.offset, format="jd").to_value("iso", subfmt="date")
 
-    def points(self, labels=None):
-        """Time, flux and error for the chosen filters (all of them by default), sorted by time."""
+    def points(self, labels=None, in_view=False):
+        """
+        Time, flux and error for the chosen filters (all of them by default),
+        sorted by time. in_view keeps only the points in the night's own view.
+        """
         chosen = [b for b in self.bands.values() if labels is None or b.label in labels]
         if not chosen:
             return np.array([]), np.array([]), np.array([])
@@ -364,13 +374,23 @@ class Night:
         f = np.concatenate([b.flux for b in chosen])
         e = np.concatenate([b.flux_err for b in chosen])
         order_ = np.argsort(t, kind="stable")
-        return t[order_], f[order_], e[order_]
+        t, f, e = t[order_], f[order_], e[order_]
+        if in_view and self.view is not None:
+            keep = (t >= self.view[0]) & (t <= self.view[1])
+            t, f, e = t[keep], f[keep], e[keep]
+        return t, f, e
+
+    @property
+    def extent(self):
+        """First and last time of all the points the night holds."""
+        t = np.concatenate([b.time for b in self.bands.values()]) if self.bands else np.array([0.0])
+        return float(t.min()), float(t.max())
 
     def count(self, labels=None):
-        return len(self.points(labels)[0])
+        return len(self.points(labels, in_view=True)[0])
 
     def span_hours(self, labels=None):
-        t = self.points(labels)[0]
+        t = self.points(labels, in_view=True)[0]
         return 24 * (t.max() - t.min()) if len(t) else 0.0
 
     def describe(self, labels=None):
@@ -390,23 +410,31 @@ def split_into_nights(times):
     the stretch. Overlapping pieces mean every eclipse is whole in at least
     one piece.
     """
+    return [piece for stretch in _stretches(times) for piece in _pieces(*stretch)]
+
+
+def _stretches(times):
+    """Each run of times with no gap longer than NIGHT_GAP, as (first time, last time)."""
     times = np.sort(np.asarray(times, dtype=float))
     if len(times) == 0:
         return []
     breaks = np.flatnonzero(np.diff(times) > NIGHT_GAP)
     starts = np.concatenate([[0], breaks + 1])
     ends = np.concatenate([breaks, [len(times) - 1]])
+    return [(float(first), float(last)) for first, last in zip(times[starts], times[ends])]
+
+
+def _pieces(first, last):
+    """One stretch as it's shown: whole if it's short, otherwise in overlapping pieces."""
+    if last - first <= LONG_STRETCH:
+        return [(first, last)]
     ranges = []
-    for first, last in zip(times[starts], times[ends]):
-        if last - first <= LONG_STRETCH:
-            ranges.append((float(first), float(last)))
-            continue
-        step = PIECE_LENGTH - PIECE_OVERLAP
-        start = first
-        while start + PIECE_LENGTH < last:
-            ranges.append((float(start), float(start + PIECE_LENGTH)))
-            start += step
-        ranges.append((float(max(first, last - PIECE_LENGTH)), float(last)))
+    step = PIECE_LENGTH - PIECE_OVERLAP
+    start = first
+    while start + PIECE_LENGTH < last:
+        ranges.append((float(start), float(start + PIECE_LENGTH)))
+        start += step
+    ranges.append((float(max(first, last - PIECE_LENGTH)), float(last)))
     return ranges
 
 
@@ -437,15 +465,20 @@ def load_nights(files, labels=None, norm_method="norm", notes=None):
         curves.append((label, time, flux, flux_err))
 
     nights = []
-    for first, last in split_into_nights(np.concatenate([c[1] for c in curves])):
-        offset = int(np.floor(first))
-        bands = {}
-        for label, time, flux, flux_err in curves:
-            mask = (time >= first) & (time <= last)
-            if mask.any():
-                bands[label] = Band(label, time[mask] - offset, flux[mask], flux_err[mask])
-        if bands:
-            nights.append(Night(index=len(nights), offset=offset, bands=bands))
+    for stretch_first, stretch_last in _stretches(np.concatenate([c[1] for c in curves])):
+        pieces = _pieces(stretch_first, stretch_last)
+        for first, last in pieces:
+            offset = int(np.floor(first))
+            # Every piece of a continuous stretch holds the whole stretch, so the plot can
+            # slide past the piece's edges; the piece itself is what the window opens on
+            bands = {}
+            for label, time, flux, flux_err in curves:
+                mask = (time >= stretch_first) & (time <= stretch_last)
+                if mask.any():
+                    bands[label] = Band(label, time[mask] - offset, flux[mask], flux_err[mask])
+            view = (first - offset, last - offset) if len(pieces) > 1 else None
+            if bands:
+                nights.append(Night(index=len(nights), offset=offset, bands=bands, view=view))
     return nights
 
 
@@ -504,7 +537,7 @@ def guess_boundaries(night, labels=None, half_width=0.04):
     is picked away from the ends of the night, so the window holds a whole
     eclipse rather than one cut off at the edge of the data.
     """
-    t, f, _e = night.points(labels)
+    t, f, _e = night.points(labels, in_view=True)
     if len(t) < 3:
         return (t.min(), t.max()) if len(t) else (0.0, 1.0)
     window = max(3, len(f) // 15) | 1
@@ -557,13 +590,16 @@ def _draw_boundaries(ax, lb, rb):
     """
     for x, arrow, side, nudge in ((lb, ">", "right", -2), (rb, "<", "left", 2)):
         ax.axvline(x, color=BOUNDARY_COLOUR, ls="--", lw=1)
-        ax.annotate(arrow, xy=(x, 1.0), xycoords=("data", "axes fraction"), xytext=(nudge, -3),
-                    textcoords="offset points", ha=side, va="top", color=BOUNDARY_COLOUR,
-                    fontsize=13, fontweight="bold", annotation_clip=False)
+        # Only shown while the line is in view (just inside the top edge, so it counts as in),
+        # and kept out of the layout so a boundary slid off screen can't squash the plots
+        mark = ax.annotate(arrow, xy=(x, 0.999), xycoords=("data", "axes fraction"), xytext=(nudge, -3),
+                           textcoords="offset points", ha=side, va="top", color=BOUNDARY_COLOUR,
+                           fontsize=13, fontweight="bold", annotation_clip=True)
+        mark.set_in_layout(False)
 
 
 def draw_night(ax_s, ax_lc, night, lb, rb, minimum=None, labels=None, colours=None,
-               connect=True, show_poly=False, message=""):
+               connect=True, show_poly=False, message="", time_range=None):
     """
     The light curve for one night with the boundaries, and, when a minimum
     was measured, the S curve above it and the minimum marked on both.
@@ -577,6 +613,10 @@ def draw_night(ax_s, ax_lc, night, lb, rb, minimum=None, labels=None, colours=No
     aren't ticked are faded. connect joins each filter's points with straight
     lines, show_poly draws the polynomial through the eclipse, and message
     (such as "too few points") is written in red across the plot.
+
+    time_range, as (start, end), draws only the points in that stretch of
+    time. A piece of continuous data holds weeks of points, and drawing just
+    the part on screen keeps the plot quick to redraw.
     """
     colours = colours or {"B": "#2f5aa8", "V": "#2d7d46", "R": "#b23a2e"}
     ax_s.clear()
@@ -601,6 +641,9 @@ def draw_night(ax_s, ax_lc, night, lb, rb, minimum=None, labels=None, colours=No
         fade = 1.0 if used else 0.25
         order = np.argsort(band.time, kind="stable")
         time, flux, flux_err = band.time[order], band.flux[order], band.flux_err[order]
+        if time_range is not None:
+            shown = (time >= time_range[0]) & (time <= time_range[1])
+            time, flux, flux_err = time[shown], flux[shown], flux_err[shown]
         inside = (time >= first) & (time <= last)
         if connect:
             ax_lc.plot(time, flux, "-", color=OUTSIDE_COLOUR, lw=0.8, alpha=fade, zorder=1)

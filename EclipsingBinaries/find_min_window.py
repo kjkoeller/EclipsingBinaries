@@ -233,12 +233,20 @@ class MinimumFinderWindow(tk.Toplevel):
         self.show_night(self.current + delta)
 
     def set_boundary(self, which, x):
+        """Move one boundary to x. If that puts it past the other boundary, the other one
+        moves along with it and keeps the same spacing, so the pair can be carried over to
+        another eclipse with a single key."""
         lb, rb = self.boundaries[self.current]
+        width = rb - lb
         if which == "left":
             lb = x
+            if lb >= rb:
+                rb = lb + width
         else:
             rb = x
-        self.boundaries[self.current] = tuple(sorted((lb, rb)))
+            if rb <= lb:
+                lb = rb - width
+        self.boundaries[self.current] = (lb, rb)
         self.remeasure()
 
     def _poly_toggled(self):

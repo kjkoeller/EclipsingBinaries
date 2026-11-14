@@ -1060,3 +1060,104 @@ def test_scrollbar_goes_away_when_contents_shrink(app):
     _settle(app, 3 * ScrollableFrame.WATCH_MS / 1000)
     assert not scroller.scrollbar.winfo_ismapped()
     holder.destroy()
+
+
+# ----------------------------------------------------------------------
+# Find Minimum: sliding along continuous data
+# ----------------------------------------------------------------------
+@pytest.fixture
+def continuous_finder(app, tmp_path):
+    """A Find Minimum window on four days of TESS-like data, open on its first piece."""
+    from EclipsingBinaries.find_min_window import MinimumFinderWindow
+    from .test_find_min import _tess_like
+    window = MinimumFinderWindow(app, [_tess_like(tmp_path, days=4.0)], ["TESS"], tmp_path, "test",
+                                 log=lambda _m: None)
+    window.update()
+    yield window
+    window.destroy()
+
+
+def _drag(window, fraction):
+    """Drag the light curve sideways by a fraction of its width, with real mouse events."""
+    from matplotlib.backend_bases import MouseEvent
+    box = window.ax_lc.get_window_extent()
+    x, y = box.x0 + box.width * 0.6, box.y0 + box.height / 2
+    MouseEvent("button_press_event", window.canvas, x, y, 1)._process()
+    MouseEvent("motion_notify_event", window.canvas, x + box.width * fraction, y)._process()
+    MouseEvent("button_release_event", window.canvas, x + box.width * fraction, y, 1)._process()
+    window.update()
+
+
+def test_continuous_piece_opens_on_its_own_stretch_with_a_scrollbar(continuous_finder):
+    w = continuous_finder
+    lo, hi = w.nights[0].view
+    left, right = w.ax_lc.get_xlim()
+    assert left == pytest.approx(lo, abs=0.05) and right == pytest.approx(hi, abs=0.05)
+    assert w.scrollbar.winfo_ismapped()
+    first, last = w.scrollbar.get()
+    assert 0 <= first < last < 1
+
+
+def test_dragging_slides_the_plot_and_draws_more_as_needed(continuous_finder):
+    w = continuous_finder
+    left, right = w.ax_lc.get_xlim()
+    _drag(w, -0.5)                                   # pull the plot left to see later data
+    new_left, new_right = w.ax_lc.get_xlim()
+    assert new_left == pytest.approx(left + 0.5 * (right - left), rel=0.02)
+    assert new_right - new_left == pytest.approx(right - left)
+    for _ in range(4):
+        _drag(w, -0.9)                               # far past the points drawn at first
+    shown = [line.get_xdata() for line in w.ax_lc.get_lines() if len(line.get_xdata()) > 2]
+    _lo, hi = w.nights[0].extent
+    # Points are drawn out to the edge of the view, or to the end of the data if that comes first
+    assert max(x.max() for x in shown) >= min(w.ax_lc.get_xlim()[1], hi) - 0.05
+
+
+def test_the_plot_stops_at_the_ends_of_the_data(continuous_finder):
+    w = continuous_finder
+    _drag(w, 3.0)                                    # far to the right, toward earlier times
+    lo, _hi = w.nights[0].extent
+    left, right = w.ax_lc.get_xlim()
+    assert left >= lo - 0.06 * (right - left)
+
+
+def test_scrollbar_moves_the_plot(continuous_finder):
+    w = continuous_finder
+    left, right = w.ax_lc.get_xlim()
+    w._on_scrollbar("scroll", 1, "pages")
+    assert w.ax_lc.get_xlim()[0] == pytest.approx(left + 0.9 * (right - left))
+    w._on_scrollbar("moveto", "0.5")
+    lo, hi = w.nights[0].extent
+    assert w.ax_lc.get_xlim()[0] == pytest.approx(lo + 0.5 * (hi - lo), abs=0.01)
+
+
+def test_the_plot_stays_put_when_a_boundary_moves(continuous_finder):
+    w = continuous_finder
+    _drag(w, -0.4)
+    view = w.ax_lc.get_xlim()
+    lb, rb = w.boundaries[0]
+    w.set_boundary("left", lb - 0.01)
+    assert w.ax_lc.get_xlim() == pytest.approx(view)
+
+
+def test_an_eclipse_past_the_edge_of_the_piece_can_be_measured(continuous_finder):
+    w = continuous_finder
+    night = w.nights[0]
+    period, primary = 0.78694, 2458983.9
+    k = np.ceil((night.view[1] + night.offset - primary) / period)
+    beyond = primary + k * period - night.offset
+    w.set_view(beyond - 0.5, beyond + 0.75)
+    # Moving on to a later eclipse, the right boundary goes first so the two don't cross
+    w.set_boundary("right", beyond + 0.12)
+    w.set_boundary("left", beyond - 0.12)
+    assert w.minimum is not None and w.minimum.error is not None
+    assert w.minimum.hjd == pytest.approx(primary + k * period, abs=0.002)
+
+
+def test_ordinary_nights_have_no_scrollbar(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    assert not window.scrollbar.winfo_ismapped()
+    window.destroy()

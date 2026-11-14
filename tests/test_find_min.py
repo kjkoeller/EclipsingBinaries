@@ -296,3 +296,39 @@ def test_kwee_reach_is_the_distance_to_the_nearer_end():
     assert result.reach == pytest.approx(result.t_kw - 0.20)
     start, end = result.used_range
     assert start == pytest.approx(0.20) and end == pytest.approx(2 * result.t_kw - 0.20)
+
+
+# --- sliding past the edge of a piece of continuous data -------------------------------------
+
+def test_pieces_hold_the_whole_stretch_and_open_on_their_own_part(tmp_path):
+    nights = fm.load_nights([_tess_like(tmp_path, days=4.0)], ["TESS"])
+    assert len(nights) > 1
+    first_times = [n.points()[0] + n.offset for n in nights]
+    for night, times in zip(nights, first_times):
+        assert night.view is not None
+        assert len(times) == len(first_times[0])                  # every piece has the whole stretch
+        lo, hi = night.view
+        inside = night.points(in_view=True)[0]
+        assert inside.min() >= lo and inside.max() <= hi
+        assert night.count() == len(inside) < len(times)           # the description counts the piece
+
+
+def test_an_eclipse_past_the_edge_of_a_piece_can_be_measured(tmp_path):
+    nights = fm.load_nights([_tess_like(tmp_path, days=4.0)], ["TESS"])
+    night = nights[0]
+    period, primary = 0.78694, 2458983.9
+    # The first primary eclipse after the piece's own stretch ends
+    end = night.view[1] + night.offset
+    k = np.ceil((end - primary) / period)
+    beyond = primary + k * period - night.offset
+    m = fm.measure_minimum(night, beyond - 0.12, beyond + 0.12)
+    assert m.hjd == pytest.approx(primary + k * period, abs=0.002)
+    assert m.lb > night.view[1]
+
+
+def test_ordinary_nights_have_no_view_and_only_their_own_points():
+    nights = fm.load_nights([EXAMPLES / "test_V.txt"], ["V"])
+    for night in nights:
+        assert night.view is None
+        assert night.count() == len(night.points()[0])
+    assert fm.split_into_nights(np.concatenate([n.points()[0] + n.offset for n in nights]))

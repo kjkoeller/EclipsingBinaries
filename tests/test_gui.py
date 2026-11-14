@@ -496,8 +496,8 @@ def test_find_minimum_window_navigation_and_boundaries(app, tmp_path):
     assert window.current == 0
 
     lb, rb = window.boundaries[0]
-    window.set_boundary("right", lb - 0.01)  # past the left one: they swap
-    assert window.boundaries[0] == (lb - 0.01, lb)
+    window.set_boundary("right", lb - 0.01)  # past the left one, which moves along with it
+    assert window.boundaries[0] == pytest.approx((lb - 0.01 - (rb - lb), lb - 0.01))
     window.set_boundary("left", lb - 0.0105)
     window.set_boundary("right", lb - 0.0104)  # far too narrow
     assert window.minimum is None
@@ -1147,11 +1147,26 @@ def test_an_eclipse_past_the_edge_of_the_piece_can_be_measured(continuous_finder
     k = np.ceil((night.view[1] + night.offset - primary) / period)
     beyond = primary + k * period - night.offset
     w.set_view(beyond - 0.5, beyond + 0.75)
-    # Moving on to a later eclipse, the right boundary goes first so the two don't cross
-    w.set_boundary("right", beyond + 0.12)
+    # The left boundary lands past the right one, so the right one comes along
     w.set_boundary("left", beyond - 0.12)
+    w.set_boundary("right", beyond + 0.12)
     assert w.minimum is not None and w.minimum.error is not None
     assert w.minimum.hjd == pytest.approx(primary + k * period, abs=0.002)
+
+
+@pytest.mark.parametrize("which, x, expected", [
+    ("left", 0.70, (0.70, 0.80)),    # past the right boundary: the right one follows
+    ("left", 0.50, (0.50, 0.60)),    # exactly on it counts as past
+    ("right", 0.20, (0.10, 0.20)),   # before the left boundary: the left one follows
+    ("right", 0.40, (0.30, 0.40)),   # exactly on it
+    ("left", 0.45, (0.45, 0.50)),    # no crossing, so only that boundary moves
+    ("right", 0.45, (0.40, 0.45)),
+])
+def test_a_boundary_past_the_other_one_carries_it_along(continuous_finder, which, x, expected):
+    w = continuous_finder
+    w.boundaries[w.current] = (0.40, 0.50)
+    w.set_boundary(which, x)
+    assert w.boundaries[w.current] == pytest.approx(expected)
 
 
 def test_ordinary_nights_have_no_scrollbar(app, tmp_path):

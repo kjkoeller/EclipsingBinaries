@@ -915,20 +915,39 @@ The GUI panel accepts the following inputs:
 **Open Minimum Finder** opens a window showing one night at a time, with the relative flux
 below and the Kwee-van Woerden S statistic above:
 
-+ **Click** on the light curve to set the left boundary; **right-click** or **Shift-click**
-  sets the right one. Over the plot, the **a** and **d** keys do the same at the pointer.
-  The minimum is measured again every time a boundary moves.
++ Point at the light curve and press **a** to put the left boundary there, or **d** for
+  the right one. Clicking doesn't move them, so a stray click can't undo your work. The
+  left boundary is marked ``>|`` and the right one ``|<``, pointing at each other. The
+  minimum is measured again every time a boundary moves.
 + Keep both boundaries on the sides of the eclipse, not out on the flat parts around it,
   where the method can't tell one time from another.
++ Points the Kwee-van Woerden fit uses are drawn in their filter's colour; the rest are
+  grey. The fit pairs points the same distance either side of the minimum, so it only
+  reaches as far as the nearer boundary. On the other side, a faint dotted line marks
+  where the pairs stop. Outside the boundaries the plot is shaded dark grey, and between
+  a boundary and where the pairs stop it's shaded light grey: those points are between
+  the boundaries but not used. The result shows both counts, such as "128 points between
+  the boundaries, 106 used by the fit". To use more of the eclipse, move the nearer
+  boundary out rather than the farther one.
++ When there are too few points between the boundaries, a red message on the plot says
+  so: either too few to measure at all, or enough for a time but not for an error, in
+  which case the minimum can't be saved. Widen the boundaries.
++ **Drag** the light curve sideways, or use the **scrollbar** under it, to slide along
+  the data. This matters most for continuous data (see below), where an eclipse can sit
+  past the edge of the piece on screen.
 + **Previous Night** and **Next Night** (or the **n** and **p** keys, or the dropdown)
-  move between nights. Each night remembers its own boundaries, and starts with a guess
-  around its faintest complete eclipse, wide enough for sparse data (at least six times
-  the usual gap between points either side).
+  move between nights. Each night remembers its own boundaries and where the plot was,
+  and starts with a guess around its faintest complete eclipse, wide enough for sparse
+  data (at least six times the usual gap between points either side).
 + The **Filters** checkboxes choose which filters are fitted together. Each combination
   saves to its own file, so for per-filter O-C files tick one filter at a time.
-+ **Polynomial order**, **Pairs** and **Trial times** set the drawn polynomial, the number
-  of point pairs compared, and how many trial times are tried. The defaults are 5, 20 and
-  200.
++ **Connect points**, on by default, joins each filter's points with straight lines,
+  grey where the points aren't used.
++ **Pairs** and **Trial times** set the number of point pairs compared and how many trial
+  times are tried; the defaults are 20 and 200.
++ **Draw polynomial**, off by default, draws a polynomial through the eclipse in red and
+  shows its **Polynomial order** (5 by default). It's only a guide for the eye; the time
+  of minimum comes from the Kwee-van Woerden fit either way.
 + **Save Minimum** (or Enter) adds the minimum to the list. Measuring the same eclipse
   again replaces it. **Remove Selected** takes one off.
 + Scroll over the light curve to zoom; the toolbar under the plot pans, zooms and saves
@@ -943,10 +962,12 @@ A minimum with no error estimate (too few points paired around it) can't be save
 O-C Plotting needs the error.
 
 A new night starts wherever there's a gap of more than about five hours in the
-observations. Continuous data with no gaps, such as a TESS light curve, is cut into pieces
-1.25 days long that overlap by a quarter of a day, so an eclipse cut off at the end of one
-piece is whole at the start of the next. Measuring the same eclipse in both just replaces
-the first measurement.
+observations. Continuous data with no gaps, such as a TESS light curve, is split into
+pieces 1.25 days long that overlap by a quarter of a day, and the dropdown steps through
+them. Each piece opens on its own 1.25 days but holds the whole continuous stretch, so
+an eclipse cut off at the edge can be brought into view by dragging the plot or with the
+scrollbar, and its boundaries can be set past the edge of the piece. Measuring the same
+eclipse from two pieces just replaces the first measurement.
 
 Rows that repeat earlier ones exactly (a light curve pasted into a file twice, say) are
 left out, and the log says how many. Two points at the same time would otherwise make the

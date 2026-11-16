@@ -2,7 +2,6 @@
 Look up the TESS data and download that data onto a local drive.
 Author: Kyle Koeller
 Created: 2/19/2022
-Last Updated: 09/16/2026
 """
 
 # import required packages

@@ -4,7 +4,6 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 10/19/2026
 """
 
 import os

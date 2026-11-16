@@ -9,7 +9,6 @@ Run it with the EB_pipeline command, e.g.
 
 Author: Kyle Koeller
 Created: 06/15/2023
-Last Edited: 10/09/2026
 """
 
 import argparse

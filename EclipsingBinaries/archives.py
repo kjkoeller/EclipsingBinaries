@@ -20,7 +20,6 @@ hosts only needs the entry.
 
 Author: Kyle Koeller
 Created: 11/09/2026
-Last Edited: 11/09/2026
 """
 
 import argparse

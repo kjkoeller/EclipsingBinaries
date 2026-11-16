@@ -2,10 +2,8 @@
 Test functions for apass.py
 
 Author: Kyle Koeller
-Last Edited By: Kyle Koeller
 
 Created: 07/07/2021
-Last Updated: 04/28/2026
 """
 
 import tempfile

@@ -3,10 +3,9 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 06/18/2025
 
 Original Author: Alec Neal
-Last Edits Done By: Kyle Koeller
+Editor: Kyle Koeller
 """
 
 # Importing necessary libraries
@@ -265,9 +264,8 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     a_rat = [a0rat]
     b_rat = [1]
     for n in tqdm(range(1, order + 1), position=0, desc='Calculating FT errors'):
-        # TODO, dx0=1 isn't fullproof
-        asig, ar = FT.a_sig_fast(a, b, n, a[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order, dx0=1)
-        bsig, br = FT.b_sig_fast(a, b, n, b[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order, dx0=1)
+        asig, ar = FT.a_sig_fast(a, b, n, a[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order)
+        bsig, br = FT.b_sig_fast(a, b, n, b[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order)
         a_model_err.append(asig)
         b_model_err.append(bsig)
         a_rat.append(ar)

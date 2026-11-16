@@ -1,7 +1,6 @@
 """
 Author: Kyle Koeller
 Created: 12/19/2022
-Last Edited: 03/16/2026
 
 This calculates O-C values and produces an O-C plot.
 """

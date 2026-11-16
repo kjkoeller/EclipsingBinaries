@@ -11,8 +11,7 @@ it can also be used from scripts.
 Created:  07/03/2021
 Original Author: Alec Neal
 
-Last Edits Done By: Kyle Koeller
-Last Edited: 11/10/2026
+Editor: Kyle Koeller
 """
 
 import statistics

@@ -1,7 +1,6 @@
 """
 Author: Kyle Koeller
 Created: 11/08/2022
-Last Edited: 04/23/2026
 
 This program is meant to automatically do the data reduction of the raw images from the
 Ball State University Observatory (BSUO) and SARA data. The new calibrated images are placed into a new folder as to

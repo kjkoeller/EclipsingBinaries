@@ -3,7 +3,6 @@
 Created on Thu Sep 17 12:45:40 2020
 @author: Alec Neal
 
-Last Edited: 11/22/2025
 Editor: Kyle Koeller
 """
 

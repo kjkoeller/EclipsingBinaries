@@ -332,3 +332,70 @@ def test_ordinary_nights_have_no_view_and_only_their_own_points():
         assert night.view is None
         assert night.count() == len(night.points()[0])
     assert fm.split_into_nights(np.concatenate([n.points()[0] + n.offset for n in nights]))
+
+
+# --- time systems ---------------------------------------------------------------------
+
+def test_headerless_files_have_no_time_system_unless_one_is_chosen():
+    *_rest, system = fm.read_light_curve_and_system(EXAMPLES / "test_B.txt")
+    assert system is None
+    *_rest, system = fm.read_light_curve_and_system(EXAMPLES / "test_B.txt", time_system="HJD_UTC")
+    assert system == "HJD_UTC"
+
+
+def test_header_names_the_time_system(tmp_path):
+    path = tmp_path / "night.csv"
+    pd.DataFrame({"BJD_TDB": [2.5008, 1.5008], "HJD": [2.5, 1.5], "Source_AMag_T1": [12.1, 12.0],
+                  "Source_AMag_T1_Error": [0.01, 0.02]}).to_csv(path, index=False)
+    notes = []
+    t, _m, _e, system = fm.read_light_curve_and_system(path, notes)
+    # HJD comes first unless BJD is asked for
+    assert system == "HJD_UTC" and list(t) == [1.5, 2.5]
+    assert any("BJD (TDB)" in n for n in notes)
+    t, _m, _e, system = fm.read_light_curve_and_system(path, time_system="BJD_TDB")
+    assert system == "BJD_TDB" and list(t) == [1.5008, 2.5008]
+    with pytest.raises(fm.MinimumError, match="no JD"):
+        fm.read_light_curve_and_system(path, time_system="JD_UTC")
+
+
+def test_night_filters_files_with_bjd_are_read_right(tmp_path):
+    # Night Filters with the BJD option: BJD_TDB, HJD, magnitude, error, no header
+    path = tmp_path / "NSVS_B_magnitudes.txt"
+    hjd = 2458379.6 + np.arange(5) * 0.01
+    pd.DataFrame({0: hjd + 0.0008, 1: hjd, 2: 12.0 + np.arange(5) * 0.01, 3: 0.005}).to_csv(
+        path, sep="\t", header=False, index=False)
+    t, m, e, system = fm.read_light_curve_and_system(path)
+    assert system == "HJD_UTC"
+    assert t == pytest.approx(hjd)
+    assert m == pytest.approx(12.0 + np.arange(5) * 0.01)
+    assert e == pytest.approx(0.005)
+    t, _m, _e, system = fm.read_light_curve_and_system(path, time_system="BJD_TDB")
+    assert system == "BJD_TDB" and t == pytest.approx(hjd + 0.0008)
+
+
+def test_filters_in_different_time_systems_are_refused(tmp_path):
+    first, second = tmp_path / "B.csv", tmp_path / "V.csv"
+    for path, column in ((first, "HJD"), (second, "BJD_TDB")):
+        pd.DataFrame({column: [1.5, 1.6, 1.7], "Source_AMag_T1": [12.0, 12.1, 12.0],
+                      "Source_AMag_T1_Error": [0.01] * 3}).to_csv(path, index=False)
+    with pytest.raises(fm.MinimumError, match="different time systems"):
+        fm.load_nights([first, second], ["B", "V"])
+
+
+def test_minimum_files_record_their_time_system(tmp_path, example_night):
+    lb, rb = fm.guess_boundaries(example_night)
+    m = fm.measure_minimum(example_night, lb, rb)
+    m.time_system = "BJD_TDB"
+    name = fm.minimum_file_name("NSVS 896797", ("B",), "BJD_TDB")
+    assert name == "NSVS_896797_B_BJD_TDB_min.txt"
+    assert fm.minimum_file_name("NSVS 896797", ("B",), "HJD_UTC") == "NSVS_896797_B_min.txt"
+    saved = fm.MinimumFile(tmp_path / name)
+    saved.add(m)
+    assert (tmp_path / name).read_text().startswith("# Times of minimum in BJD_TDB\n")
+    again = fm.MinimumFile(tmp_path / name)
+    assert again.time_system == "BJD_TDB" and len(again.entries) == 1
+
+    # A minimum in another system can't go in the same file
+    m.time_system = "HJD_UTC"
+    with pytest.raises(fm.MinimumError, match="different systems"):
+        again.add(m)

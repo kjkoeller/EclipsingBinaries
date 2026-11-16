@@ -785,8 +785,9 @@ The GUI panel accepts the following inputs:
   doesn't matter.
 + **Output Folder** — where the combined files are saved (created if missing)
 + **Output Name** — the start of the file names, for example ``NSVS_896797_B``
-+ **Include BJD_TDB column** — adds BJD_TDB as the first column. Leave it off for Find
-  Minimum, O'Connell Effect and Color Light Curve, which expect HJD first.
++ **Include BJD_TDB column** — adds BJD_TDB as the first column. Find Minimum recognises
+  these files and uses whichever time its **Time System** says. Leave it off for O'Connell
+  Effect and Color Light Curve, which expect HJD first.
 
 Each night needs ``HJD``, ``Source_AMag_T1`` and ``Source_AMag_Err_T1`` columns. The light
 curve CSV files Multi-Aperture Photometry saves work too. The output files are tab
@@ -909,6 +910,8 @@ The GUI panel accepts the following inputs:
 + **Number of Filters** and a **Light Curve** for each — a Night Filters magnitude file
   (HJD, magnitude, error) or a light curve CSV from Multi-Aperture Photometry. Pick which
   filter each file is from the dropdown.
++ **Time System** — which times to use (see `Time systems`_ below). **From the files**,
+  the default, goes by the files' column names.
 + **Output Folder** — where the minimum files are saved. Leave it empty to save them next
   to the first light curve.
 
@@ -973,6 +976,33 @@ an eclipse cut off at the edge can be brought into view by dragging the plot or 
 scrollbar, and its boundaries can be set past the edge of the piece. Measuring the same
 eclipse from two pieces just replaces the first measurement.
 
+Time systems
+^^^^^^^^^^^^
+
+Light curves can have their times in different systems: AIJ's ``HJD`` column is
+heliocentric JD in UTC, its ``BJD_TDB`` column is barycentric JD in TDB, and the two
+differ by about a minute, mostly the offset between the UTC and TDB time scales. Find
+Minimum doesn't assume either. It keeps track of which one the minima are in so O-C
+Plotting can label its tables correctly:
+
++ A file with a header row says by its column name (``HJD`` or ``HJD_UTC``, ``BJD_TDB``,
+  ``BJD_UTC``, ``JD_UTC``). If it has both HJD and BJD_TDB, HJD is used unless **Time
+  System** is set to **BJD (TDB)**, and the log says the other is there.
++ A Night Filters file with the BJD option on (BJD_TDB, HJD, magnitude, error) is
+  recognised by its two time columns, and the same choice applies.
++ Any other file without a header doesn't say. Choose its system under **Time System** to
+  have the minima labelled; otherwise the plot and table just say "Time".
++ All the filters loaded together have to be in the same system.
+
+The plot's axis, the table and the log name the system, for example "HJD (UTC)". When
+it's known, the minimum file starts with a line saying so (``# Times of minimum in
+BJD_TDB``), and minima in any system other than HJD (UTC) get it in the file name as
+well, such as ``NSVS_896797_B_BJD_TDB_min.txt``, so HJD and BJD minima of the same star
+are kept apart. Minima in another system can't be added to a file that already says
+which one it holds.
+
+To convert TESS times from BJD (TDB) to HJD, see `BJD to HJD`_.
+
 Rows that repeat earlier ones exactly (a light curve pasted into a file twice, say) are
 left out, and the log says how many. Two points at the same time would otherwise make the
 Kwee-van Woerden fit fail without saying so, giving a minimum with no error that can't be
@@ -1017,6 +1047,13 @@ Common inputs across all modes:
   doesn't use an epoch.
 
 Only the inputs for the selected mode are shown.
+
+The time system of the minima comes from the first line Find Minimum writes in each
+minimum file (see `Time systems`_). It's carried into the O-C files, and All Data uses
+it to head the time column of the LaTeX table, for example :math:`BJD_{\rm TDB}` or
+:math:`HJD_{\rm UTC}`. Files that don't say, such as ones from before this was recorded,
+are fine on their own; the table's column is then headed "Time of minimum". Files that
+say different systems can't be used together.
 
 BSUO/SARA
 ^^^^^^^^^

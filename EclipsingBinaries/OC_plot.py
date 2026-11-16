@@ -13,10 +13,22 @@ from matplotlib.figure import Figure
 from numpy.polynomial import Polynomial
 import statsmodels.formula.api as smf
 from pathlib import Path
+from . import time_systems
 from ._log import make_logger
 
 
-def TESS_OC(T0, T0_err, period, df, output_path, write_callback=None, cancel_event=None):
+def _write_oc_table(dp, outfile, time_system):
+    """
+    Save an O-C table, tab separated with a header row. When the time system
+    of the minima is known it goes on a line of its own first, the same way
+    Find Minimum tags its files, so All Data can label the merged table.
+    """
+    with open(outfile, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(time_systems.tag_line(time_system))
+        dp.to_csv(handle, index=None, sep="\t", lineterminator="\n")
+
+
+def TESS_OC(T0, T0_err, period, df, output_path, write_callback=None, cancel_event=None, time_system=None):
     """
     Takes ToM data pre-gathered from TESS data and finds corresponding O-C values.
 
@@ -36,6 +48,8 @@ def TESS_OC(T0, T0_err, period, df, output_path, write_callback=None, cancel_eve
         Function to log messages.
     cancel_event : threading.Event, optional
         Event to check for cancellation.
+    time_system : str, optional
+        The time system of the minima (see time_systems), recorded in the output.
 
     Returns
     -------
@@ -43,6 +57,7 @@ def TESS_OC(T0, T0_err, period, df, output_path, write_callback=None, cancel_eve
         Path to the saved output file, or None if canceled.
     """
     log = make_logger(write_callback)
+    time_systems.check(time_system)
 
     min_strict = list(df[0])
     min_strict_err = list(df[2])
@@ -69,12 +84,13 @@ def TESS_OC(T0, T0_err, period, df, output_path, write_callback=None, cancel_eve
     })
 
     outfile = str(Path(output_path) / "TESS_OC.txt")
-    dp.to_csv(outfile, index=None, sep="\t")
+    _write_oc_table(dp, outfile, time_system)
     log(f"Finished saving TESS O-C file to {outfile}")
     return outfile
 
 
-def BSUO(T0, T0_err, period, db, dv, dr, output_path, write_callback=None, cancel_event=None):
+def BSUO(T0, T0_err, period, db, dv, dr, output_path, write_callback=None, cancel_event=None,
+         time_system=None):
     """
     Uses BSUO/SARA filter ToMs to calculate an averaged ToM and O-C values.
 
@@ -98,6 +114,8 @@ def BSUO(T0, T0_err, period, db, dv, dr, output_path, write_callback=None, cance
         Function to log messages.
     cancel_event : threading.Event, optional
         Event to check for cancellation.
+    time_system : str, optional
+        The time system of the minima (see time_systems), recorded in the output.
 
     Returns
     -------
@@ -105,6 +123,7 @@ def BSUO(T0, T0_err, period, db, dv, dr, output_path, write_callback=None, cance
         Path to the saved output file, or None if canceled.
     """
     log = make_logger(write_callback)
+    time_systems.check(time_system)
 
     strict_B = list(db[0])
     strict_B_err = list(db[2])
@@ -143,7 +162,7 @@ def BSUO(T0, T0_err, period, db, dv, dr, output_path, write_callback=None, cance
     })
 
     outfile = str(Path(output_path) / "BSUO_OC.txt")
-    dp.to_csv(outfile, index=None, sep="\t")
+    _write_oc_table(dp, outfile, time_system)
     log(f"Finished saving BSUO O-C file to {outfile}")
     return outfile
 
@@ -151,7 +170,9 @@ def BSUO(T0, T0_err, period, db, dv, dr, output_path, write_callback=None, cance
 def all_data(file_paths, period, output_path, write_callback=None, cancel_event=None):
     """
     Merges multiple O-C data files into a single combined output file and
-    generates a LaTeX table.
+    generates a LaTeX table. The table's time column is labelled with the
+    time system the files say they're in, or just "Time of minimum" if none
+    of them say. Files in different time systems can't be merged.
 
     Parameters
     ----------
@@ -173,6 +194,13 @@ def all_data(file_paths, period, output_path, write_callback=None, cancel_event=
     """
     log = make_logger(write_callback)
 
+    system = time_systems.combined([time_systems.system_in_file(f) for f in file_paths],
+                                   [Path(f).name for f in file_paths])
+    if system is None:
+        log("None of the O-C files say which time system their minima are in, so the LaTeX "
+            "table's time column is headed \"Time of minimum\".")
+    label = time_systems.latex(system)
+
     minimum_list = []
     e_list = []
     o_c_list = []
@@ -183,11 +211,12 @@ def all_data(file_paths, period, output_path, write_callback=None, cancel_event=
             log("Task canceled during All Data merge.")
             return None
 
-        df = pd.read_csv(fname, header=None, skiprows=[0], sep=r"\s+")
-        minimum = np.array(df[0])
-        e = np.array(df[1])
-        o_c = np.array(df[2])
-        o_c_err = np.array(df[3])
+        # The time system line, if there is one, is skipped as a comment; then comes the header row
+        df = pd.read_csv(fname, header=0, sep=r"\s+", comment="#")
+        minimum = np.array(df.iloc[:, 0], dtype=float)
+        e = np.array(df.iloc[:, 1])
+        o_c = np.array(df.iloc[:, 2], dtype=float)
+        o_c_err = np.array(df.iloc[:, 3], dtype=float)
 
         for num, val in enumerate(minimum):
             minimum_list.append("%.5f" % val)
@@ -203,17 +232,17 @@ def all_data(file_paths, period, output_path, write_callback=None, cancel_event=
     })
 
     outfile = str(Path(output_path) / "all_data_OC.txt")
-    dp.to_csv(outfile, index=None, sep="\t")
+    _write_oc_table(dp, outfile, system)
     log(f"Finished saving merged O-C file to {outfile}")
 
     # LaTeX table
     table_header = r"\renewcommand{\baselinestretch}{1.00} \small\normalsize"
     table_header += "\n" + r"\begin{center}" + "\n" + r"\begin{longtable}{ccc}" + "\n"
-    table_header += r"$BJD_{\rm TDB}$ & E & O-C \\" + "\n"
+    table_header += label + r" & E & O-C \\" + "\n"
     table_header += r"\hline" + "\n" + r"\endfirsthead" + "\n"
     table_header += r"\multicolumn{3}{c}" + "\n"
     table_header += r"{\tablename~\thetable~-- \textit{Continued from previous page}} \\" + "\n"
-    table_header += r"$BJD_{\rm TDB}$ & E & O-C \\" + "\n"
+    table_header += label + r" & E & O-C \\" + "\n"
     table_header += r"\hline" + "\n" + r"\endhead" + "\n" + r"\hline" + "\n"
     table_header += r"\multicolumn{3}{c}{\textit{Continued on next page}} \\" + "\n"
     table_header += r"\endfoot" + "\n" + r"\endlastfoot" + "\n"
@@ -225,7 +254,7 @@ def all_data(file_paths, period, output_path, write_callback=None, cancel_event=
         output += line
 
     output += (r"\hline" + "\n" +
-               r"\caption{O-C table. Column 1 is $BJD_{TDB}$, column 2 is epoch number, "
+               r"\caption{O-C table. Column 1 is " + label + r", column 2 is epoch number, "
                r"column 3 is $(O-C)$ with 1$\sigma$ error.}" + "\n" +
                r"\label{tbl:OC}" + "\n" +
                r"\end{longtable}" + "\n" +
@@ -303,7 +332,7 @@ def data_fit(input_file, period, write_callback=None, cancel_event=None):
     """
     log = make_logger(write_callback)
 
-    df = pd.read_csv(input_file, header=0, sep=r"\s+")
+    df = pd.read_csv(input_file, header=0, sep=r"\s+", comment="#")
 
     x = df["Epoch"]
     y = df["O-C"]

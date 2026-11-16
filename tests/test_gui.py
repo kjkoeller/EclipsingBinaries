@@ -433,6 +433,34 @@ def _fill_find_min(app, count, folder=None):
     app.find_min_curves.picked = True
 
 
+def test_find_minimum_time_system_choice_labels_and_tags_the_minima(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app.find_min_time_system.set("HJD (UTC)")
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    assert window.time_system == "HJD_UTC"
+    assert window.table.heading("hjd")["text"] == "HJD (UTC)"
+    assert window.ax_lc.get_xlabel().startswith("HJD (UTC) - ")
+    window.save_minimum()
+    saved = tmp_path / "NSVS_896797_B_min.txt"
+    assert saved.read_text().startswith("# Times of minimum in HJD_UTC\n")
+    assert "Saved minimum HJD (UTC)" in app.log_area.get("1.0", "end")
+    window.destroy()
+
+
+def test_find_minimum_bjd_minima_go_in_their_own_file(app, tmp_path):
+    _fill_find_min(app, 1, tmp_path)
+    app.find_min_time_system.set("BJD (TDB)")
+    app._run_button.invoke()
+    app.update()
+    window = _finder(app)
+    window.save_minimum()
+    saved = tmp_path / "NSVS_896797_B_BJD_TDB_min.txt"
+    assert saved.read_text().startswith("# Times of minimum in BJD_TDB\n")
+    window.destroy()
+
+
 def _finder(app):
     from EclipsingBinaries.find_min_window import MinimumFinderWindow
 
@@ -469,7 +497,9 @@ def test_find_minimum_opens_the_window_and_saves(app, tmp_path):
     saved = tmp_path / "NSVS_896797_BVR_min.txt"
     assert saved.exists()
     assert len(window.table.get_children()) == 1
-    assert "Saved minimum HJD" in app.log_area.get("1.0", "end")
+    # The example files have no header, so their time system isn't known unless chosen
+    assert "Saved minimum Time" in app.log_area.get("1.0", "end")
+    assert window.time_system is None
 
     # Fitting one filter saves to that filter's own file
     window.band_vars["R"].set(False)

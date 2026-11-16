@@ -25,6 +25,7 @@ import pandas as pd
 import scipy.interpolate
 from astropy.time import Time
 
+from . import time_systems
 from .vseq_updated import (calc, FT, pick_column, LIGHT_CURVE_ERR_NAMES, LIGHT_CURVE_MAG_NAMES,
                             LIGHT_CURVE_TIME_NAMES)
 
@@ -281,14 +282,48 @@ def _pick(columns, names):
 def read_light_curve(path, notes=None):
     """
     Read a light curve file and return (time, magnitude, error) arrays sorted
-    by time.
+    by time. See read_light_curve_and_system for which columns are used.
+    """
+    return read_light_curve_and_system(path, notes)[:3]
+
+
+def _night_filters_with_bjd(df):
+    """
+    True if a file without a header looks like Night Filters' output with the
+    BJD option on: BJD_TDB, HJD, magnitude, error. The two time columns are
+    always within a few minutes of each other, which a time and a magnitude
+    never are.
+    """
+    if df.shape[1] < 4:
+        return False
+    first, second = (pd.to_numeric(df.iloc[:, i], errors="coerce") for i in (0, 1))
+    if first.isna().all() or second.isna().all():
+        return False
+    return bool(first.median() > 1000 and (first - second).abs().median() < 0.01)
+
+
+def read_light_curve_and_system(path, notes=None, time_system=None):
+    """
+    Read a light curve file and return (time, magnitude, error, time system),
+    with the arrays sorted by time. The time system is one of
+    time_systems.SYSTEMS, or None when the file doesn't say.
+
+    Files with a header, such as the CSV files Multi-Aperture Photometry
+    saves, are read by column name, and the time column's name gives the
+    system (AIJ's HJD column is HJD in UTC). When a file has more than one
+    time column, the first of TIME_NAMES is used (HJD before BJD_TDB) unless
+    time_system asks for another.
 
     Files without a header use the first three columns, as Night Filters
-    writes them (examples/test_B.txt). Files with a header, such as the CSV
-    files Multi-Aperture Photometry saves, are read by column name. Rows that
-    repeat an earlier row exactly are left out; if notes is a list, a line
-    saying how many is added to it for the log.
+    writes them (examples/test_B.txt). Nothing in them says which system the
+    times are in, so it's taken from time_system, or left as None. Night
+    Filters' files with the BJD option on have BJD_TDB then HJD before the
+    magnitudes, and those are told apart by the two time columns.
+
+    Rows that repeat an earlier row exactly are left out; if notes is a
+    list, a line saying how many is added to it for the log.
     """
+    time_systems.check(time_system)
     path = Path(path)
     if not path.is_file():
         raise MinimumError(f"{path} doesn't exist.")
@@ -308,12 +343,39 @@ def read_light_curve(path, notes=None):
             if None in (t_col, m_col, e_col):
                 raise MinimumError(f"{path.name} needs time, magnitude and error columns (for example "
                                    "HJD or HJD_UTC, Source_AMag_T1 and Source_AMag_Err_T1).")
+            system = time_systems.from_column(t_col)
+            if time_system is not None and system != time_system:
+                matching = [c for c in df.columns if time_systems.from_column(c) == time_system]
+                if not matching:
+                    raise MinimumError(f"{path.name} has no {time_systems.describe(time_system)} column "
+                                       f"(its times are in {t_col}). Choose another time system, or "
+                                       "export the file again with that column.")
+                t_col, system = matching[0], time_system
+            elif time_system is None and notes is not None:
+                others = sorted({time_systems.from_column(c) for c in df.columns} - {system, None})
+                if others:
+                    notes.append(f"{path.name} also has {', '.join(time_systems.describe(s) for s in others)} "
+                                 f"times; {time_systems.describe(system)} is used. Choose a time system "
+                                 "to use the other.")
             df = df[[t_col, m_col, e_col]]
         else:
             df = pd.read_csv(path, sep=r"[\s,]+", header=None, engine="python")
             if df.shape[1] < 3:
                 raise MinimumError(f"{path.name} needs at least three columns: time, magnitude and error.")
-            df = df.iloc[:, :3]
+            if _night_filters_with_bjd(df):
+                # BJD_TDB, HJD, magnitude, error
+                if time_system == time_systems.BJD_TDB:
+                    df, system = df.iloc[:, [0, 2, 3]], time_systems.BJD_TDB
+                elif time_system in (None, time_systems.HJD_UTC):
+                    df, system = df.iloc[:, [1, 2, 3]], time_systems.HJD_UTC
+                    if time_system is None and notes is not None:
+                        notes.append(f"{path.name} has BJD (TDB) and HJD (UTC) times; HJD (UTC) is used. "
+                                     "Choose BJD (TDB) as the time system to use the other.")
+                else:
+                    raise MinimumError(f"{path.name} has BJD (TDB) and HJD (UTC) times, not "
+                                       f"{time_systems.describe(time_system)}.")
+            else:
+                df, system = df.iloc[:, :3], time_system
     except (pd.errors.ParserError, UnicodeDecodeError) as e:
         raise MinimumError(f"{path.name} couldn't be read: {e}") from e
 
@@ -326,7 +388,7 @@ def read_light_curve(path, notes=None):
         notes.append(f"{path.name}: {before - len(df)} of its {before} rows repeat earlier ones "
                      "and were left out.")
     df = df.sort_values(df.columns[0], kind="stable")
-    return tuple(df.iloc[:, i].to_numpy(dtype=float) for i in range(3))
+    return tuple(df.iloc[:, i].to_numpy(dtype=float) for i in range(3)) + (system,)
 
 
 @dataclass
@@ -356,6 +418,7 @@ class Night:
     offset: int
     bands: dict = field(default_factory=dict)
     view: tuple | None = None
+    time_system: str | None = None   # one of time_systems.SYSTEMS, or None if not known
 
     @property
     def date(self):
@@ -438,7 +501,7 @@ def _pieces(first, last):
     return ranges
 
 
-def load_nights(files, labels=None, norm_method="norm", notes=None):
+def load_nights(files, labels=None, norm_method="norm", notes=None, time_system=None):
     """
     Read one light curve per filter and split them into nights.
 
@@ -450,19 +513,29 @@ def load_nights(files, labels=None, norm_method="norm", notes=None):
     :param files: light curve file paths, one per filter
     :param labels: a name for each file, such as "B"; defaults to File 1, File 2...
     :param notes: optional list that notes for the log, such as repeated rows, are added to
+    :param time_system: which time system to use, or None to go by the files
+        (see read_light_curve_and_system). Every file has to end up in the same one.
     :return: list of Night, in time order
     """
     files = list(files)
     if not files:
         raise MinimumError("Add at least one light curve file.")
     labels = list(labels) if labels else [f"File {i + 1}" for i in range(len(files))]
-    curves = []
+    curves, systems = [], []
     for path, label in zip(files, labels):
-        time, mag, err = read_light_curve(path, notes)
+        time, mag, err, system = read_light_curve_and_system(path, notes, time_system)
+        systems.append(system)
         reference = np.mean(mag) if norm_method == "subavg" else np.min(mag)
         flux = 10 ** (-0.4 * (mag - reference))
         flux_err = 0.4 * np.log(10) * err * flux
         curves.append((label, time, flux, flux_err))
+    try:
+        system = time_systems.combined(systems, [Path(p).name for p in files])
+    except ValueError as e:
+        raise MinimumError(str(e)) from e
+    if notes is not None and system is not None and None in systems:
+        notes.append(f"Some files don't say which time system they're in; they're taken to be "
+                     f"{time_systems.describe(system)} like the others.")
 
     nights = []
     for stretch_first, stretch_last in _stretches(np.concatenate([c[1] for c in curves])):
@@ -478,7 +551,8 @@ def load_nights(files, labels=None, norm_method="norm", notes=None):
                     bands[label] = Band(label, time[mask] - offset, flux[mask], flux_err[mask])
             view = (first - offset, last - offset) if len(pieces) > 1 else None
             if bands:
-                nights.append(Night(index=len(nights), offset=offset, bands=bands, view=view))
+                nights.append(Night(index=len(nights), offset=offset, bands=bands, view=view,
+                                    time_system=system))
     return nights
 
 
@@ -489,7 +563,7 @@ def load_nights(files, labels=None, norm_method="norm", notes=None):
 @dataclass
 class Minimum:
     """A measured time of minimum."""
-    hjd: float                  # full time of minimum
+    hjd: float                  # full time of minimum, in time_system (the name is from when it was always HJD)
     error: float | None
     night: int                  # index of the night it came from
     date: str
@@ -500,6 +574,7 @@ class Minimum:
     kwee: KweeResult
     poly: np.ndarray            # polynomial through the eclipse, for drawing
     poly_R2: float
+    time_system: str | None = None
 
 
 def measure_minimum(night, lb, rb, labels=None, order=DEFAULT_ORDER, resolution=DEFAULT_RESOLUTION,
@@ -525,7 +600,7 @@ def measure_minimum(night, lb, rb, labels=None, order=DEFAULT_ORDER, resolution=
     used = tuple(b for b in night.bands if labels is None or b in labels)
     return Minimum(hjd=night.offset + kwee.t_kw, error=kwee.error, night=night.index, date=night.date,
                    lb=lb, rb=rb, n_points=n, labels=used, kwee=kwee, poly=np.asarray(poly),
-                   poly_R2=float(poly_R2))
+                   poly_R2=float(poly_R2), time_system=night.time_system)
 
 
 def guess_boundaries(night, labels=None, half_width=0.04):
@@ -675,7 +750,7 @@ def draw_night(ax_s, ax_lc, night, lb, rb, minimum=None, labels=None, colours=No
         ax_lc.text(0.5, 0.9, textwrap.fill(message, 64), transform=ax_lc.transAxes, ha="center", va="top",
                    fontsize=NOTE_SIZE + 0.5, color=WARNING_COLOUR, zorder=20, linespacing=1.4,
                    bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor=WARNING_COLOUR, alpha=0.95))
-    ax_lc.set_xlabel(f"HJD - {night.offset}", fontsize=fontsize)
+    ax_lc.set_xlabel(f"{time_systems.describe(night.time_system)} - {night.offset}", fontsize=fontsize)
     ax_lc.set_ylabel("Relative flux", fontsize=fontsize)
     ax_lc.grid(alpha=0.3)
     if len(night.bands) > 1:
@@ -697,6 +772,11 @@ class MinimumFile:
     Each line is tab separated: time of minimum, number of points used, and
     error. O-C Plotting reads the first and third columns. Measuring the
     same eclipse again replaces the earlier value.
+
+    When the time system is known, the file starts with a line saying so
+    ("# Times of minimum in BJD_TDB"), and minima in another system can't be
+    added to it. Files without that line are older ones, or times whose
+    system wasn't known.
     """
 
     SAME_ECLIPSE = 0.05  # days; minima closer than this are the same eclipse
@@ -704,9 +784,10 @@ class MinimumFile:
     def __init__(self, path):
         self.path = Path(path)
         self.entries = []  # (time, points, error)
+        self.time_system = time_systems.system_in_file(self.path)
         if self.path.is_file():
             try:
-                df = pd.read_csv(self.path, sep=r"\s+", header=None)
+                df = pd.read_csv(self.path, sep=r"\s+", header=None, comment="#")
                 for row in df.itertuples(index=False):
                     self.entries.append((float(row[0]), int(row[1]), float(row[2])))
             except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, IndexError):
@@ -718,6 +799,13 @@ class MinimumFile:
         if minimum.error is None:
             raise MinimumError("This minimum has no error estimate, so it can't be used for O-C. "
                                "Widen the boundaries so more points are paired.")
+        system = getattr(minimum, "time_system", None)
+        if system is not None:
+            if self.time_system not in (None, system):
+                raise MinimumError(f"{self.path.name} holds minima in {time_systems.describe(self.time_system)}, "
+                                   f"and this one is in {time_systems.describe(system)}. Times in different "
+                                   "systems can't go in the same file.")
+            self.time_system = system
         replaced = any(abs(t - minimum.hjd) < self.SAME_ECLIPSE for t, _n, _e in self.entries)
         self.entries = [e for e in self.entries if abs(e[0] - minimum.hjd) >= self.SAME_ECLIPSE]
         self.entries.append((minimum.hjd, minimum.n_points, minimum.error))
@@ -732,14 +820,21 @@ class MinimumFile:
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(time_systems.tag_line(self.time_system))
             for t, n, err in self.entries:
                 handle.write(f"{t:.6f}\t{n}\t{err:.9f}\n")
 
 
-def minimum_file_name(obj_name, labels):
-    """File name for an object's minima in the given filters, e.g. NSVS_B_min.txt."""
+def minimum_file_name(obj_name, labels, time_system=None):
+    """
+    File name for an object's minima in the given filters, e.g. NSVS_B_min.txt.
+    Times in a system other than HJD (UTC) get it in the name as well, such as
+    NSVS_B_BJD_TDB_min.txt, so they're kept apart from HJD minima of the same
+    star. HJD and unknown systems keep the name files have always had.
+    """
     stem = "_".join(str(obj_name).split()) or "target"
-    return f"{stem}_{''.join(labels)}_min.txt"
+    system = "" if time_system in (None, time_systems.HJD_UTC) else f"_{time_system}"
+    return f"{stem}_{''.join(labels)}{system}_min.txt"
 
 
 # ---------------------------------------------------------------------------
@@ -769,7 +864,14 @@ def main():
                 break
             print("That file doesn't exist. Try again.\n")
     name = input("Object name (used to name the minimum file): ").strip() or "target"
-    return run_standalone(files, None, Path.cwd(), name)
+    choices = {str(i + 1): system for i, system in enumerate(time_systems.SYSTEMS)}
+    listed = ", ".join(f"{key} for {time_systems.describe(system)}" for key, system in choices.items())
+    while True:
+        answer = input(f"Time system of the files: Enter to go by the files, or {listed}: ").strip()
+        if not answer or answer in choices:
+            break
+        print("Press Enter or type one of the numbers.\n")
+    return run_standalone(files, None, Path.cwd(), name, choices.get(answer))
 
 
 if __name__ == '__main__':

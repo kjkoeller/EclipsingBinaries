@@ -54,6 +54,7 @@ from .find_min_window import MinimumFinderWindow
 from .Night_Filters import combine_nights, NightFileError
 from .period import DEFAULT_METHOD as PERIOD_DEFAULT_METHOD, METHODS as PERIOD_METHODS, PeriodError
 from .period_window import PeriodWindow
+from . import time_systems
 from .gui_support import (ToolTip, SettingsStore, ScrollableFrame, make_app_icon, open_path,
                           classify_log_line)
 
@@ -95,6 +96,11 @@ NIGHT_TEXT = "#e6ecf5"
 NIGHT_MUTED = "#8fa3bf"
 NIGHT_DISABLED = "#5d6f89"
 STARLIGHT = "#f2c14e"
+
+# Find Minimum's time system choices: going by the files, or one of the systems
+TIME_SYSTEM_FROM_FILES = "From the files"
+TIME_SYSTEM_CHOICES_BY_NAME = {time_systems.describe(s): s for s in time_systems.SYSTEMS}
+TIME_SYSTEM_CHOICES = (TIME_SYSTEM_FROM_FILES, *TIME_SYSTEM_CHOICES_BY_NAME)
 
 DOCS_URL = "https://eclipsingbinaries.readthedocs.io/"
 REPO_URL = "https://github.com/kjkoeller/EclipsingBinaries/"
@@ -2294,15 +2300,28 @@ class ProgramLauncher(tk.Tk):
         self.find_min_rows = curves.rows
         self._update_find_min_rows = curves.update
 
+        system_label = tk.Label(self.right_frame, text="Time System:", font=self.label_font, bg=BG_PANEL,
+                                fg=FG_TEXT)
+        system_label.grid(row=6, column=0, padx=(16, 10), pady=5, sticky="e")
+        self._tooltip(system_label, "Which times to use. From the files goes by the column names (AIJ's HJD "
+                                    "column is HJD in UTC); files without a header don't say, so choose their "
+                                    "system here to have the minima labelled. When a file has both HJD and "
+                                    "BJD_TDB, HJD is used unless BJD (TDB) is chosen.")
+        self.find_min_time_system = self._remember_var(
+            "time_system", tk.StringVar(master=self, value=TIME_SYSTEM_FROM_FILES))
+        ttk.Combobox(self.right_frame, textvariable=self.find_min_time_system, values=TIME_SYSTEM_CHOICES,
+                     state="readonly", width=16, font=self.label_font).grid(row=6, column=1, padx=(0, 10),
+                                                                             pady=5, sticky="w")
+
         output_folder = self.create_input_field(self.right_frame, "Output Folder:", "Same folder as the first file",
-                                                row=6, browse_type="folder", optional=True,
+                                                row=7, browse_type="folder", optional=True,
                                                 tooltip="Where the minimum files are saved. Left empty, they go "
                                                         "next to the first light curve. Minima already saved there "
                                                         "are loaded, so you can carry on later.")
 
-        self.create_run_button(self.right_frame, self.run_find_minimum, row=7, text="Open Minimum Finder",
+        self.create_run_button(self.right_frame, self.run_find_minimum, row=8, text="Open Minimum Finder",
                                cancellable=False, obj_name=obj_name, output_folder=output_folder)
-        self._log_section(8)
+        self._log_section(9)
 
     def _light_curve_rows(self, panel, first_row, count_tip):
         """
@@ -2324,9 +2343,10 @@ class ProgramLauncher(tk.Tk):
         labels = [label for label, _ in choices]
         folder = self._path_value(output_folder) or str(Path(choices[0][1]).parent)
 
+        system = TIME_SYSTEM_CHOICES_BY_NAME.get(self.find_min_time_system.get())
         try:
             window = MinimumFinderWindow(self, [path for _label, path in choices], labels, folder, name,
-                                         log=self.write_to_log)
+                                         log=self.write_to_log, time_system=system)
         except MinimumError as e:
             self.write_to_log(f"Error: {e}")
             return
@@ -2509,14 +2529,23 @@ class ProgramLauncher(tk.Tk):
             import pandas as pd
 
             try:
+                if mode in ("BSUO", "TESS"):
+                    # Files of minima say which time system they're in on their first line
+                    system = time_systems.combined([time_systems.system_in_file(p) for p in paths],
+                                                   [Path(p).name for p in paths])
+                    if system is None:
+                        self.write_to_log("The minimum files don't say which time system they're in, so "
+                                          "the O-C table won't name one.")
                 if mode == "BSUO":
-                    db, dv, dr = (pd.read_csv(p, header=None, sep=r"\s+") for p in paths)
+                    db, dv, dr = (pd.read_csv(p, header=None, sep=r"\s+", comment="#") for p in paths)
                     outfile = BSUO(T0, T0_err, period, db, dv, dr, output,
-                                   write_callback=self.write_to_log, cancel_event=self.cancel_event)
+                                   write_callback=self.write_to_log, cancel_event=self.cancel_event,
+                                   time_system=system)
                 elif mode == "TESS":
-                    df = pd.read_csv(paths[0], header=None, sep=r"\s+")
+                    df = pd.read_csv(paths[0], header=None, sep=r"\s+", comment="#")
                     outfile = TESS_OC(T0, T0_err, period, df, output,
-                                      write_callback=self.write_to_log, cancel_event=self.cancel_event)
+                                      write_callback=self.write_to_log, cancel_event=self.cancel_event,
+                                      time_system=system)
                 else:
                     outfile = all_data(paths, period, output,
                                        write_callback=self.write_to_log, cancel_event=self.cancel_event)

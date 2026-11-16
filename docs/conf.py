@@ -14,10 +14,8 @@ MOCK_MODULES = [
     'ccdproc',
     'photutils',
     'photutils.aperture',
-    'pyia',
     'astroquery',
     'astroquery.mast',
-    'PyAstronomy',
     'tqdm',
 ]
 

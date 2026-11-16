@@ -102,7 +102,7 @@ def test_flux_err_missing_value_is_nan():
 
 
 # ===========================================================================
-# target_star — network mocked via GaiaData.from_query
+# target_star — network mocked via GaiaRows.from_query
 # ===========================================================================
 TARGET_RA = "12:34:56.78"   # 188.736583 deg
 TARGET_DEC = "45:00:00.00"
@@ -112,13 +112,13 @@ TARGET_DEC_DEG = 45.0
 
 def _make_mock_gaia_result(rows=None):
     """
-    Build a real GaiaData object like the archive would return.
+    Build a real GaiaRows object like the archive would return.
 
     Each row is (source_id, ra_offset_arcsec, dec_offset_arcsec, pmra, pmdec).
     Offsets are measured from the target at Gaia's 2016 epoch.
     """
     from astropy.table import Table
-    from pyia import GaiaData
+    from EclipsingBinaries.gaia import GaiaRows
 
     if rows is None:
         # Deliberately out of order: the closest source is second
@@ -147,12 +147,12 @@ def _make_mock_gaia_result(rows=None):
         "radial_velocity": [-10.0] * n,
         "radial_velocity_error": [0.5] * n,
     })
-    return GaiaData(table)
+    return GaiaRows(table)
 
 
 def _run_target_star(tmpdir, result, messages=None):
     from EclipsingBinaries.gaia import target_star
-    with patch("EclipsingBinaries.gaia.GaiaData.from_query", return_value=result) as query:
+    with patch("EclipsingBinaries.gaia.GaiaRows.from_query", return_value=result) as query:
         target_star(TARGET_RA, TARGET_DEC, tmpdir,
                     write_callback=(messages.append if messages is not None else None))
     return query, pd.read_csv(os.path.join(tmpdir, "gaia_results.csv"))
@@ -178,7 +178,7 @@ def test_target_star_cancels_before_query():
     messages = []
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("EclipsingBinaries.gaia.GaiaData.from_query") as mock_query:
+        with patch("EclipsingBinaries.gaia.GaiaRows.from_query") as mock_query:
             target_star(TARGET_RA, TARGET_DEC, tmpdir,
                         write_callback=messages.append, cancel_event=cancel)
         mock_query.assert_not_called()
@@ -266,7 +266,7 @@ def test_target_star_logs_error_on_exception():
     messages = []
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("EclipsingBinaries.gaia.GaiaData.from_query",
+        with patch("EclipsingBinaries.gaia.GaiaRows.from_query",
                    side_effect=RuntimeError("network error")):
             with pytest.raises(RuntimeError):
                 target_star("12:34:56.78", "45:00:00.00", tmpdir,
@@ -279,7 +279,7 @@ def test_target_star_logs_error_on_exception():
 # tess_mag — network mocked via _query_tic_catalog
 #
 # tess_mag calls _query_tic_catalog → _query_single_tic_region → Vizier.
-# GaiaData is never touched by tess_mag, so patching GaiaData.from_query
+# GaiaRows is never touched by tess_mag, so patching GaiaRows.from_query
 # has no effect and leaves real network calls in place. The correct boundary
 # to mock is _query_tic_catalog.
 # ===========================================================================
@@ -428,7 +428,7 @@ def test_tess_mag_logs_error_on_exception():
 
 class FakeGaia:
     """
-    Stands in for the GaiaData the archive query returns. Each source is a
+    Stands in for the GaiaRows the archive query returns. Each source is a
     dict with ra and dec in degrees (at Gaia's 2016 epoch) and optionally
     pmra, pmdec, G, BP, RP and their flux over error values.
     """
@@ -560,3 +560,26 @@ def test_tess_mag_cancel_during_the_gaia_backup():
     with patch("EclipsingBinaries.gaia._query_tic_catalog", return_value=_no_tic()), \
             patch("EclipsingBinaries.gaia._query_gaia_archive", return_value=None):
         assert tess_mag([0.8356], [78.961], None, cancel) is None
+
+
+def test_gaia_rows_fill_masked_values_and_attach_units():
+    from astropy.table import MaskedColumn, Table
+    import astropy.units as u
+    from EclipsingBinaries.gaia import GaiaRows
+
+    table = Table()
+    table["source_id"] = [1, 2, 3]
+    table["ra"] = MaskedColumn([1.0, 2.0, 3.0], unit="deg")
+    # No unit on the column, so the usual Gaia unit is used
+    table["pmra"] = MaskedColumn([1.0, 0.0, 3.0], mask=[False, True, False])
+    table["phot_g_mean_flux_over_error"] = [100.0, 200.0, 300.0]
+    rows = GaiaRows(table)
+
+    assert rows.ra.unit == u.deg
+    assert rows.pmra.unit == u.mas / u.yr
+    assert np.isnan(rows.pmra.value[1])
+    assert not hasattr(rows.phot_g_mean_flux_over_error, "unit")
+    assert len(rows[np.array([0, 2])]) == 2
+    assert list(rows[np.array([2])].source_id) == [3]
+    with pytest.raises(AttributeError):
+        rows.not_a_column

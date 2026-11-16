@@ -310,7 +310,7 @@ def test_ztf_server_error_is_reported_and_the_rest_carry_on(tmp_path, vizier):
 # --- Gaia ---------------------------------------------------------------------------------------------
 
 class FakeGaiaSource:
-    """Stands in for the GaiaData the source lookup returns."""
+    """Stands in for the GaiaRows the source lookup returns."""
 
     def __init__(self, sources):
         def column(key, default):

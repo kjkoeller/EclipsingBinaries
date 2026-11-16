@@ -446,7 +446,44 @@ def test_find_minimum_time_system_choice_labels_and_tags_the_minima(app, tmp_pat
     saved = tmp_path / "NSVS_896797_B_min.txt"
     assert saved.read_text().startswith("# Times of minimum in HJD_UTC\n")
     assert "Saved minimum HJD (UTC)" in app.log_area.get("1.0", "end")
+    # The star's file notes where its minima are and their time system
+    from EclipsingBinaries import star_file
+    star = star_file.StarFile.load("NSVS 896797")
+    assert star.files["minima"] == [str(saved)]
+    assert star.get("time_system") == "HJD_UTC"
     window.destroy()
+
+
+def test_oc_panel_fills_in_what_the_star_file_holds(app):
+    from EclipsingBinaries import star_file
+    star_file.record("NSVS 896797", "O-C", period=0.3700, epoch=2458379.781, epoch_error=0.0003)
+    app.open_panel("oc")
+    app._set_entry_text(app.oc_period_entry, "0.37005")       # typed values are left alone
+    app._set_entry_text(app.oc_name_entry, "nsvs 896797")
+    app._fill_star_details()
+    assert app._entry_value(app.oc_epoch_entry) == "2458379.781"
+    assert app._entry_value(app.oc_epoch_err_entry) == "0.0003"
+    assert app._entry_value(app.oc_period_entry) == "0.37005"
+    assert "Filled in epoch, epoch uncertainty from what's saved for nsvs 896797" in app.log_area.get("1.0", "end")
+
+
+def test_archive_and_comparison_panels_fill_in_the_position(app):
+    from EclipsingBinaries import star_file
+    star_file.record("SW Lac", "archives", ra="22:53:41.66", dec="+37:56:18.6")
+    for panel, name_field in (("archive_data", "Target Name"), ("aij", "Object Name")):
+        app.open_panel(panel)
+        app._set_entry_text(app._panel_fields[name_field], "SW Lac")
+        app._fill_star_details()
+        assert app._entry_value(app._panel_fields["Right Ascension (RA)"]) == "22:53:41.66"
+        assert app._entry_value(app._panel_fields["Declination (DEC)"]) == "+37:56:18.6"
+
+
+def test_unknown_stars_fill_in_nothing(app):
+    app.open_panel("oc")
+    app._set_entry_text(app.oc_name_entry, "Nobody")
+    app._fill_star_details()
+    assert app._entry_value(app.oc_epoch_entry) == ""
+    assert "Filled in" not in app.log_area.get("1.0", "end")
 
 
 def test_find_minimum_bjd_minima_go_in_their_own_file(app, tmp_path):

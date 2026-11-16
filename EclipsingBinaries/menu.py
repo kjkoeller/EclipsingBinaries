@@ -54,7 +54,7 @@ from .find_min_window import MinimumFinderWindow
 from .Night_Filters import combine_nights, NightFileError
 from .period import DEFAULT_METHOD as PERIOD_DEFAULT_METHOD, METHODS as PERIOD_METHODS, PeriodError
 from .period_window import PeriodWindow
-from . import time_systems
+from . import star_file, time_systems
 from .gui_support import (ToolTip, SettingsStore, ScrollableFrame, make_app_icon, open_path,
                           classify_log_line)
 
@@ -96,6 +96,9 @@ NIGHT_TEXT = "#e6ecf5"
 NIGHT_MUTED = "#8fa3bf"
 NIGHT_DISABLED = "#5d6f89"
 STARLIGHT = "#f2c14e"
+
+# How star file values are named in the log. "Error" would colour the line red.
+STAR_FIELD_NAMES = {"ra": "RA", "dec": "Dec", "epoch_error": "epoch uncertainty"}
 
 # Find Minimum's time system choices: going by the files, or one of the systems
 TIME_SYSTEM_FROM_FILES = "From the files"
@@ -649,6 +652,27 @@ class ProgramLauncher(tk.Tk):
         entry.insert(0, text)
         entry._placeholder_active = False
         entry.config(fg=FG_TEXT)
+
+    def _fill_from_star_file(self, name_entry, fields):
+        """
+        When a star's name is entered, fill in any of these fields that are
+        still empty from what its star file holds (see star_file.py). fields
+        maps a star file value, such as "ra", to the entry it goes in.
+        Returns the function that does it, for the tests.
+        """
+        def fill(_event=None):
+            name = self._entry_value(name_entry)
+            values = star_file.known(name)
+            filled = []
+            for key, entry in fields.items():
+                value = values.get(key)
+                if value is not None and not self._entry_value(entry):
+                    self._set_entry_text(entry, str(value))
+                    filled.append(STAR_FIELD_NAMES.get(key, key))
+            if filled:
+                self.write_to_log(f"Filled in {', '.join(filled)} from what's saved for {name}.")
+        name_entry.bind("<FocusOut>", fill, add="+")
+        return fill
 
     def _make_validator(self, entry, error_label, error_message, validation_func, optional=False):
         """Build and return the validate_input function for an entry field. Optional fields may be left empty."""
@@ -1682,6 +1706,7 @@ class ProgramLauncher(tk.Tk):
                                text="Run Comparison Selector",
                                ra=ra, dec=dec, folder_path=folder_path, obj_name=obj_name,
                                science_image=science_image)
+        self._fill_star_details = self._fill_from_star_file(obj_name, {"ra": ra, "dec": dec})
 
         self._log_section(7)
 
@@ -1708,6 +1733,8 @@ class ProgramLauncher(tk.Tk):
                     self.write_to_log("Comparison Selector was canceled.")
                 else:
                     self.write_to_log("Comparison Selector completed successfully.")
+                    star_file.record(obj_value, "comparison stars", files=[folder_value],
+                                     write_callback=self.write_to_log, ra=ra_value, dec=dec_value)
                     overlay = Path(folder_value) / f"{obj_value}_overlay.png"
                     extras = [("View Overlay", lambda: self._open_in_system(overlay))] if overlay.exists() else []
                     self.offer_results(folder_value, extras)
@@ -1891,6 +1918,8 @@ class ProgramLauncher(tk.Tk):
                     self.write_to_log("Multi-Aperture Photometry was canceled.")
                 else:
                     self.write_to_log("Multi-Aperture Photometry completed successfully.")
+                    star_file.record(obj_name_value, "photometry", files=[reduced_path_value],
+                                     write_callback=self.write_to_log)
                     filters = [f for f in PHOTOMETRY_FILTERS if f in chosen]
                     self.offer_results(reduced_path_value, [(
                         "View Light Curves",
@@ -2366,14 +2395,20 @@ class ProgramLauncher(tk.Tk):
         self.clear_right_frame()
         self._panel_title("O-C Plotting", "oc")
 
+        self.oc_name_entry = self.create_input_field(
+            self.right_frame, "Object Name:", "e.g. NSVS 896797 (optional)", row=1, optional=True,
+            tooltip="Optional. Fills in the period and epoch saved for the star, and saves this run's "
+                    "values and files with them."
+        )
+
         source_label = tk.Label(self.right_frame, text="Data Source:", font=self.label_font, bg=BG_PANEL,
                                 fg=FG_TEXT)
-        source_label.grid(row=1, column=0, padx=(16, 10), pady=5, sticky="e")
+        source_label.grid(row=2, column=0, padx=(16, 10), pady=5, sticky="e")
         self._tooltip(source_label, "BSUO/SARA averages B, V and R times of minimum. TESS uses one file. "
                                     "All Data merges O-C files you've already made.")
         self.oc_mode_var = self._remember_var("data_source", tk.StringVar(master=self, value="BSUO"))
         mode_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
-        mode_frame.grid(row=1, column=1, padx=(0, 10), pady=5, sticky="w")
+        mode_frame.grid(row=2, column=1, padx=(0, 10), pady=5, sticky="w")
         for label, val in [("BSUO/SARA", "BSUO"), ("TESS", "TESS"), ("All Data", "ALL")]:
             tk.Radiobutton(
                 mode_frame, text=label, variable=self.oc_mode_var, value=val,
@@ -2386,70 +2421,73 @@ class ProgramLauncher(tk.Tk):
             self.right_frame, text="I already have an Epoch value",
             variable=self.oc_has_epoch_var, font=self.label_font, bg=BG_PANEL, fg=FG_TEXT
         )
-        self.oc_has_epoch_check.grid(row=2, column=1, padx=(0, 10), pady=5, sticky="w")
+        self.oc_has_epoch_check.grid(row=3, column=1, padx=(0, 10), pady=5, sticky="w")
         self._tooltip(self.oc_has_epoch_check, "Leave this off to use the first time of minimum in the data "
                                                "as the epoch.")
 
         # Shared fields
         self.oc_epoch_entry = self.create_input_field(
-            self.right_frame, "Epoch (T0):", "e.g. 2457143.761819", row=3,
+            self.right_frame, "Epoch (T0):", "e.g. 2457143.761819", row=4,
             validation_func=_is_float, error_message="Please enter a valid float.",
             tooltip="Reference time of primary minimum (HJD or BJD) that eclipse numbers count from."
         )
         self.oc_epoch_err_entry = self.create_input_field(
-            self.right_frame, "Epoch Error:", "e.g. 0.0002803", row=4,
+            self.right_frame, "Epoch Error:", "e.g. 0.0002803", row=5,
             validation_func=_is_float, error_message="Please enter a valid float.",
             tooltip="Uncertainty on the epoch, in days."
         )
         self.oc_period_entry = self.create_input_field(
-            self.right_frame, "Period (days):", "e.g. 0.31297", row=5,
+            self.right_frame, "Period (days):", "e.g. 0.31297", row=6,
             validation_func=_is_float, error_message="Please enter a valid period.",
             tooltip="Orbital period in days. The linear fit reports a corrected period."
         )
         self.oc_output_entry = self.create_input_field(
-            self.right_frame, "Output Folder:", _example_path("output"), row=6,
+            self.right_frame, "Output Folder:", _example_path("output"), row=7,
             error_message="Please enter an output folder path.", browse_type="folder",
             tooltip="Where the O-C table, plot and LaTeX tables are written."
         )
 
         # BSUO fields
         self.oc_b_file_entry = self.create_input_field(
-            self.right_frame, "B Filter ToM File:", _example_path("B_min.txt"), row=7,
+            self.right_frame, "B Filter ToM File:", _example_path("B_min.txt"), row=8,
             error_message="Please enter a file path.", browse_type="file"
         )
         self.oc_v_file_entry = self.create_input_field(
-            self.right_frame, "V Filter ToM File:", _example_path("V_min.txt"), row=8,
+            self.right_frame, "V Filter ToM File:", _example_path("V_min.txt"), row=9,
             error_message="Please enter a file path.", browse_type="file"
         )
         self.oc_r_file_entry = self.create_input_field(
-            self.right_frame, "R Filter ToM File:", _example_path("R_min.txt"), row=9,
+            self.right_frame, "R Filter ToM File:", _example_path("R_min.txt"), row=10,
             error_message="Please enter a file path.", browse_type="file"
         )
 
         # TESS field
         self.oc_tess_file_entry = self.create_input_field(
-            self.right_frame, "TESS ToM File:", _example_path("tess_min.txt"), row=7,
+            self.right_frame, "TESS ToM File:", _example_path("tess_min.txt"), row=8,
             error_message="Please enter a file path.", browse_type="file"
         )
 
         # All Data fields
         self.oc_nights_entry = self.create_input_field(
-            self.right_frame, "Number of Files:", "e.g. 2", row=7,
+            self.right_frame, "Number of Files:", "e.g. 2", row=8,
             validation_func=lambda x: x.isdigit(), error_message="Please enter a whole number."
         )
         self.oc_all_files_entry = self.create_input_field(
             self.right_frame, "O-C Files (comma separated):",
-            f"{_example_path('file1.txt')}, {_example_path('file2.txt')}", row=8,
+            f"{_example_path('file1.txt')}, {_example_path('file2.txt')}", row=9,
             error_message="Please enter file paths separated by commas.", wide=True,
             tooltip="Paths to O-C files made earlier, separated by commas, in the format of "
                     "example_OC_table.txt."
         )
 
         self._update_oc_fields()
+        self._fill_star_details = self._fill_from_star_file(
+            self.oc_name_entry, {"epoch": self.oc_epoch_entry, "epoch_error": self.oc_epoch_err_entry,
+                                 "period": self.oc_period_entry})
 
-        self.create_run_button(self.right_frame, self.run_oc_plot, row=10)
+        self.create_run_button(self.right_frame, self.run_oc_plot, row=11)
 
-        self._log_section(11)
+        self._log_section(12)
 
     def _update_oc_fields(self):
         """Show only the inputs that the selected data source uses."""
@@ -2525,9 +2563,12 @@ class ProgramLauncher(tk.Tk):
                 self.write_to_log(f"Error: Expected {nights_str} files, got {len(paths)}.")
                 return
 
+        name_value = self._entry_value(self.oc_name_entry)
+
         def oc_plot():
             import pandas as pd
 
+            system = None
             try:
                 if mode in ("BSUO", "TESS"):
                     # Files of minima say which time system they're in on their first line
@@ -2555,6 +2596,11 @@ class ProgramLauncher(tk.Tk):
                              cancel_event=self.cancel_event)
                     self.write_to_log("O-C plotting completed successfully.")
                     plot = Path(outfile).with_suffix(".png")
+                    # The period and epoch entered are what the O-C values were worked out from
+                    star_file.record(name_value, "O-C", files=[outfile, plot] if plot.exists() else [outfile],
+                                     write_callback=self.write_to_log, period=period,
+                                     epoch=T0 or None, epoch_error=T0_err if T0 else None,
+                                     time_system=system)
                     extras = [("View O-C Plot", lambda: self._open_in_system(plot))] if plot.exists() else []
                     self.offer_results(output, extras)
             except Exception as e:
@@ -2593,6 +2639,7 @@ class ProgramLauncher(tk.Tk):
 
         self.create_run_button(self.right_frame, self.run_archive_data, row=6, text="Download",
                                name=name, ra=ra, dec=dec, output_folder=output_folder, choices=choices)
+        self._fill_star_details = self._fill_from_star_file(name, {"ra": ra, "dec": dec})
         self._log_section(7)
 
     def _archive_checkboxes(self, row):
@@ -2654,6 +2701,12 @@ class ProgramLauncher(tk.Tk):
                 archives.download(target, output_path, keys, write_callback=self.write_to_log,
                                   cancel_event=self.cancel_event)
                 folder = Path(output_path) / target.label
+                if name_value and not self.cancel_event.is_set():
+                    star_file.record(name_value, "archives", files=[folder], write_callback=self.write_to_log,
+                                     ra=ra_value or target.coord.ra.to_string(unit="hourangle", sep=":",
+                                                                              precision=2, pad=True),
+                                     dec=dec_value or target.coord.dec.to_string(sep=":", precision=1,
+                                                                                 alwayssign=True, pad=True))
                 summary = folder / archives.SUMMARY_FILE
                 if summary.exists():
                     self.offer_results(folder, [("Open Summary", lambda: self._open_in_system(summary))])

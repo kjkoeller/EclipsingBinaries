@@ -49,6 +49,43 @@ magnitude file already filled in. **View Light Curves** opens the light curve of
 window, stacked with a shared time axis, with the usual Matplotlib zoom, pan and save
 tools.
 
+Star files
+^^^^^^^^^^
+
+Each star gets a small file that the programs share, holding what's been worked out
+about it and where each result was saved. When a program that knows the star's name
+finishes, it adds to the file:
+
+=================================  =====================================================
+Program                            What it adds
+=================================  =====================================================
+AIJ Comparison Star Selector       RA and Dec, and the folder the RADEC files went in
+Archive Data                       RA and Dec (looked up from the name if not entered), the folder
+Multi-Aperture Photometry          The folder of reduced images and light curves
+Period Search                      The period, when **Save Period** is pressed, and its file
+Find Minimum                       Each minimum file, and the time system of the minima
+O-C Plotting                       The period and epoch used, the time system, the O-C files
+``EB_pipeline``                    RA and Dec, and the output folder
+=================================  =====================================================
+
+Going the other way, typing a star's name fills in fields that are still empty: RA and
+Dec in Archive Data and the Comparison Star Selector, and the period, epoch and epoch
+error in O-C Plotting, which has an optional **Object Name** for this. The log says what
+was filled in. Anything typed already is left alone.
+
+The name can be spelled with spaces or underscores, in any case: ``NSVS 896797`` and
+``nsvs_896797`` are the same star. The files are JSON, one per star, in
+``~/.EclipsingBinaries/stars`` (set the ``ECLIPSINGBINARIES_STARS`` environment variable
+to keep them elsewhere). Each keeps a history of what was added, when and by which
+program, which helps when writing up how a number was found. To see what's saved:
+
+.. code-block:: bash
+
+    python -m EclipsingBinaries.star_file "NSVS 896797"
+    python -m EclipsingBinaries.star_file          # lists every star
+
+If a star file can't be written, the log says so and the program carries on as normal.
+
 IRAF Reduction
 --------------
 
@@ -1064,6 +1101,8 @@ The GUI panel offers three modes selected by radio buttons:
 
 Common inputs across all modes:
 
++ **Object Name** — optional. Fills in the period and epoch saved in the star's file, and
+  adds this run to it (see `Star files`_).
 + **Period** — orbital period of the system in days
 + **Output Folder** — where all output files will be saved
 + **I already have an Epoch value** — checkbox to enter a known T0 and its error;

@@ -19,7 +19,7 @@ from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 
-from . import time_systems
+from . import star_file, time_systems
 from .find_min import (DEFAULT_NPAIRS, DEFAULT_ORDER, DEFAULT_RESOLUTION, MinimumError, MinimumFile,
                        draw_night, guess_boundaries, load_nights, measure_minimum, minimum_file_name)
 
@@ -408,6 +408,8 @@ class MinimumFinderWindow(tk.Toplevel):
             return
         verb = "Replaced the earlier minimum with" if replaced else "Saved minimum"
         self.log(f"{verb} {self.time_name} {self.minimum.hjd:.6f} ± {self.minimum.error:.6f} in {target.path}")
+        star_file.record(self.obj_name, "minima", files=[target.path], write_callback=self.log,
+                         time_system=self.time_system)
         self._refresh_table()
 
     def remove_selected(self):

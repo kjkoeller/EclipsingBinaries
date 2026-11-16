@@ -295,8 +295,9 @@ such as the search radius or the time system.
 
    * - TESS, Kepler and K2
      - Optical (red)
-     - Space photometry from MAST: SPOC, TESS-SPOC and QLP light curves.
-     - The FITS light curves in a ``mast`` folder and a text light curve for each. Time is BJD (TDB).
+     - Space photometry from MAST: SPOC, TESS-SPOC, QLP and TGLC light curves.
+     - The FITS light curves in a ``mast`` folder and a text light curve for each, with a header row
+       naming its time column ``BJD_TDB``. The log and summary say how much light nearby stars add.
 
    * - Gaia DR3 epoch photometry
      - Optical (G, BP, RP)
@@ -449,11 +450,21 @@ such as the search radius or the time system.
     Each light curve is also saved as a plain text file with three columns (time,
     magnitude, error), which Period Search, Find Minimum, O'Connell Effect and Color
     Light Curve read directly. The time system differs between surveys, as listed above
-    and in the summary: HJD for ZTF, BJD for TESS, Kepler, K2 and Gaia, and plain JD for
-    NEOWISE. The difference between HJD and BJD is a few seconds, but don't mix surveys in
-    an O-C study without converting them to one system first. TESS, Kepler and K2
-    magnitudes are the pipeline's flux scaled around the star's catalogue magnitude, with
-    points the pipeline flagged as bad left out.
+    and in the summary: HJD for ZTF, BJD (TDB) for TESS, Kepler and K2, BJD (TCB) for
+    Gaia, and plain JD for NEOWISE. HJD in UTC and BJD in TDB differ by about a minute,
+    mostly the offset between the UTC and TDB time scales, so don't mix surveys in an O-C
+    study without converting them to one system first. The TESS, Kepler and K2 files
+    have a header row (``BJD_TDB``, ``MAG``, ``MAG_ERR``) so Find Minimum knows their time
+    system; the others have none. TESS, Kepler and K2 magnitudes are the pipeline's flux
+    scaled around the star's catalogue magnitude, with points the pipeline flagged as bad
+    left out. TGLC's files give no flux errors, so every point gets the same error, worked
+    out from the scatter between neighbouring points.
+
+    TESS pixels are 21 arcseconds across, so nearby stars can add their light to the
+    target's. The log gives the share from TIC stars within one and two pixels, and SPOC's
+    own figure (``CROWDSAP``) when its files have one. SPOC's PDCSAP flux has the extra
+    light taken out; QLP and TGLC deal with it in their own ways, so compare eclipse depths
+    with ground-based data when the log warns.
 
 Catalogue searches use a small radius around the target (3 to 5 arcseconds for optical
 and infrared, up to 30 for X-ray and radio surveys with coarser positions) and list the
@@ -519,6 +530,19 @@ to select from. The sector table is also printed to the output log.
 
 If the search or a download fails, the error is shown in the log and the task ends with an
 error rather than a success message.
+
+Before downloading, the log says how much light nearby stars add to the target. TESS
+pixels are 21 arcseconds across, so stars well apart on the sky can share one, and
+photometry on the cutouts has nothing taking their light out: eclipses look shallower
+than they are, and an eclipse can even belong to a neighbour. The estimate adds up the
+TIC stars within one and two pixels, weighted by brightness, and warns when they come to
+10% of the target's light or more. It ignores where the pixel edges fall, so take it as
+a reason to check against ground-based data rather than a correction. If the TIC can't
+be reached, the log says so and the download goes ahead.
+
+For light curves the TESS pipelines have already made (SPOC, TESS-SPOC, QLP and TGLC),
+use the **TESS, Kepler and K2** database in the archive search instead. It's much faster
+than downloading cutouts, and the same crowding estimate is made there.
 
 From Python, ``run_tess_search(system_name, single_sector, specific_sector, download_path)``
 downloads every sector when ``single_sector`` is ``False``, or only ``specific_sector``

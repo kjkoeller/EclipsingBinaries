@@ -8,6 +8,7 @@ Last Updated: 09/16/2026
 # import required packages
 from astroquery.mast import Tesscut
 from .tesscut import process_tess_cutout
+from .tess_crowding import tic_crowding
 from ._log import make_logger
 from os.path import exists
 import pandas as pd
@@ -58,6 +59,12 @@ def run_tess_search(system_name, single_sector, specific_sector, download_path,
 
         if not sector_table:
             raise ValueError(f"No TESS data found for system {system_name}.")
+
+        # Photometry on the cutouts has nothing taking out light from neighbouring
+        # stars, so say how much there is before anything is downloaded
+        crowding = tic_crowding(name=system_name, write_callback=write_callback, cancel_event=cancel_event)
+        if crowding is not None:
+            log(crowding.message())
 
         # The ccd info comes from this paper:
         # https://archive.stsci.edu/files/live/sites/mast/files/home/missions-and-data/active-missions/tess/_documents/TESS_Instrument_Handbook_v0.1.pdf

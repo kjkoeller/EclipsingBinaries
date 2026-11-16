@@ -452,7 +452,9 @@ def _light_curve_fits(path, flux_name="PDCSAP_FLUX", tessmag=10.5):
 def test_flux_light_curve_becomes_magnitudes(tmp_path):
     out = tmp_path / "lc.txt"
     assert archives._flux_light_curve(out, _light_curve_fits(tmp_path / "a_lc.fits")) == 3
-    data = np.loadtxt(out)
+    # The header row tells Find Minimum the times are BJD (TDB)
+    assert out.read_text().splitlines()[0] == "BJD_TDB\tMAG\tMAG_ERR"
+    data = np.loadtxt(out, skiprows=1)
     assert data[:, 0].tolist() == [2457001.0, 2457002.0, 2457003.0]      # the flagged point is left out
     assert data[0, 1] == pytest.approx(10.5) and data[1, 1] == pytest.approx(10.5 + 2.5 * np.log10(2), abs=1e-4)
     assert data[0, 2] == pytest.approx(2.5 / np.log(10) / 1000, abs=1e-4)
@@ -461,7 +463,30 @@ def test_flux_light_curve_becomes_magnitudes(tmp_path):
 def test_flux_light_curve_without_a_catalogue_magnitude_is_relative(tmp_path):
     out = tmp_path / "lc.txt"
     archives._flux_light_curve(out, _light_curve_fits(tmp_path / "a_llc.fits", "KSPSAP_FLUX", None))
-    assert np.loadtxt(out)[0, 1] == pytest.approx(0.0)
+    assert np.loadtxt(out, skiprows=1)[0, 1] == pytest.approx(0.0)
+
+
+def test_tglc_light_curves_are_read(tmp_path):
+    # TGLC's files have lower case names, two flag columns, no flux errors and no BJDREFI
+    path = tmp_path / "hlsp_tglc_tess_ffi_gaiaid-1-s0014-cam1-ccd1_tess_v1_llc.fits"
+    rng = np.random.default_rng(1)
+    flux = 1000.0 + rng.normal(0, 2.0, 50)
+    columns = [fits.Column(name="time", format="D", array=1700.0 + np.arange(50) * 0.02),
+               fits.Column(name="cal_aper_flux", format="E", array=np.full(50, 5.0)),
+               fits.Column(name="cal_psf_flux", format="E", array=flux),
+               fits.Column(name="TESS_flags", format="J", array=np.r_[np.zeros(49), 1]),
+               fits.Column(name="TGLC_flags", format="J", array=np.zeros(50))]
+    primary = fits.PrimaryHDU()
+    primary.header["TELESCOP"] = "TESS"
+    fits.HDUList([primary, fits.BinTableHDU.from_columns(columns)]).writeto(path)
+
+    out = tmp_path / "lc.txt"
+    assert archives._flux_light_curve(out, path) == 49
+    data = np.loadtxt(out, skiprows=1)
+    assert data[0, 0] == pytest.approx(2458700.0)               # TESS's zero point added
+    assert abs(np.median(data[:, 1])) < 0.01                      # the PSF flux, not the flat aperture flux
+    assert 0.0005 < data[0, 2] < 0.01                             # error from the scatter of about 0.2%
+    assert np.all(data[:, 2] == data[0, 2])
 
 
 def test_mast_downloads_and_converts_light_curves(tmp_path):
@@ -484,6 +509,30 @@ def test_mast_downloads_and_converts_light_curves(tmp_path):
                                             "mast_tess-s0014_lc.txt", "tess-s0014_lc.fits"]
     assert query.call_args.kwargs["dataproduct_type"] == "timeseries"
     assert "BJD" in note
+
+
+def test_mast_says_how_much_light_neighbours_add(tmp_path, monkeypatch):
+    observations = Table({"obsid": ["1"], "provenance_name": ["QLP"]})
+    products = Table({"productFilename": ["hlsp_qlp_tess_llc.fits"]})
+
+    def download_products(chosen, download_dir, flat):
+        name = chosen["productFilename"][0]
+        return Table(rows=[(str(_light_curve_fits(os.path.join(download_dir, name))), "COMPLETE")],
+                     names=["Local Path", "Status"])
+
+    # The target and a star one magnitude fainter 15 arcsec away
+    ra, dec = TARGET.coord.ra.deg, TARGET.coord.dec.deg
+    tic = Table({"ra": [ra, ra], "dec": [dec, dec + 15 / 3600], "Tmag": [10.0, 11.0],
+                 "dstArcSec": [0.0, 15.0]})
+    monkeypatch.setattr("astroquery.mast.Catalogs.query_region", lambda *a, **k: tic)
+    messages = []
+    with patch("astroquery.mast.Observations.query_criteria", return_value=observations), \
+            patch("astroquery.mast.Observations.get_product_list", return_value=products), \
+            patch("astroquery.mast.Observations.download_products", side_effect=download_products):
+        status, _rows, _files, note = _fetch("mast", tmp_path, run=_run(messages))
+    assert status == "found"
+    assert "40%" in note and "Check eclipse depths" in note
+    assert any("Warning" in m and "40%" in m for m in messages)
 
 
 def test_mast_with_no_light_curves(tmp_path):

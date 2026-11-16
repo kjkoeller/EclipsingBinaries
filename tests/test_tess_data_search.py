@@ -236,6 +236,31 @@ def _gain_table_mock():
     return MagicMock(__getitem__=lambda self, key: columns[key])
 
 
+@pytest.fixture(autouse=True)
+def no_tic_lookup(monkeypatch):
+    """The crowding check would ask MAST for nearby stars; here it finds nothing to say."""
+    monkeypatch.setattr("EclipsingBinaries.tess_data_search.tic_crowding", lambda *a, **k: None)
+
+
+def test_run_tess_search_says_how_crowded_the_target_is(monkeypatch):
+    from EclipsingBinaries.tess_crowding import Crowding
+    from EclipsingBinaries.tess_data_search import run_tess_search
+    seen = {}
+
+    def crowding(**kwargs):
+        seen.update(kwargs)
+        return Crowding(10.0, 0.3, 0.5, 2)
+    monkeypatch.setattr("EclipsingBinaries.tess_data_search.tic_crowding", crowding)
+    messages = []
+    with patch("EclipsingBinaries.tess_data_search.Tesscut.get_sectors",
+               return_value=Table({"sector": [1], "camera": [1], "ccd": [1]})), \
+         patch("EclipsingBinaries.tess_data_search.pd.read_csv", return_value=_gain_table_mock()), \
+         patch("EclipsingBinaries.tess_data_search.download_sector"):
+        run_tess_search("TIC 999", False, None, "/tmp", messages.append)
+    assert seen["name"] == "TIC 999"
+    assert any("50% within two" in m and "Warning" in m for m in messages)
+
+
 def test_run_tess_search_logs_on_cancel_before_start():
     from EclipsingBinaries.tess_data_search import run_tess_search
     cancel = MagicMock()

@@ -132,6 +132,7 @@ class KweeResult:
     # How far either side of t_kw the pairs reach: out to the nearer end of the data, so
     # points past t_kw + reach or before t_kw - reach on the longer side aren't used
     reach: float = 0.0
+    npairs: int = DEFAULT_NPAIRS  # the number of interpolated pairs S was worked out from
 
     @property
     def used_range(self):
@@ -228,7 +229,7 @@ def kwee_van_woerden(times, flux, resolution=DEFAULT_RESOLUTION, para_range=None
     reach = float(min(T_kw - times.min(), times.max() - T_kw))
     return KweeResult(t_kw=float(T_kw), error=error, Z=Z, guesses=guesses, S=Slist,
                       parabola=np.asarray(coef), para_times=paraHJD, para_S=paraS, R2=float(R2),
-                      reach=reach)
+                      reach=reach, npairs=int(npairs))
 
 
 def KvW(fracHJD, flux, discard=0.1, resolution=100, para_range=None, plot=False,
@@ -632,8 +633,14 @@ def guess_boundaries(night, labels=None, half_width=0.04):
 # Drawing
 # ---------------------------------------------------------------------------
 
-def draw_S(ax, result, npairs=DEFAULT_NPAIRS, entire_S=False):
-    """S against trial time, with the fitted parabola and the minimum it gives."""
+def draw_S(ax, result, npairs=None, entire_S=False):
+    """
+    S against trial time, with the fitted parabola and the minimum it gives.
+    The note gives the number of pairs S used (npairs, or the result's own
+    when not given) and, in brackets, the number of real observation pairs.
+    """
+    if npairs is None:
+        npairs = result.npairs
     ax.plot(result.guesses, result.S, "o", color="0.15", ms=3)
     px, py = calc.poly.polylist(result.parabola, min(result.para_times), max(result.para_times), 100)
     ax.plot(px, py, color="#2f5aa8", lw=1)

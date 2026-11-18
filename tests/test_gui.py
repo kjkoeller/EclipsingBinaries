@@ -1243,3 +1243,13 @@ def test_ordinary_nights_have_no_scrollbar(app, tmp_path):
     window = _finder(app)
     assert not window.scrollbar.winfo_ismapped()
     window.destroy()
+
+
+def test_s_panel_shows_the_pairs_setting(continuous_finder):
+    w = continuous_finder
+    w.pairs_var.set(35)
+    w.remeasure()
+    assert w.minimum.kwee.npairs == 35
+    notes = [t.get_text() for t in w.ax_s.texts]
+    assert any("K = 35 (" in n for n in notes), notes
+    assert "K = 35" in w.result_var.get()

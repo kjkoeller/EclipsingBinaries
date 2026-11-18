@@ -399,3 +399,16 @@ def test_minimum_files_record_their_time_system(tmp_path, example_night):
     m.time_system = "HJD_UTC"
     with pytest.raises(fm.MinimumError, match="different systems"):
         again.add(m)
+
+
+def test_s_panel_note_gives_the_pairs_used(example_night):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    lb, rb = fm.guess_boundaries(example_night)
+    m = fm.measure_minimum(example_night, lb, rb, npairs=12)
+    assert m.kwee.npairs == 12
+    fig, ax = plt.subplots()
+    fm.draw_S(ax, m.kwee)
+    assert "K = 12 (" in ax.texts[0].get_text()
+    plt.close(fig)

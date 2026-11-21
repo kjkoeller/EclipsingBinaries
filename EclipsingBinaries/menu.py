@@ -47,6 +47,7 @@ from .gaia import target_star as gaia
 from . import archives
 from .OC_plot import BSUO, TESS_OC, all_data, data_fit
 from .OConnell import main as oconnell
+from . import OConnell as oconnell_settings
 from .color_light_curve import color_plot
 from .find_min import MinimumError
 from .find_min_window import MinimumFinderWindow
@@ -2782,6 +2783,7 @@ class ProgramLauncher(tk.Tk):
 
         filter_count_var = self._remember_var("filter_count", tk.IntVar(master=self, value=3))  # 3 filters unless changed
         file_path_vars = [self._remember_var(f"file_{i}", tk.StringVar(master=self)) for i in range(3)]
+        self.oconnell_filter_count, self.oconnell_file_vars = filter_count_var, file_path_vars
         file_entry_widgets = []
 
         def update_file_path_fields():
@@ -2873,12 +2875,42 @@ class ProgramLauncher(tk.Tk):
             tooltip="Where the plot and table are saved."
         )
 
-        self.create_run_button(self.right_frame, self.run_oconnell_effect, row=10,
+        settings_label = tk.Label(self.right_frame, text="Fit Settings:", font=self.label_font,
+                                  bg=BG_PANEL, fg=FG_TEXT)
+        settings_label.grid(row=10, column=0, padx=(16, 10), pady=5, sticky="e")
+        self._tooltip(settings_label,
+                      "FT Order: order of the Fourier series fitted to the phased light curve. "
+                      "Sims: Monte Carlo light curves used for the errors, about a minute per 1000. "
+                      "Sections: how many pieces the phased light curve is split into before binning. "
+                      "Section Order: order of the polynomial fitted to each piece.")
+        settings_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
+        settings_frame.grid(row=10, column=1, padx=(0, 10), pady=5, sticky="w")
+        defaults = {"order": oconnell_settings.DEFAULT_ORDER, "sims": oconnell_settings.DEFAULT_SIMS,
+                    "sections": oconnell_settings.DEFAULT_SECTIONS,
+                    "section_order": oconnell_settings.DEFAULT_SECTION_ORDER}
+        labels = {"order": "FT Order", "sims": "Sims", "sections": "Sections", "section_order": "Section Order"}
+        steps = {"sims": 100}
+        self.oconnell_settings = {}
+        for key, default in defaults.items():
+            low, high = oconnell_settings.LIMITS[key]
+            var = self._remember_var(key, tk.StringVar(master=self, value=str(default)))
+            tk.Label(settings_frame, text=f"{labels[key]}:", font=self.label_font, bg=BG_PANEL,
+                     fg=FG_TEXT).pack(side="left", padx=(0, 4))
+            ttk.Spinbox(settings_frame, from_=low, to=high, increment=steps.get(key, 1), textvariable=var,
+                        width=6 if key == "sims" else 4, font=self.label_font).pack(side="left", padx=(0, 14))
+            self.oconnell_settings[key] = var
+
+        def reset_settings():
+            for key, default in defaults.items():
+                self.oconnell_settings[key].set(str(default))
+        self._button(settings_frame, "Defaults", reset_settings, style="Browse.TButton").pack(side="left")
+
+        self.create_run_button(self.right_frame, self.run_oconnell_effect, row=11,
                                text="Run O'Connell Effect",
                                filter_count_var=filter_count_var, file_path_vars=file_path_vars,
                                hjd=hjd_var, period=period_var, obj_name=obj_name_var, output_file=output_var)
 
-        self._log_section(11)
+        self._log_section(12)
 
     def run_oconnell_effect(self, filter_count_var, file_path_vars, hjd, period, obj_name, output_file):
         """Validate the O'Connell inputs, then run the calculation on a worker thread."""
@@ -2913,6 +2945,11 @@ class ProgramLauncher(tk.Tk):
         if not output_folder:
             return input_error("Error: Output folder is required.", "Input Error",
                                "Please provide an output folder.")
+        try:
+            order, sims, sections, section_order = oconnell_settings.check_settings(
+                *(self.oconnell_settings[key].get() for key in ("order", "sims", "sections", "section_order")))
+        except ValueError as e:
+            return input_error(f"Error: {e}", "Input Error", str(e))
 
         def oconnell_task():
             self.write_to_log("Starting O'Connell Effect calculation with the following inputs:")
@@ -2921,11 +2958,14 @@ class ProgramLauncher(tk.Tk):
             self.write_to_log(f"HJD: {hjd_value}")
             self.write_to_log(f"Period: {period_value}")
             self.write_to_log(f"Output Folder: {output_folder}")
+            self.write_to_log(f"FT Order: {order}, Sims: {sims}, Sections: {sections}, "
+                              f"Section Order: {section_order}")
             try:
                 oconnell(filepath=output_folder, filter_files=list(file_paths),
                          obj_name=obj_name_value, period=float(period_value),
                          hjd=float(hjd_value), write_callback=self.write_to_log,
-                         cancel_event=self.cancel_event)
+                         cancel_event=self.cancel_event, order=order, sims=sims,
+                         sections=sections, section_order=section_order)
                 if self.cancel_event.is_set():
                     self.write_to_log("O'Connell Effect calculation was canceled.")
                 else:

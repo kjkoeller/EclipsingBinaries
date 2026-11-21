@@ -1253,3 +1253,62 @@ def test_s_panel_shows_the_pairs_setting(continuous_finder):
     notes = [t.get_text() for t in w.ax_s.texts]
     assert any("K = 35 (" in n for n in notes), notes
     assert "K = 35" in w.result_var.get()
+
+
+# --- O'Connell fit settings -----------------------------------------------------------
+
+def _fill_oconnell(app, tmp_path):
+    app.open_panel("oconnell")
+    app.oconnell_filter_count.set(1)
+    app.oconnell_file_vars[0].set(str(EXAMPLES / "test_B.txt"))
+    app._set_entry_text(app._panel_fields["HJD"], "2458403.58763")
+    app._set_entry_text(app._panel_fields["Period"], "0.3175")
+    app._set_entry_text(app._panel_fields["System Name"], "T")
+    app._set_entry_text(app._panel_fields["Output Folder"], str(tmp_path))
+
+
+def test_oconnell_settings_start_at_the_old_fixed_values(app):
+    app.open_panel("oconnell")
+    assert {k: v.get() for k, v in app.oconnell_settings.items()} == {
+        "order": "10", "sims": "1000", "sections": "4", "section_order": "7"}
+
+
+def test_oconnell_settings_are_passed_to_the_analysis(app, tmp_path):
+    _fill_oconnell(app, tmp_path)
+    for key, value in (("order", "8"), ("sims", "200"), ("sections", "6"), ("section_order", "5")):
+        app.oconnell_settings[key].set(value)
+    with patch("EclipsingBinaries.menu.oconnell") as run:
+        app._run_button.invoke()
+        _wait_for_task(app)
+    kwargs = run.call_args.kwargs
+    assert (kwargs["order"], kwargs["sims"], kwargs["sections"], kwargs["section_order"]) == (8, 200, 6, 5)
+    assert "FT Order: 8, Sims: 200, Sections: 6, Section Order: 5" in app.log_area.get("1.0", "end")
+
+
+@pytest.mark.parametrize("key, value, message", [
+    ("sims", "5", "Simulations must be from 10 to 100000"),
+    ("sections", "two", "Sections must be a whole number"),
+    ("order", "0", "FT order must be from 1 to 30"),
+])
+def test_oconnell_settings_out_of_range_are_refused(app, tmp_path, key, value, message):
+    _fill_oconnell(app, tmp_path)
+    app.oconnell_settings[key].set(value)
+    with patch("EclipsingBinaries.menu.oconnell") as run, \
+            patch("EclipsingBinaries.menu.messagebox.showerror") as shown:
+        app._run_button.invoke()
+    run.assert_not_called()
+    assert message in shown.call_args.args[1]
+
+
+def test_oconnell_defaults_button_puts_them_back(app):
+    app.open_panel("oconnell")
+    app.oconnell_settings["sims"].set("50")
+
+    def widgets(parent):
+        for child in parent.winfo_children():
+            yield child
+            yield from widgets(child)
+    button = next(w for w in widgets(app.right_frame)
+                  if w.winfo_class() == "TButton" and w.cget("text") == "Defaults")
+    button.invoke()
+    assert app.oconnell_settings["sims"].get() == "1000"

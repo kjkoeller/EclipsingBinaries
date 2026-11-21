@@ -169,3 +169,34 @@ def test_table_name_keeps_trailing_letters(tmp_path):
     assert (tmp_path / "Lapd.txt").exists()
     assert not (tmp_path / "La.txt").exists()
     assert out.exists()
+
+
+def test_check_settings_accepts_text_and_numbers():
+    from EclipsingBinaries.OConnell import check_settings
+    assert check_settings("10", 1000, " 4 ", 7) == (10, 1000, 4, 7)
+
+
+@pytest.mark.parametrize("args, message", [
+    ((0, 1000, 4, 7), "FT order"),
+    ((10, 9, 4, 7), "Simulations"),
+    ((10, 1000, 17, 7), "Sections"),
+    ((10, 1000, 4, 2.5), "Section order"),
+])
+def test_check_settings_refuses_out_of_range(args, message):
+    from EclipsingBinaries.OConnell import check_settings
+    with pytest.raises(ValueError, match=message):
+        check_settings(*args)
+
+
+def test_main_passes_the_settings_on(tmp_path):
+    from unittest.mock import patch
+    from EclipsingBinaries import OConnell
+    with patch.object(OConnell, "multi_OConnell_total") as run:
+        OConnell.main(filepath=str(tmp_path), filter_files=["a"], obj_name="T", period=0.3, hjd=1.0,
+                      order=6, sims=50, sections=3, section_order=5)
+    kwargs = run.call_args.kwargs
+    assert (kwargs["order"], kwargs["sims"], kwargs["sections"], kwargs["section_order"]) == (6, 50, 3, 5)
+    with patch.object(OConnell, "multi_OConnell_total") as run:
+        OConnell.main(filepath=str(tmp_path), filter_files=["a"], obj_name="T", period=0.3, hjd=1.0)
+    kwargs = run.call_args.kwargs
+    assert (kwargs["order"], kwargs["sims"], kwargs["sections"], kwargs["section_order"]) == (10, 1000, 4, 7)

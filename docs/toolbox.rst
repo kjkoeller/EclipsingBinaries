@@ -1274,6 +1274,20 @@ The GUI panel accepts the following inputs:
 + **Period** — orbital period in days
 + **System Name** — used for output file naming
 + **Output Folder** — folder where results will be saved
++ **Fit Settings** — start at the values the program always used, and are remembered
+  between runs. **Defaults** puts them back.
+
+  ==============  =======  =========  ==========================================================
+  Setting         Default  Range      What it does
+  ==============  =======  =========  ==========================================================
+  FT Order        10       1–30       Order of the Fourier series fitted to the phased light curve
+  Sims            1000     10–100000  Monte Carlo light curves used for the errors; about a
+                                      minute per 1000
+  Sections        4        1–16       Pieces the phased light curve is split into for binning
+  Section Order   7        1–20       Order of the polynomial fitted to each piece
+  ==============  =======  =========  ==========================================================
+
+  The settings used go in the log at the start of each run.
 
 The plot is saved as ``[System Name].pdf`` and the LaTeX table as ``[System Name].txt`` in
 the output folder. The fitted parameters (a1, a2, a4, OER, LCA, ΔI) are also written to the
@@ -1289,7 +1303,7 @@ halves of the phased light curve are then compared:
    :pyobject: Half_Comp
 
 Statistical values (OER, LCA, ΔI) are calculated for each filter using Monte Carlo
-simulations (1000 by default):
+simulations (1000 by default, set by **Sims**):
 
 .. literalinclude:: ../EclipsingBinaries/OConnell.py
    :pyobject: OConnell_total

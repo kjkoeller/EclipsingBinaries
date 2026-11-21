@@ -3,7 +3,6 @@ Combines all APASS programs that were originally separate on GitHub for an easy 
 
 Author: Kyle Koeller
 Created: 12/26/2022
-Last Updated: 04/28/2026
 """
 
 import numpy as np
@@ -19,7 +18,6 @@ from astropy.visualization import ZScaleInterval
 
 from matplotlib.figure import Figure
 import warnings
-from PyAstronomy import pyasl
 
 from .gaia import tess_mag as ga
 from .vseq_updated import isNaN, conversion
@@ -821,8 +819,7 @@ def angle_dist(x1, y1, x2, y2):
 
     :return: True if the star should be used as a comparison star
     """
-    # noinspection PyUnresolvedReferences
-    radial = pyasl.getAngDist(x1, y1, x2, y2)  # degrees
+    radial = coord.SkyCoord(x1 * u.deg, y1 * u.deg).separation(coord.SkyCoord(x2 * u.deg, y2 * u.deg)).deg
     return TARGET_MATCH_ARCSEC / 3600 < radial <= COMPARISON_RADIUS_ARCMIN / 60
 
 # comparison_selector()

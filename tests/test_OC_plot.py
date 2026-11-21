@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from numpy.polynomial import Polynomial
 
-from EclipsingBinaries.OC_plot import calculate_oc, data_fit, residuals
+from EclipsingBinaries.OC_plot import TESS_OC, all_data, calculate_oc, data_fit, residuals
 
 
 # ===========================================================================
@@ -147,3 +147,48 @@ def test_data_fit_keeps_all_data_latex_table(tmp_path):
 
     assert latex_table.read_text() == "O-C table from all_data\n"
     assert (tmp_path / "all_data_OC_regression.tex").exists()
+
+
+# ===========================================================================
+# time systems in O-C tables
+# ===========================================================================
+def _minima(times):
+    return pd.DataFrame({0: times, 1: [50] * len(times), 2: [0.0002] * len(times)})
+
+
+def test_tess_oc_records_the_time_system_and_all_data_labels_it(tmp_path):
+    times = list(2458379.70 + 0.15 * np.arange(12) + np.linspace(0, 1e-4, 12))
+    outfile = TESS_OC(2458379.70, 0.0002, 0.3, _minima(times),
+                      str(tmp_path), write_callback=lambda _m: None, time_system="BJD_TDB")
+    assert open(outfile).readline() == "# Times of minimum in BJD_TDB\n"
+
+    merged = all_data([outfile], 0.3, str(tmp_path), write_callback=lambda _m: None)
+    assert open(merged).readline() == "# Times of minimum in BJD_TDB\n"
+    tex = (tmp_path / "all_data_OC.tex").read_text()
+    assert r"$BJD_{\rm TDB}$ & E & O-C" in tex
+    # The fit reads past the time system line
+    data_fit(merged, 0.3, write_callback=lambda _m: None)
+    assert (tmp_path / "all_data_OC.png").exists()
+
+
+def test_all_data_without_a_time_system_says_so(tmp_path):
+    outfile = TESS_OC(2458379.70, 0.0002, 0.3, _minima([2458379.70, 2458380.00]), str(tmp_path),
+                      write_callback=lambda _m: None)
+    assert open(outfile).readline().startswith("Minimums")
+    all_data([outfile], 0.3, str(tmp_path), write_callback=lambda _m: None)
+    tex = (tmp_path / "all_data_OC.tex").read_text()
+    assert "Time of minimum & E & O-C" in tex
+    assert "BJD" not in tex
+
+
+def test_all_data_refuses_mixed_time_systems(tmp_path):
+    first = tmp_path / "a"
+    second = tmp_path / "b"
+    first.mkdir()
+    second.mkdir()
+    a = TESS_OC(2458379.70, 0.0002, 0.3, _minima([2458379.70]), str(first),
+                write_callback=lambda _m: None, time_system="BJD_TDB")
+    b = TESS_OC(2458379.70, 0.0002, 0.3, _minima([2458379.70]), str(second),
+                write_callback=lambda _m: None, time_system="HJD_UTC")
+    with pytest.raises(ValueError, match="different time systems"):
+        all_data([a, b], 0.3, str(tmp_path), write_callback=lambda _m: None)

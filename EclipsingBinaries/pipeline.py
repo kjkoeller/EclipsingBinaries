@@ -9,7 +9,6 @@ Run it with the EB_pipeline command, e.g.
 
 Author: Kyle Koeller
 Created: 06/15/2023
-Last Edited: 10/09/2026
 """
 
 import argparse
@@ -25,6 +24,7 @@ from time import time, sleep
 from .apass import comparison_selector
 from .IRAF_Reduction import run_reduction, site_config
 from .multi_aperture_photometry import main as multiple_AP
+from . import star_file
 
 # File locking differs by platform. fcntl doesn't exist on Windows, and
 # importing it unconditionally kept this module from loading there at all.
@@ -408,6 +408,8 @@ def monitor_directory_cli(argv=None):
             return 0
 
         log.info("Pipeline complete.")
+        star_file.record(args.name, "pipeline", files=[args.output], write_callback=stage_log,
+                         ra=args.ra, dec=args.dec)
     except _StageFailed:
         exit_code = 1
     except KeyboardInterrupt:

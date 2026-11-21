@@ -1,7 +1,6 @@
 """
 Author: Kyle Koeller
 Created: 11/11/2020
-Last Updated: 10/10/2026
 
 Combines the nightly files Astro ImageJ (AIJ) writes for one filter into a
 single file covering every night, ready for Find Minimum, O'Connell, Peranso

@@ -19,6 +19,7 @@ from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 
+from . import star_file, time_systems
 from .find_min import (DEFAULT_NPAIRS, DEFAULT_ORDER, DEFAULT_RESOLUTION, MinimumError, MinimumFile,
                        draw_night, guess_boundaries, load_nights, measure_minimum, minimum_file_name)
 
@@ -53,21 +54,32 @@ class MinimumFinderWindow(tk.Toplevel):
     :param output_folder: where the minimum files are saved
     :param obj_name: used in the minimum file names
     :param log: function for progress messages, such as the main window's log
+    :param time_system: one of time_systems.SYSTEMS to use, or None to go by the files
     """
 
     def __init__(self, master, files, labels, output_folder, obj_name, log=print,
-                 order=DEFAULT_ORDER, resolution=DEFAULT_RESOLUTION, npairs=DEFAULT_NPAIRS):
+                 order=DEFAULT_ORDER, resolution=DEFAULT_RESOLUTION, npairs=DEFAULT_NPAIRS,
+                 time_system=None):
         super().__init__(master)
         self.log = log
         self.output_folder = Path(output_folder)
         self.obj_name = obj_name
         notes = []
-        self.nights = load_nights(files, labels, notes=notes)
+        try:
+            self.nights = load_nights(files, labels, notes=notes, time_system=time_system)
+        except Exception:
+            self.destroy()
+            raise
         for note in notes:
             log(note)
         if not self.nights:
             self.destroy()
             raise MinimumError("The light curve files have no observations in them.")
+        self.time_system = self.nights[0].time_system
+        self.time_name = time_systems.describe(self.time_system)
+        if self.time_system is None:
+            log("The light curve files don't say which time system their times are in, so the "
+                "minima are saved without one. Choose a time system to have them labelled.")
         self.labels = list(dict.fromkeys(b for night in self.nights for b in night.bands))
         self.order, self.resolution, self.npairs = order, resolution, npairs
         self.current = 0
@@ -179,7 +191,7 @@ class MinimumFinderWindow(tk.Toplevel):
         columns = ("hjd", "points", "error")
         self.table = ttk.Treeview(side, columns=columns, show="headings", height=12, selectmode="browse",
                                   style="Minima.Treeview")
-        for col, text, width in (("hjd", "HJD", 130), ("points", "Points", 60), ("error", "Error", 100)):
+        for col, text, width in (("hjd", self.time_name, 130), ("points", "Points", 60), ("error", "Error", 100)):
             self.table.heading(col, text=text)
             self.table.column(col, width=width, anchor="e")
         self.table.pack(fill="both", expand=True, pady=(6, 6))
@@ -208,7 +220,8 @@ class MinimumFinderWindow(tk.Toplevel):
         """The saved minima for the filters currently ticked."""
         labels = self.selected_labels()
         if labels not in self._files:
-            self._files[labels] = MinimumFile(self.output_folder / minimum_file_name(self.obj_name, labels))
+            name = minimum_file_name(self.obj_name, labels, self.time_system)
+            self._files[labels] = MinimumFile(self.output_folder / name)
         return self._files[labels]
 
     def _settings(self):
@@ -370,7 +383,7 @@ class MinimumFinderWindow(tk.Toplevel):
             self.save_button.state(["disabled"])
             return
         error = f"± {m.error:.6f}" if m.error is not None else "(no error estimate: widen the boundaries)"
-        self.result_var.set(f"HJD {m.hjd:.6f} {error}\n"
+        self.result_var.set(f"{self.time_name} {m.hjd:.6f} {error}\n"
                             f"{m.n_points} points in {', '.join(m.labels)} between the boundaries, "
                             f"{self._points_used(m)} used by the fit\n"
                             f"K = {self._settings()[1]}, R² = {m.kwee.R2:.5f}")
@@ -394,7 +407,9 @@ class MinimumFinderWindow(tk.Toplevel):
             self.result_label.configure(foreground="#b3261e")
             return
         verb = "Replaced the earlier minimum with" if replaced else "Saved minimum"
-        self.log(f"{verb} HJD {self.minimum.hjd:.6f} ± {self.minimum.error:.6f} in {target.path}")
+        self.log(f"{verb} {self.time_name} {self.minimum.hjd:.6f} ± {self.minimum.error:.6f} in {target.path}")
+        star_file.record(self.obj_name, "minima", files=[target.path], write_callback=self.log,
+                         time_system=self.time_system)
         self._refresh_table()
 
     def remove_selected(self):
@@ -405,7 +420,7 @@ class MinimumFinderWindow(tk.Toplevel):
         target = self.minimum_file()
         removed = target.entries[index][0]
         target.remove(index)
-        self.log(f"Removed minimum HJD {removed:.6f} from {target.path}")
+        self.log(f"Removed minimum {self.time_name} {removed:.6f} from {target.path}")
         self._refresh_table()
 
     def _refresh_table(self):
@@ -462,12 +477,12 @@ class MinimumFinderWindow(tk.Toplevel):
         self.set_view(event.xdata - (event.xdata - x0) * scale, event.xdata + (x1 - event.xdata) * scale)
 
 
-def run_standalone(files, labels, output_folder, obj_name):
+def run_standalone(files, labels, output_folder, obj_name, time_system=None):
     """Open the window without the main app, for python -m EclipsingBinaries.find_min."""
     root = tk.Tk()
     root.withdraw()
     try:
-        window = MinimumFinderWindow(root, files, labels, output_folder, obj_name)
+        window = MinimumFinderWindow(root, files, labels, output_folder, obj_name, time_system=time_system)
     except MinimumError as e:
         print(f"Error: {e}", file=sys.stderr)
         root.destroy()

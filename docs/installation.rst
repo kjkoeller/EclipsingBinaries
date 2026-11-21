@@ -13,11 +13,9 @@ EclipsingBinaries needs Python 3.12 or newer. pip installs these packages automa
 - matplotlib>=3.8.0
 - numpy>=1.26
 - pandas>=2.1.1
-- PyAstronomy>=0.18.1
 - scipy>=1.11.2
 - statsmodels>=0.14
 - tqdm>=4.64.1
-- pyia>=1.4
 - photutils>=1.8.0
 - tkinterdnd2>=0.6.1
 

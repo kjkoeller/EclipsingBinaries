@@ -22,6 +22,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 
 from . import period as pr
+from . import star_file
 
 HELP_TEXT = ("Drag along the periodogram, or move the slider under it, and the fold follows the period. "
              "Click a peak without dragging to jump to its top. Over the plots, the left and right arrow keys "
@@ -342,6 +343,7 @@ class PeriodWindow(tk.Toplevel):
             self._status(f"Couldn't save {path}: {e}", error=True)
             return
         self.log(f"Saved period {self.period:.7f} d to {path}")
+        star_file.record(self.obj_name, "period", files=[path], write_callback=self.log, period=self.period)
         self._status(f"Saved to {path}")
 
     def send_to(self, target):

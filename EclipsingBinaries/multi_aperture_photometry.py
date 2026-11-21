@@ -3,7 +3,6 @@ Analyze images using aperture photometry within Python and not with Astro ImageJ
 
 Author: Kyle Koeller
 Created: 05/07/2023
-Last Updated: 11/09/2026
 """
 
 # Python imports

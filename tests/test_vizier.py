@@ -276,7 +276,7 @@ def test_tic_fallback_stops_at_the_first_star_that_fails():
 def test_gaia_archive_is_tried_again_after_a_dropped_connection():
     from EclipsingBinaries import gaia
     messages = []
-    with patch.object(gaia.GaiaData, "from_query",
+    with patch.object(gaia.GaiaRows, "from_query",
                       side_effect=[ConnectionResetError("Connection reset by peer"), "rows"]) as query, \
             patch.object(gaia.time, "sleep"):
         assert gaia._query_gaia_archive("SELECT 1", messages.append) == "rows"
@@ -286,7 +286,7 @@ def test_gaia_archive_is_tried_again_after_a_dropped_connection():
 
 def test_gaia_archive_gives_up_with_advice():
     from EclipsingBinaries import gaia
-    with patch.object(gaia.GaiaData, "from_query",
+    with patch.object(gaia.GaiaRows, "from_query",
                       side_effect=requests.exceptions.ConnectionError("Remote end closed connection")) as query, \
             patch.object(gaia.time, "sleep"):
         with pytest.raises(OSError, match="pip install -U astroquery"):
@@ -296,7 +296,7 @@ def test_gaia_archive_gives_up_with_advice():
 
 def test_gaia_archive_mistakes_are_not_retried():
     from EclipsingBinaries import gaia
-    with patch.object(gaia.GaiaData, "from_query", side_effect=ValueError("bad ADQL")) as query:
+    with patch.object(gaia.GaiaRows, "from_query", side_effect=ValueError("bad ADQL")) as query:
         with pytest.raises(ValueError):
             gaia._query_gaia_archive("SELECT nonsense")
     assert query.call_count == 1
@@ -306,7 +306,7 @@ def test_gaia_archive_wait_can_be_canceled():
     from EclipsingBinaries import gaia
     cancel = MagicMock()
     cancel.is_set.return_value = True
-    with patch.object(gaia.GaiaData, "from_query", side_effect=ConnectionResetError("reset")) as query, \
+    with patch.object(gaia.GaiaRows, "from_query", side_effect=ConnectionResetError("reset")) as query, \
             patch.object(gaia.time, "sleep"):
         assert gaia._query_gaia_archive("SELECT 1", cancel_event=cancel) is None
     assert query.call_count == 1

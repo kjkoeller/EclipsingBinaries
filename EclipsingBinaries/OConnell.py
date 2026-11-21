@@ -3,10 +3,9 @@
 Calculates the O'Connel Effect based on this paper: https://app.aavso.org/jaavso/article/3511/
 
 Created on Thu Feb 25 00:47:37 2021
-Last Edited: 06/18/2025
 
 Original Author: Alec Neal
-Last Edits Done By: Kyle Koeller
+Editor: Kyle Koeller
 """
 
 # Importing necessary libraries
@@ -23,17 +22,59 @@ from pathlib import Path
 sig_f = lambda f, x, sig_x: abs(f(x + sig_x) - f(x - sig_x)) / 2
 
 
+# Settings the GUI starts with, and their limits. sections can't go past 16 because each
+# section is drawn with 128 / sections points, and the FT order is kept below half of the
+# 128 binned points the series is fitted to.
+DEFAULT_ORDER = 10
+DEFAULT_SIMS = 1000
+DEFAULT_SECTIONS = 4
+DEFAULT_SECTION_ORDER = 7
+LIMITS = {"order": (1, 30), "sims": (10, 100000), "sections": (1, 16), "section_order": (1, 20)}
+
+
+def check_settings(order, sims, sections, section_order):
+    """
+    Raise ValueError if any setting is outside LIMITS, naming the setting and
+    its allowed range; otherwise return them as ints.
+    """
+    names = {"order": "FT order", "sims": "Simulations", "sections": "Sections",
+             "section_order": "Section order"}
+    values = {"order": order, "sims": sims, "sections": sections, "section_order": section_order}
+    checked = {}
+    for key, value in values.items():
+        low, high = LIMITS[key]
+        try:
+            number = int(str(value).strip())
+        except (TypeError, ValueError):
+            raise ValueError(f"{names[key]} must be a whole number from {low} to {high}.") from None
+        if not low <= number <= high:
+            raise ValueError(f"{names[key]} must be from {low} to {high}; it's {number}.")
+        checked[key] = number
+    return checked["order"], checked["sims"], checked["sections"], checked["section_order"]
+
+
 # Main function for calculating O'Connell Effect
-def main(filepath="", filter_files=None, obj_name="", period=0, hjd=0, write_callback=None, cancel_event=None):
+def main(filepath="", filter_files=None, obj_name="", period=0, hjd=0, write_callback=None, cancel_event=None,
+         order=DEFAULT_ORDER, sims=DEFAULT_SIMS, sections=DEFAULT_SECTIONS, section_order=DEFAULT_SECTION_ORDER):
+    """
+    Run the O'Connell analysis on one to three filters' light curves and save
+    the plot (obj_name.pdf) and LaTeX table in filepath.
+
+    order is the Fourier series order, sims the number of Monte Carlo light
+    curves used for the errors (about a minute per 1000), and sections and
+    section_order set how the phased light curve is split up and the order of
+    the polynomial fitted to each piece before the Fourier fit.
+    """
     log = make_logger(write_callback)
+    order, sims, sections, section_order = check_settings(order, sims, sections, section_order)
 
     try:
         if cancel_event is not None and cancel_event.is_set():
             log("Task canceled.")
             return
 
-        multi_OConnell_total(filter_files, hjd, period, order=10, sims=1000,
-                             sections=4, section_order=7, plot_only=False, save=True,
+        multi_OConnell_total(filter_files, hjd, period, order=order, sims=sims,
+                             sections=sections, section_order=section_order, plot_only=False, save=True,
                              outName=str(Path(filepath) / f"{obj_name}.pdf"),
                              write_callback=write_callback, cancel_event=cancel_event)
     except Exception as e:
@@ -265,9 +306,8 @@ def OConnell_total(inputFile, Epoch, period, order, sims=1000,
     a_rat = [a0rat]
     b_rat = [1]
     for n in tqdm(range(1, order + 1), position=0, desc='Calculating FT errors'):
-        # TODO, dx0=1 isn't fullproof
-        asig, ar = FT.a_sig_fast(a, b, n, a[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order, dx0=1)
-        bsig, br = FT.b_sig_fast(a, b, n, b[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order, dx0=1)
+        asig, ar = FT.a_sig_fast(a, b, n, a[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order)
+        bsig, br = FT.b_sig_fast(a, b, n, b[n], ob_phaselist, ob_fluxlist, ob_fluxerr, order)
         a_model_err.append(asig)
         b_model_err.append(bsig)
         a_rat.append(ar)

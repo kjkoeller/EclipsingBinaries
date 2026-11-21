@@ -20,7 +20,6 @@ hosts only needs the entry.
 
 Author: Kyle Koeller
 Created: 11/09/2026
-Last Edited: 11/09/2026
 """
 
 import argparse
@@ -41,6 +40,7 @@ from astropy.coordinates.name_resolve import NameResolveError
 
 from ._log import make_logger
 from ._vizier import VizierServers, VizierUnavailable, query_region_tables
+from .tess_crowding import crowdsap, describe_crowdsap, tic_crowding
 
 LIGHT_CURVES = "Light curves"
 MAGNITUDES = "Catalogue magnitudes"
@@ -57,8 +57,17 @@ ZTF_SATURATION = 13.0
 # Seconds a SIMBAD query may take before the next server is tried
 SIMBAD_TIMEOUT = 60
 # Light curve products from these MAST pipelines are downloaded; MAST holds many
-# other community light curves for the same stars, which would repeat the data
-MAST_PIPELINES = ("SPOC", "TESS-SPOC", "QLP", "Kepler", "K2")
+# other community light curves for the same stars, which would repeat the data.
+# TGLC fits each star's PSF in the full-frame images, which separates it from
+# neighbours in a way aperture photometry can't.
+MAST_PIPELINES = ("SPOC", "TESS-SPOC", "QLP", "TGLC", "Kepler", "K2")
+# Flux columns, best first: SPOC's corrected flux, QLP's detrended flux, TGLC's
+# calibrated PSF flux then aperture flux, and plain aperture flux last
+MAST_FLUX_COLUMNS = ("PDCSAP_FLUX", "KSPSAP_FLUX", "CAL_PSF_FLUX", "CAL_APER_FLUX", "SAP_FLUX", "FLUX")
+# Columns of bad-quality flags; a point is kept only when all of them are zero
+MAST_QUALITY_COLUMNS = ("QUALITY", "TESS_FLAGS", "TGLC_FLAGS")
+# TESS times are BJD - 2457000 (TDB); used when a file doesn't give its own zero point
+TESS_TIME_ZERO = 2457000.0
 
 # Gaia's DataLink download unpacks into the current folder, so it's moved into
 # the output folder for the length of the call, one caller at a time
@@ -180,11 +189,16 @@ def _column(frame, *names):
     return None
 
 
-def save_light_curve(path, time, mag, err):
+def save_light_curve(path, time, mag, err, time_column=None):
     """
     Save a light curve as the three-column text file the other programs read
     (time, magnitude, error), sorted by time and without rows that have gaps.
     Returns the number of points written, and writes nothing if there are none.
+
+    When the time system is certain, pass the column name that says so (such
+    as "BJD_TDB") as time_column, and the file gets a header row naming the
+    columns. Find Minimum then knows the system, and the other programs read
+    header rows too.
     """
     data = np.column_stack([np.asarray(time, dtype=float), np.asarray(mag, dtype=float),
                             np.asarray(err, dtype=float)])
@@ -192,7 +206,8 @@ def save_light_curve(path, time, mag, err):
     if len(data) == 0:
         return 0
     data = data[np.argsort(data[:, 0], kind="stable")]
-    np.savetxt(path, data, fmt=["%.6f", "%.4f", "%.4f"], delimiter="\t")
+    header = f"{time_column}\tMAG\tMAG_ERR" if time_column else ""
+    np.savetxt(path, data, fmt=["%.6f", "%.4f", "%.4f"], delimiter="\t", header=header, comments="")
     return len(data)
 
 
@@ -516,35 +531,52 @@ def _fetch_gaia_light_curve_vizier(target, folder, run, key):
     return "found", len(frame), files, note
 
 
+def _scatter(flux):
+    """Typical error of one point, from the differences between neighbouring points."""
+    steps = np.diff(flux)
+    if len(steps) == 0:
+        return 0.0
+    return float(1.4826 * np.median(np.abs(steps - np.median(steps))) / np.sqrt(2))
+
+
 def _flux_light_curve(path, fits_path):
     """
-    Turn a TESS, Kepler or K2 light curve FITS file into a text light curve.
-    The flux becomes magnitudes around the star's catalogue magnitude (or
-    around zero when the file doesn't give one). Returns the number of points.
+    Turn a TESS, Kepler or K2 light curve FITS file (SPOC, TESS-SPOC, QLP or
+    TGLC) into a text light curve with a BJD_TDB header. The flux becomes
+    magnitudes around the star's catalogue magnitude (or around zero when the
+    file doesn't give one). Files without flux errors, such as TGLC's, get
+    one error for every point from the point-to-point scatter. Returns the
+    number of points.
     """
     from astropy.io import fits
     with fits.open(fits_path) as hdus:
         data, header = hdus[1].data, hdus[1].header
+        primary = hdus[0].header
         names = {n.upper(): n for n in data.columns.names}
-        flux_name = next((names[n] for n in ("PDCSAP_FLUX", "KSPSAP_FLUX", "SAP_FLUX", "FLUX") if n in names), None)
+        flux_name = next((names[n] for n in MAST_FLUX_COLUMNS if n in names), None)
         if "TIME" not in names or flux_name is None:
             return 0
         time = np.asarray(data[names["TIME"]], dtype=float)
         flux = np.asarray(data[flux_name], dtype=float)
         err_name = names.get(flux_name.upper() + "_ERR")
-        flux_err = np.asarray(data[err_name], dtype=float) if err_name else np.zeros_like(flux)
+        flux_err = np.asarray(data[err_name], dtype=float) if err_name else None
         good = np.isfinite(time) & np.isfinite(flux) & (flux > 0)
-        if "QUALITY" in names:
-            good &= np.asarray(data[names["QUALITY"]]) == 0
+        for flags in MAST_QUALITY_COLUMNS:
+            if flags in names:
+                good &= np.asarray(data[names[flags]]) == 0
         zero = float(header.get("BJDREFI", 0)) + float(header.get("BJDREFF", 0))
-        primary = hdus[0].header
+        telescope = str(primary.get("TELESCOP", header.get("TELESCOP", ""))).strip().upper()
         catalogue_mag = next((float(primary[k]) for k in ("TESSMAG", "KEPMAG")
                               if isinstance(primary.get(k), (int, float))), 0.0)
     if not good.any():
         return 0
-    time, flux, flux_err = time[good], flux[good], flux_err[good]
+    time, flux = time[good], flux[good]
+    if zero == 0 and telescope == "TESS" and np.median(time) < 1e5:
+        zero = TESS_TIME_ZERO
+    flux_err = flux_err[good] if flux_err is not None else np.full_like(flux, _scatter(flux))
     mag = catalogue_mag - 2.5 * np.log10(flux / np.median(flux))
-    return save_light_curve(path, time + zero, mag, 2.5 / np.log(10) * np.abs(flux_err) / flux)
+    return save_light_curve(path, time + zero, mag, 2.5 / np.log(10) * np.abs(flux_err) / flux,
+                            time_column="BJD_TDB")
 
 
 def _fetch_mast(target, folder, run, key):
@@ -570,12 +602,13 @@ def _fetch_mast(target, folder, run, key):
     mast_folder.mkdir(exist_ok=True)
     with contextlib.redirect_stdout(io.StringIO()):
         manifest = Observations.download_products(products, download_dir=str(mast_folder), flat=True)
-    files, points = [], 0
+    files, points, crowdsaps = [], 0, []
     for row in manifest:
         fits_path = Path(str(row["Local Path"]))
         if str(row["Status"]).upper() != "COMPLETE" or not fits_path.is_file():
             continue
         files.append(fits_path)
+        crowdsaps.append(crowdsap(fits_path))
         text_path = folder / f"{key}_{fits_path.stem}.txt"
         try:
             written = _flux_light_curve(text_path, fits_path)
@@ -587,8 +620,21 @@ def _fetch_mast(target, folder, run, key):
             points += written
     if not files:
         return "failed", 0, [], "MAST listed light curves but none could be downloaded."
-    return "found", points, files, ("Time is BJD (TDB). Magnitudes are the pipeline flux scaled around "
-                                    "the catalogue magnitude; bad-quality points are left out.")
+    note = ("Time is BJD (TDB). Magnitudes are the pipeline flux scaled around the catalogue "
+            "magnitude; bad-quality points are left out.")
+    if any("tess" in f.name.lower() for f in files):
+        crowding = tic_crowding(target.coord, write_callback=run.log, cancel_event=run.cancel_event)
+        if crowding is not None:
+            run.log(crowding.message())
+            if crowding.target_tmag is not None:
+                note += (f" Nearby stars add about {100 * crowding.within_two:.0f}% to the target's light "
+                         "within two TESS pixels.")
+                if crowding.crowded:
+                    note += " Check eclipse depths against ground-based data."
+        spoc = describe_crowdsap(crowdsaps)
+        if spoc:
+            run.log(spoc)
+    return "found", points, files, note
 
 
 def _fetch_neowise(target, folder, run, key):
@@ -699,7 +745,7 @@ ARCHIVES = (
     Archive("ztf", "ZTF", LIGHT_CURVES, "Optical (g, r, i)",
             "Zwicky Transient Facility, since 2018, northern sky to Dec -30.", _fetch_ztf),
     Archive("mast", "TESS, Kepler and K2", LIGHT_CURVES, "Optical (red)",
-            "Space photometry from MAST: SPOC, TESS-SPOC and QLP light curves.", _fetch_mast),
+            "Space photometry from MAST: SPOC, TESS-SPOC, QLP and TGLC light curves.", _fetch_mast),
     Archive("gaia_lc", "Gaia DR3 epoch photometry", LIGHT_CURVES, "Optical (G, BP, RP)",
             "Gaia's individual measurements, released for variable stars.",
             _with_backup(_fetch_gaia_light_curve, _fetch_gaia_light_curve_vizier,

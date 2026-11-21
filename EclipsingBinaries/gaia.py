@@ -2,7 +2,6 @@
 Author: Kyle Koeller
 Date Created: 03/08/2023
 
-Last Edited: 04/19/2026
 This program queries Gaia DR3, to gather specific parameters
 
 https://gea.esac.esa.int/archive/
@@ -11,7 +10,6 @@ https://iopscience.iop.org/article/10.3847/1538-3881/ab3467/pdf
 https://arxiv.org/pdf/2012.01916.pdf
 """
 
-from pyia import GaiaData
 from astropy.coordinates import SkyCoord, UnitSphericalRepresentation
 import astropy.units as u
 import pandas as pd
@@ -46,6 +44,67 @@ GAIA_BACKUP_G_LIMIT = 17.0
 # Gaia colours where the TIC relation was fitted (Stassun et al. 2019); outside it the
 # polynomial is extrapolated and 0.1 mag is added to the error in quadrature
 TIC_COLOUR_RANGE = (-0.2, 3.5)
+
+
+# Units for the Gaia columns this module reads, used when a result table doesn't
+# carry its own (tables built by hand in the tests, for example)
+GAIA_UNITS = {
+    "ra": u.deg, "dec": u.deg,
+    "pmra": u.mas / u.yr, "pmdec": u.mas / u.yr,
+    "parallax": u.mas, "parallax_error": u.mas,
+    "phot_g_mean_mag": u.mag, "phot_bp_mean_mag": u.mag, "phot_rp_mean_mag": u.mag,
+    "distance_gspphot": u.pc, "distance_gspphot_lower": u.pc, "distance_gspphot_upper": u.pc,
+    "teff_gspphot": u.K, "teff_gspphot_lower": u.K, "teff_gspphot_upper": u.K,
+    "radial_velocity": u.km / u.s, "radial_velocity_error": u.km / u.s,
+}
+
+
+class GaiaRows:
+    """
+    The rows a Gaia archive query returned. Columns can be read as attributes
+    (g.parallax), with masked values filled in (NaN for numbers) and units
+    attached where the column has one. Indexing with an array of row numbers
+    gives a new GaiaRows with just those rows.
+
+    This used to come from the pyia package, which was only needed for this.
+    """
+
+    def __init__(self, table):
+        self.data = table
+
+    @classmethod
+    def from_query(cls, adql):
+        from astroquery.gaia import Gaia
+        return cls(Gaia.launch_job_async(adql, verbose=False).get_results())
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, rows):
+        return GaiaRows(self.data[rows])
+
+    def __getattr__(self, name):
+        if name == "data":  # not set yet, so don't look it up in itself
+            raise AttributeError(name)
+        try:
+            column = self.data[name]
+        except KeyError:
+            raise AttributeError(name) from None
+        values = column
+        if getattr(column, "mask", None) is not None and np.any(column.mask):
+            if column.dtype.kind == "f":
+                values = column.filled(np.nan)
+            elif column.dtype.kind == "b":
+                values = column.filled(False)
+            else:
+                values = column.filled()
+        values = np.asarray(values)
+        unit = GAIA_UNITS.get(name)
+        if column.unit is not None:
+            parsed = u.Unit(str(column.unit), parse_strict="silent")
+            if not isinstance(parsed, u.UnrecognizedUnit):
+                unit = parsed
+        return values * unit if unit is not None and values.dtype.kind in "fiu" else values
 
 
 def _finite(values, fill):
@@ -98,7 +157,7 @@ def _query_gaia_archive(adql, write_callback=None, cancel_event=None):
     log = make_logger(write_callback)
     for attempt in range(1, len(GAIA_RETRY_WAITS) + 2):
         try:
-            return GaiaData.from_query(adql)
+            return GaiaRows.from_query(adql)
         except (request_exceptions.RequestException, OSError, HTTPException) as error:
             if attempt > len(GAIA_RETRY_WAITS):
                 raise OSError(f"The Gaia archive at ESA didn't answer after {attempt} tries ({error}). "

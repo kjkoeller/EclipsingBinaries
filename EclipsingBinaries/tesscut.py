@@ -3,7 +3,6 @@ Author: John Kielkopf (University of Louisville)
 Created: Unknown
 
 Editor: Kyle Koeller
-Last Edited: 12/12/2024
 
 Paper is: https://ui.adsabs.harvard.edu/abs/2019ascl.soft05007B/abstract
 """

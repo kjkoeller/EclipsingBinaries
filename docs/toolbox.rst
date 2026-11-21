@@ -49,6 +49,43 @@ magnitude file already filled in. **View Light Curves** opens the light curve of
 window, stacked with a shared time axis, with the usual Matplotlib zoom, pan and save
 tools.
 
+Star files
+^^^^^^^^^^
+
+Each star gets a small file that the programs share, holding what's been worked out
+about it and where each result was saved. When a program that knows the star's name
+finishes, it adds to the file:
+
+=================================  =====================================================
+Program                            What it adds
+=================================  =====================================================
+AIJ Comparison Star Selector       RA and Dec, and the folder the RADEC files went in
+Archive Data                       RA and Dec (looked up from the name if not entered), the folder
+Multi-Aperture Photometry          The folder of reduced images and light curves
+Period Search                      The period, when **Save Period** is pressed, and its file
+Find Minimum                       Each minimum file, and the time system of the minima
+O-C Plotting                       The period and epoch used, the time system, the O-C files
+``EB_pipeline``                    RA and Dec, and the output folder
+=================================  =====================================================
+
+Going the other way, typing a star's name fills in fields that are still empty: RA and
+Dec in Archive Data and the Comparison Star Selector, and the period, epoch and epoch
+error in O-C Plotting, which has an optional **Object Name** for this. The log says what
+was filled in. Anything typed already is left alone.
+
+The name can be spelled with spaces or underscores, in any case: ``NSVS 896797`` and
+``nsvs_896797`` are the same star. The files are JSON, one per star, in
+``~/.EclipsingBinaries/stars`` (set the ``ECLIPSINGBINARIES_STARS`` environment variable
+to keep them elsewhere). Each keeps a history of what was added, when and by which
+program, which helps when writing up how a number was found. To see what's saved:
+
+.. code-block:: bash
+
+    python -m EclipsingBinaries.star_file "NSVS 896797"
+    python -m EclipsingBinaries.star_file          # lists every star
+
+If a star file can't be written, the log says so and the program carries on as normal.
+
 IRAF Reduction
 --------------
 
@@ -295,8 +332,9 @@ such as the search radius or the time system.
 
    * - TESS, Kepler and K2
      - Optical (red)
-     - Space photometry from MAST: SPOC, TESS-SPOC and QLP light curves.
-     - The FITS light curves in a ``mast`` folder and a text light curve for each. Time is BJD (TDB).
+     - Space photometry from MAST: SPOC, TESS-SPOC, QLP and TGLC light curves.
+     - The FITS light curves in a ``mast`` folder and a text light curve for each, with a header row
+       naming its time column ``BJD_TDB``. The log and summary say how much light nearby stars add.
 
    * - Gaia DR3 epoch photometry
      - Optical (G, BP, RP)
@@ -449,11 +487,21 @@ such as the search radius or the time system.
     Each light curve is also saved as a plain text file with three columns (time,
     magnitude, error), which Period Search, Find Minimum, O'Connell Effect and Color
     Light Curve read directly. The time system differs between surveys, as listed above
-    and in the summary: HJD for ZTF, BJD for TESS, Kepler, K2 and Gaia, and plain JD for
-    NEOWISE. The difference between HJD and BJD is a few seconds, but don't mix surveys in
-    an O-C study without converting them to one system first. TESS, Kepler and K2
-    magnitudes are the pipeline's flux scaled around the star's catalogue magnitude, with
-    points the pipeline flagged as bad left out.
+    and in the summary: HJD for ZTF, BJD (TDB) for TESS, Kepler and K2, BJD (TCB) for
+    Gaia, and plain JD for NEOWISE. HJD in UTC and BJD in TDB differ by about a minute,
+    mostly the offset between the UTC and TDB time scales, so don't mix surveys in an O-C
+    study without converting them to one system first. The TESS, Kepler and K2 files
+    have a header row (``BJD_TDB``, ``MAG``, ``MAG_ERR``) so Find Minimum knows their time
+    system; the others have none. TESS, Kepler and K2 magnitudes are the pipeline's flux
+    scaled around the star's catalogue magnitude, with points the pipeline flagged as bad
+    left out. TGLC's files give no flux errors, so every point gets the same error, worked
+    out from the scatter between neighbouring points.
+
+    TESS pixels are 21 arcseconds across, so nearby stars can add their light to the
+    target's. The log gives the share from TIC stars within one and two pixels, and SPOC's
+    own figure (``CROWDSAP``) when its files have one. SPOC's PDCSAP flux has the extra
+    light taken out; QLP and TGLC deal with it in their own ways, so compare eclipse depths
+    with ground-based data when the log warns.
 
 Catalogue searches use a small radius around the target (3 to 5 arcseconds for optical
 and infrared, up to 30 for X-ray and radio surveys with coarser positions) and list the
@@ -519,6 +567,19 @@ to select from. The sector table is also printed to the output log.
 
 If the search or a download fails, the error is shown in the log and the task ends with an
 error rather than a success message.
+
+Before downloading, the log says how much light nearby stars add to the target. TESS
+pixels are 21 arcseconds across, so stars well apart on the sky can share one, and
+photometry on the cutouts has nothing taking their light out: eclipses look shallower
+than they are, and an eclipse can even belong to a neighbour. The estimate adds up the
+TIC stars within one and two pixels, weighted by brightness, and warns when they come to
+10% of the target's light or more. It ignores where the pixel edges fall, so take it as
+a reason to check against ground-based data rather than a correction. If the TIC can't
+be reached, the log says so and the download goes ahead.
+
+For light curves the TESS pipelines have already made (SPOC, TESS-SPOC, QLP and TGLC),
+use the **TESS, Kepler and K2** database in the archive search instead. It's much faster
+than downloading cutouts, and the same crowding estimate is made there.
 
 From Python, ``run_tess_search(system_name, single_sector, specific_sector, download_path)``
 downloads every sector when ``single_sector`` is ``False``, or only ``specific_sector``
@@ -785,8 +846,9 @@ The GUI panel accepts the following inputs:
   doesn't matter.
 + **Output Folder** — where the combined files are saved (created if missing)
 + **Output Name** — the start of the file names, for example ``NSVS_896797_B``
-+ **Include BJD_TDB column** — adds BJD_TDB as the first column. Leave it off for Find
-  Minimum, O'Connell Effect and Color Light Curve, which expect HJD first.
++ **Include BJD_TDB column** — adds BJD_TDB as the first column. Find Minimum recognises
+  these files and uses whichever time its **Time System** says. Leave it off for O'Connell
+  Effect and Color Light Curve, which expect HJD first.
 
 Each night needs ``HJD``, ``Source_AMag_T1`` and ``Source_AMag_Err_T1`` columns. The light
 curve CSV files Multi-Aperture Photometry saves work too. The output files are tab
@@ -909,6 +971,8 @@ The GUI panel accepts the following inputs:
 + **Number of Filters** and a **Light Curve** for each — a Night Filters magnitude file
   (HJD, magnitude, error) or a light curve CSV from Multi-Aperture Photometry. Pick which
   filter each file is from the dropdown.
++ **Time System** — which times to use (see `Time systems`_ below). **From the files**,
+  the default, goes by the files' column names.
 + **Output Folder** — where the minimum files are saved. Leave it empty to save them next
   to the first light curve.
 
@@ -973,6 +1037,33 @@ an eclipse cut off at the edge can be brought into view by dragging the plot or 
 scrollbar, and its boundaries can be set past the edge of the piece. Measuring the same
 eclipse from two pieces just replaces the first measurement.
 
+Time systems
+^^^^^^^^^^^^
+
+Light curves can have their times in different systems: AIJ's ``HJD`` column is
+heliocentric JD in UTC, its ``BJD_TDB`` column is barycentric JD in TDB, and the two
+differ by about a minute, mostly the offset between the UTC and TDB time scales. Find
+Minimum doesn't assume either. It keeps track of which one the minima are in so O-C
+Plotting can label its tables correctly:
+
++ A file with a header row says by its column name (``HJD`` or ``HJD_UTC``, ``BJD_TDB``,
+  ``BJD_UTC``, ``JD_UTC``). If it has both HJD and BJD_TDB, HJD is used unless **Time
+  System** is set to **BJD (TDB)**, and the log says the other is there.
++ A Night Filters file with the BJD option on (BJD_TDB, HJD, magnitude, error) is
+  recognised by its two time columns, and the same choice applies.
++ Any other file without a header doesn't say. Choose its system under **Time System** to
+  have the minima labelled; otherwise the plot and table just say "Time".
++ All the filters loaded together have to be in the same system.
+
+The plot's axis, the table and the log name the system, for example "HJD (UTC)". When
+it's known, the minimum file starts with a line saying so (``# Times of minimum in
+BJD_TDB``), and minima in any system other than HJD (UTC) get it in the file name as
+well, such as ``NSVS_896797_B_BJD_TDB_min.txt``, so HJD and BJD minima of the same star
+are kept apart. Minima in another system can't be added to a file that already says
+which one it holds.
+
+To convert TESS times from BJD (TDB) to HJD, see `BJD to HJD`_.
+
 Rows that repeat earlier ones exactly (a light curve pasted into a file twice, say) are
 left out, and the log says how many. Two points at the same time would otherwise make the
 Kwee-van Woerden fit fail without saying so, giving a minimum with no error that can't be
@@ -1010,6 +1101,8 @@ The GUI panel offers three modes selected by radio buttons:
 
 Common inputs across all modes:
 
++ **Object Name** — optional. Fills in the period and epoch saved in the star's file, and
+  adds this run to it (see `Star files`_).
 + **Period** — orbital period of the system in days
 + **Output Folder** — where all output files will be saved
 + **I already have an Epoch value** — checkbox to enter a known T0 and its error;
@@ -1017,6 +1110,13 @@ Common inputs across all modes:
   doesn't use an epoch.
 
 Only the inputs for the selected mode are shown.
+
+The time system of the minima comes from the first line Find Minimum writes in each
+minimum file (see `Time systems`_). It's carried into the O-C files, and All Data uses
+it to head the time column of the LaTeX table, for example :math:`BJD_{\rm TDB}` or
+:math:`HJD_{\rm UTC}`. Files that don't say, such as ones from before this was recorded,
+are fine on their own; the table's column is then headed "Time of minimum". Files that
+say different systems can't be used together.
 
 BSUO/SARA
 ^^^^^^^^^
@@ -1174,6 +1274,20 @@ The GUI panel accepts the following inputs:
 + **Period** — orbital period in days
 + **System Name** — used for output file naming
 + **Output Folder** — folder where results will be saved
++ **Fit Settings** — start at the values the program always used, and are remembered
+  between runs. **Defaults** puts them back.
+
+  ==============  =======  =========  ==========================================================
+  Setting         Default  Range      What it does
+  ==============  =======  =========  ==========================================================
+  FT Order        10       1–30       Order of the Fourier series fitted to the phased light curve
+  Sims            1000     10–100000  Monte Carlo light curves used for the errors; about a
+                                      minute per 1000
+  Sections        4        1–16       Pieces the phased light curve is split into for binning
+  Section Order   7        1–20       Order of the polynomial fitted to each piece
+  ==============  =======  =========  ==========================================================
+
+  The settings used go in the log at the start of each run.
 
 The plot is saved as ``[System Name].pdf`` and the LaTeX table as ``[System Name].txt`` in
 the output folder. The fitted parameters (a1, a2, a4, OER, LCA, ΔI) are also written to the
@@ -1189,7 +1303,7 @@ halves of the phased light curve are then compared:
    :pyobject: Half_Comp
 
 Statistical values (OER, LCA, ΔI) are calculated for each filter using Monte Carlo
-simulations (1000 by default):
+simulations (1000 by default, set by **Sims**):
 
 .. literalinclude:: ../EclipsingBinaries/OConnell.py
    :pyobject: OConnell_total

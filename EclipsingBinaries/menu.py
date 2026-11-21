@@ -4,7 +4,6 @@ making it more convenient to use and access than a command line or individual sc
 
 Author: Kyle Koeller
 Created: 8/29/2022
-Last Updated: 10/19/2026
 """
 
 import os
@@ -48,12 +47,14 @@ from .gaia import target_star as gaia
 from . import archives
 from .OC_plot import BSUO, TESS_OC, all_data, data_fit
 from .OConnell import main as oconnell
+from . import OConnell as oconnell_settings
 from .color_light_curve import color_plot
 from .find_min import MinimumError
 from .find_min_window import MinimumFinderWindow
 from .Night_Filters import combine_nights, NightFileError
 from .period import DEFAULT_METHOD as PERIOD_DEFAULT_METHOD, METHODS as PERIOD_METHODS, PeriodError
 from .period_window import PeriodWindow
+from . import star_file, time_systems
 from .gui_support import (ToolTip, SettingsStore, ScrollableFrame, make_app_icon, open_path,
                           classify_log_line)
 
@@ -95,6 +96,14 @@ NIGHT_TEXT = "#e6ecf5"
 NIGHT_MUTED = "#8fa3bf"
 NIGHT_DISABLED = "#5d6f89"
 STARLIGHT = "#f2c14e"
+
+# How star file values are named in the log. "Error" would colour the line red.
+STAR_FIELD_NAMES = {"ra": "RA", "dec": "Dec", "epoch_error": "epoch uncertainty"}
+
+# Find Minimum's time system choices: going by the files, or one of the systems
+TIME_SYSTEM_FROM_FILES = "From the files"
+TIME_SYSTEM_CHOICES_BY_NAME = {time_systems.describe(s): s for s in time_systems.SYSTEMS}
+TIME_SYSTEM_CHOICES = (TIME_SYSTEM_FROM_FILES, *TIME_SYSTEM_CHOICES_BY_NAME)
 
 DOCS_URL = "https://eclipsingbinaries.readthedocs.io/"
 REPO_URL = "https://github.com/kjkoeller/EclipsingBinaries/"
@@ -643,6 +652,27 @@ class ProgramLauncher(tk.Tk):
         entry.insert(0, text)
         entry._placeholder_active = False
         entry.config(fg=FG_TEXT)
+
+    def _fill_from_star_file(self, name_entry, fields):
+        """
+        When a star's name is entered, fill in any of these fields that are
+        still empty from what its star file holds (see star_file.py). fields
+        maps a star file value, such as "ra", to the entry it goes in.
+        Returns the function that does it, for the tests.
+        """
+        def fill(_event=None):
+            name = self._entry_value(name_entry)
+            values = star_file.known(name)
+            filled = []
+            for key, entry in fields.items():
+                value = values.get(key)
+                if value is not None and not self._entry_value(entry):
+                    self._set_entry_text(entry, str(value))
+                    filled.append(STAR_FIELD_NAMES.get(key, key))
+            if filled:
+                self.write_to_log(f"Filled in {', '.join(filled)} from what's saved for {name}.")
+        name_entry.bind("<FocusOut>", fill, add="+")
+        return fill
 
     def _make_validator(self, entry, error_label, error_message, validation_func, optional=False):
         """Build and return the validate_input function for an entry field. Optional fields may be left empty."""
@@ -1676,6 +1706,7 @@ class ProgramLauncher(tk.Tk):
                                text="Run Comparison Selector",
                                ra=ra, dec=dec, folder_path=folder_path, obj_name=obj_name,
                                science_image=science_image)
+        self._fill_star_details = self._fill_from_star_file(obj_name, {"ra": ra, "dec": dec})
 
         self._log_section(7)
 
@@ -1702,6 +1733,8 @@ class ProgramLauncher(tk.Tk):
                     self.write_to_log("Comparison Selector was canceled.")
                 else:
                     self.write_to_log("Comparison Selector completed successfully.")
+                    star_file.record(obj_value, "comparison stars", files=[folder_value],
+                                     write_callback=self.write_to_log, ra=ra_value, dec=dec_value)
                     overlay = Path(folder_value) / f"{obj_value}_overlay.png"
                     extras = [("View Overlay", lambda: self._open_in_system(overlay))] if overlay.exists() else []
                     self.offer_results(folder_value, extras)
@@ -1885,6 +1918,8 @@ class ProgramLauncher(tk.Tk):
                     self.write_to_log("Multi-Aperture Photometry was canceled.")
                 else:
                     self.write_to_log("Multi-Aperture Photometry completed successfully.")
+                    star_file.record(obj_name_value, "photometry", files=[reduced_path_value],
+                                     write_callback=self.write_to_log)
                     filters = [f for f in PHOTOMETRY_FILTERS if f in chosen]
                     self.offer_results(reduced_path_value, [(
                         "View Light Curves",
@@ -2294,15 +2329,28 @@ class ProgramLauncher(tk.Tk):
         self.find_min_rows = curves.rows
         self._update_find_min_rows = curves.update
 
+        system_label = tk.Label(self.right_frame, text="Time System:", font=self.label_font, bg=BG_PANEL,
+                                fg=FG_TEXT)
+        system_label.grid(row=6, column=0, padx=(16, 10), pady=5, sticky="e")
+        self._tooltip(system_label, "Which times to use. From the files goes by the column names (AIJ's HJD "
+                                    "column is HJD in UTC); files without a header don't say, so choose their "
+                                    "system here to have the minima labelled. When a file has both HJD and "
+                                    "BJD_TDB, HJD is used unless BJD (TDB) is chosen.")
+        self.find_min_time_system = self._remember_var(
+            "time_system", tk.StringVar(master=self, value=TIME_SYSTEM_FROM_FILES))
+        ttk.Combobox(self.right_frame, textvariable=self.find_min_time_system, values=TIME_SYSTEM_CHOICES,
+                     state="readonly", width=16, font=self.label_font).grid(row=6, column=1, padx=(0, 10),
+                                                                             pady=5, sticky="w")
+
         output_folder = self.create_input_field(self.right_frame, "Output Folder:", "Same folder as the first file",
-                                                row=6, browse_type="folder", optional=True,
+                                                row=7, browse_type="folder", optional=True,
                                                 tooltip="Where the minimum files are saved. Left empty, they go "
                                                         "next to the first light curve. Minima already saved there "
                                                         "are loaded, so you can carry on later.")
 
-        self.create_run_button(self.right_frame, self.run_find_minimum, row=7, text="Open Minimum Finder",
+        self.create_run_button(self.right_frame, self.run_find_minimum, row=8, text="Open Minimum Finder",
                                cancellable=False, obj_name=obj_name, output_folder=output_folder)
-        self._log_section(8)
+        self._log_section(9)
 
     def _light_curve_rows(self, panel, first_row, count_tip):
         """
@@ -2324,9 +2372,10 @@ class ProgramLauncher(tk.Tk):
         labels = [label for label, _ in choices]
         folder = self._path_value(output_folder) or str(Path(choices[0][1]).parent)
 
+        system = TIME_SYSTEM_CHOICES_BY_NAME.get(self.find_min_time_system.get())
         try:
             window = MinimumFinderWindow(self, [path for _label, path in choices], labels, folder, name,
-                                         log=self.write_to_log)
+                                         log=self.write_to_log, time_system=system)
         except MinimumError as e:
             self.write_to_log(f"Error: {e}")
             return
@@ -2346,14 +2395,20 @@ class ProgramLauncher(tk.Tk):
         self.clear_right_frame()
         self._panel_title("O-C Plotting", "oc")
 
+        self.oc_name_entry = self.create_input_field(
+            self.right_frame, "Object Name:", "e.g. NSVS 896797 (optional)", row=1, optional=True,
+            tooltip="Optional. Fills in the period and epoch saved for the star, and saves this run's "
+                    "values and files with them."
+        )
+
         source_label = tk.Label(self.right_frame, text="Data Source:", font=self.label_font, bg=BG_PANEL,
                                 fg=FG_TEXT)
-        source_label.grid(row=1, column=0, padx=(16, 10), pady=5, sticky="e")
+        source_label.grid(row=2, column=0, padx=(16, 10), pady=5, sticky="e")
         self._tooltip(source_label, "BSUO/SARA averages B, V and R times of minimum. TESS uses one file. "
                                     "All Data merges O-C files you've already made.")
         self.oc_mode_var = self._remember_var("data_source", tk.StringVar(master=self, value="BSUO"))
         mode_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
-        mode_frame.grid(row=1, column=1, padx=(0, 10), pady=5, sticky="w")
+        mode_frame.grid(row=2, column=1, padx=(0, 10), pady=5, sticky="w")
         for label, val in [("BSUO/SARA", "BSUO"), ("TESS", "TESS"), ("All Data", "ALL")]:
             tk.Radiobutton(
                 mode_frame, text=label, variable=self.oc_mode_var, value=val,
@@ -2366,70 +2421,73 @@ class ProgramLauncher(tk.Tk):
             self.right_frame, text="I already have an Epoch value",
             variable=self.oc_has_epoch_var, font=self.label_font, bg=BG_PANEL, fg=FG_TEXT
         )
-        self.oc_has_epoch_check.grid(row=2, column=1, padx=(0, 10), pady=5, sticky="w")
+        self.oc_has_epoch_check.grid(row=3, column=1, padx=(0, 10), pady=5, sticky="w")
         self._tooltip(self.oc_has_epoch_check, "Leave this off to use the first time of minimum in the data "
                                                "as the epoch.")
 
         # Shared fields
         self.oc_epoch_entry = self.create_input_field(
-            self.right_frame, "Epoch (T0):", "e.g. 2457143.761819", row=3,
+            self.right_frame, "Epoch (T0):", "e.g. 2457143.761819", row=4,
             validation_func=_is_float, error_message="Please enter a valid float.",
             tooltip="Reference time of primary minimum (HJD or BJD) that eclipse numbers count from."
         )
         self.oc_epoch_err_entry = self.create_input_field(
-            self.right_frame, "Epoch Error:", "e.g. 0.0002803", row=4,
+            self.right_frame, "Epoch Error:", "e.g. 0.0002803", row=5,
             validation_func=_is_float, error_message="Please enter a valid float.",
             tooltip="Uncertainty on the epoch, in days."
         )
         self.oc_period_entry = self.create_input_field(
-            self.right_frame, "Period (days):", "e.g. 0.31297", row=5,
+            self.right_frame, "Period (days):", "e.g. 0.31297", row=6,
             validation_func=_is_float, error_message="Please enter a valid period.",
             tooltip="Orbital period in days. The linear fit reports a corrected period."
         )
         self.oc_output_entry = self.create_input_field(
-            self.right_frame, "Output Folder:", _example_path("output"), row=6,
+            self.right_frame, "Output Folder:", _example_path("output"), row=7,
             error_message="Please enter an output folder path.", browse_type="folder",
             tooltip="Where the O-C table, plot and LaTeX tables are written."
         )
 
         # BSUO fields
         self.oc_b_file_entry = self.create_input_field(
-            self.right_frame, "B Filter ToM File:", _example_path("B_min.txt"), row=7,
+            self.right_frame, "B Filter ToM File:", _example_path("B_min.txt"), row=8,
             error_message="Please enter a file path.", browse_type="file"
         )
         self.oc_v_file_entry = self.create_input_field(
-            self.right_frame, "V Filter ToM File:", _example_path("V_min.txt"), row=8,
+            self.right_frame, "V Filter ToM File:", _example_path("V_min.txt"), row=9,
             error_message="Please enter a file path.", browse_type="file"
         )
         self.oc_r_file_entry = self.create_input_field(
-            self.right_frame, "R Filter ToM File:", _example_path("R_min.txt"), row=9,
+            self.right_frame, "R Filter ToM File:", _example_path("R_min.txt"), row=10,
             error_message="Please enter a file path.", browse_type="file"
         )
 
         # TESS field
         self.oc_tess_file_entry = self.create_input_field(
-            self.right_frame, "TESS ToM File:", _example_path("tess_min.txt"), row=7,
+            self.right_frame, "TESS ToM File:", _example_path("tess_min.txt"), row=8,
             error_message="Please enter a file path.", browse_type="file"
         )
 
         # All Data fields
         self.oc_nights_entry = self.create_input_field(
-            self.right_frame, "Number of Files:", "e.g. 2", row=7,
+            self.right_frame, "Number of Files:", "e.g. 2", row=8,
             validation_func=lambda x: x.isdigit(), error_message="Please enter a whole number."
         )
         self.oc_all_files_entry = self.create_input_field(
             self.right_frame, "O-C Files (comma separated):",
-            f"{_example_path('file1.txt')}, {_example_path('file2.txt')}", row=8,
+            f"{_example_path('file1.txt')}, {_example_path('file2.txt')}", row=9,
             error_message="Please enter file paths separated by commas.", wide=True,
             tooltip="Paths to O-C files made earlier, separated by commas, in the format of "
                     "example_OC_table.txt."
         )
 
         self._update_oc_fields()
+        self._fill_star_details = self._fill_from_star_file(
+            self.oc_name_entry, {"epoch": self.oc_epoch_entry, "epoch_error": self.oc_epoch_err_entry,
+                                 "period": self.oc_period_entry})
 
-        self.create_run_button(self.right_frame, self.run_oc_plot, row=10)
+        self.create_run_button(self.right_frame, self.run_oc_plot, row=11)
 
-        self._log_section(11)
+        self._log_section(12)
 
     def _update_oc_fields(self):
         """Show only the inputs that the selected data source uses."""
@@ -2505,18 +2563,30 @@ class ProgramLauncher(tk.Tk):
                 self.write_to_log(f"Error: Expected {nights_str} files, got {len(paths)}.")
                 return
 
+        name_value = self._entry_value(self.oc_name_entry)
+
         def oc_plot():
             import pandas as pd
 
+            system = None
             try:
+                if mode in ("BSUO", "TESS"):
+                    # Files of minima say which time system they're in on their first line
+                    system = time_systems.combined([time_systems.system_in_file(p) for p in paths],
+                                                   [Path(p).name for p in paths])
+                    if system is None:
+                        self.write_to_log("The minimum files don't say which time system they're in, so "
+                                          "the O-C table won't name one.")
                 if mode == "BSUO":
-                    db, dv, dr = (pd.read_csv(p, header=None, sep=r"\s+") for p in paths)
+                    db, dv, dr = (pd.read_csv(p, header=None, sep=r"\s+", comment="#") for p in paths)
                     outfile = BSUO(T0, T0_err, period, db, dv, dr, output,
-                                   write_callback=self.write_to_log, cancel_event=self.cancel_event)
+                                   write_callback=self.write_to_log, cancel_event=self.cancel_event,
+                                   time_system=system)
                 elif mode == "TESS":
-                    df = pd.read_csv(paths[0], header=None, sep=r"\s+")
+                    df = pd.read_csv(paths[0], header=None, sep=r"\s+", comment="#")
                     outfile = TESS_OC(T0, T0_err, period, df, output,
-                                      write_callback=self.write_to_log, cancel_event=self.cancel_event)
+                                      write_callback=self.write_to_log, cancel_event=self.cancel_event,
+                                      time_system=system)
                 else:
                     outfile = all_data(paths, period, output,
                                        write_callback=self.write_to_log, cancel_event=self.cancel_event)
@@ -2526,6 +2596,11 @@ class ProgramLauncher(tk.Tk):
                              cancel_event=self.cancel_event)
                     self.write_to_log("O-C plotting completed successfully.")
                     plot = Path(outfile).with_suffix(".png")
+                    # The period and epoch entered are what the O-C values were worked out from
+                    star_file.record(name_value, "O-C", files=[outfile, plot] if plot.exists() else [outfile],
+                                     write_callback=self.write_to_log, period=period,
+                                     epoch=T0 or None, epoch_error=T0_err if T0 else None,
+                                     time_system=system)
                     extras = [("View O-C Plot", lambda: self._open_in_system(plot))] if plot.exists() else []
                     self.offer_results(output, extras)
             except Exception as e:
@@ -2564,6 +2639,7 @@ class ProgramLauncher(tk.Tk):
 
         self.create_run_button(self.right_frame, self.run_archive_data, row=6, text="Download",
                                name=name, ra=ra, dec=dec, output_folder=output_folder, choices=choices)
+        self._fill_star_details = self._fill_from_star_file(name, {"ra": ra, "dec": dec})
         self._log_section(7)
 
     def _archive_checkboxes(self, row):
@@ -2625,6 +2701,12 @@ class ProgramLauncher(tk.Tk):
                 archives.download(target, output_path, keys, write_callback=self.write_to_log,
                                   cancel_event=self.cancel_event)
                 folder = Path(output_path) / target.label
+                if name_value and not self.cancel_event.is_set():
+                    star_file.record(name_value, "archives", files=[folder], write_callback=self.write_to_log,
+                                     ra=ra_value or target.coord.ra.to_string(unit="hourangle", sep=":",
+                                                                              precision=2, pad=True),
+                                     dec=dec_value or target.coord.dec.to_string(sep=":", precision=1,
+                                                                                 alwayssign=True, pad=True))
                 summary = folder / archives.SUMMARY_FILE
                 if summary.exists():
                     self.offer_results(folder, [("Open Summary", lambda: self._open_in_system(summary))])
@@ -2701,6 +2783,7 @@ class ProgramLauncher(tk.Tk):
 
         filter_count_var = self._remember_var("filter_count", tk.IntVar(master=self, value=3))  # 3 filters unless changed
         file_path_vars = [self._remember_var(f"file_{i}", tk.StringVar(master=self)) for i in range(3)]
+        self.oconnell_filter_count, self.oconnell_file_vars = filter_count_var, file_path_vars
         file_entry_widgets = []
 
         def update_file_path_fields():
@@ -2792,12 +2875,42 @@ class ProgramLauncher(tk.Tk):
             tooltip="Where the plot and table are saved."
         )
 
-        self.create_run_button(self.right_frame, self.run_oconnell_effect, row=10,
+        settings_label = tk.Label(self.right_frame, text="Fit Settings:", font=self.label_font,
+                                  bg=BG_PANEL, fg=FG_TEXT)
+        settings_label.grid(row=10, column=0, padx=(16, 10), pady=5, sticky="e")
+        self._tooltip(settings_label,
+                      "FT Order: order of the Fourier series fitted to the phased light curve. "
+                      "Sims: Monte Carlo light curves used for the errors, about a minute per 1000. "
+                      "Sections: how many pieces the phased light curve is split into before binning. "
+                      "Section Order: order of the polynomial fitted to each piece.")
+        settings_frame = tk.Frame(self.right_frame, bg=BG_PANEL)
+        settings_frame.grid(row=10, column=1, padx=(0, 10), pady=5, sticky="w")
+        defaults = {"order": oconnell_settings.DEFAULT_ORDER, "sims": oconnell_settings.DEFAULT_SIMS,
+                    "sections": oconnell_settings.DEFAULT_SECTIONS,
+                    "section_order": oconnell_settings.DEFAULT_SECTION_ORDER}
+        labels = {"order": "FT Order", "sims": "Sims", "sections": "Sections", "section_order": "Section Order"}
+        steps = {"sims": 100}
+        self.oconnell_settings = {}
+        for key, default in defaults.items():
+            low, high = oconnell_settings.LIMITS[key]
+            var = self._remember_var(key, tk.StringVar(master=self, value=str(default)))
+            tk.Label(settings_frame, text=f"{labels[key]}:", font=self.label_font, bg=BG_PANEL,
+                     fg=FG_TEXT).pack(side="left", padx=(0, 4))
+            ttk.Spinbox(settings_frame, from_=low, to=high, increment=steps.get(key, 1), textvariable=var,
+                        width=6 if key == "sims" else 4, font=self.label_font).pack(side="left", padx=(0, 14))
+            self.oconnell_settings[key] = var
+
+        def reset_settings():
+            for key, default in defaults.items():
+                self.oconnell_settings[key].set(str(default))
+        self._button(settings_frame, "Defaults", reset_settings, style="Browse.TButton").pack(side="left")
+
+        self.create_run_button(self.right_frame, self.run_oconnell_effect, row=11,
                                text="Run O'Connell Effect",
                                filter_count_var=filter_count_var, file_path_vars=file_path_vars,
                                hjd=hjd_var, period=period_var, obj_name=obj_name_var, output_file=output_var)
 
-        self._log_section(11)
+        self._log_section(12)
 
     def run_oconnell_effect(self, filter_count_var, file_path_vars, hjd, period, obj_name, output_file):
         """Validate the O'Connell inputs, then run the calculation on a worker thread."""
@@ -2832,6 +2945,11 @@ class ProgramLauncher(tk.Tk):
         if not output_folder:
             return input_error("Error: Output folder is required.", "Input Error",
                                "Please provide an output folder.")
+        try:
+            order, sims, sections, section_order = oconnell_settings.check_settings(
+                *(self.oconnell_settings[key].get() for key in ("order", "sims", "sections", "section_order")))
+        except ValueError as e:
+            return input_error(f"Error: {e}", "Input Error", str(e))
 
         def oconnell_task():
             self.write_to_log("Starting O'Connell Effect calculation with the following inputs:")
@@ -2840,11 +2958,14 @@ class ProgramLauncher(tk.Tk):
             self.write_to_log(f"HJD: {hjd_value}")
             self.write_to_log(f"Period: {period_value}")
             self.write_to_log(f"Output Folder: {output_folder}")
+            self.write_to_log(f"FT Order: {order}, Sims: {sims}, Sections: {sections}, "
+                              f"Section Order: {section_order}")
             try:
                 oconnell(filepath=output_folder, filter_files=list(file_paths),
                          obj_name=obj_name_value, period=float(period_value),
                          hjd=float(hjd_value), write_callback=self.write_to_log,
-                         cancel_event=self.cancel_event)
+                         cancel_event=self.cancel_event, order=order, sims=sims,
+                         sections=sections, section_order=section_order)
                 if self.cancel_event.is_set():
                     self.write_to_log("O'Connell Effect calculation was canceled.")
                 else:

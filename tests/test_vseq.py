@@ -691,3 +691,47 @@ def test_multiplot_uses_a_supplied_figure():
     axs, returned = plot.multiplot(height_ratios=[8, 3, 3], fig=fig)
     assert returned is fig
     assert len(axs) == 3
+
+
+# --- Fourier coefficient errors ---------------------------------------------------------
+
+def _fourier_data(scale=1.0):
+    from EclipsingBinaries.vseq_updated import FT
+    rng = np.random.default_rng(3)
+    order = 3
+    phase = np.sort(rng.uniform(-0.5, 0.5, 300))
+    a = [0.8 * scale, -0.15 * scale, -0.05 * scale, 0.01 * scale]
+    b = [0.0, 0.004 * scale, 0.002 * scale, -0.001 * scale]
+    err = np.full(phase.size, 0.003 * scale)
+    flux = np.array(FT.synth(a, b, phase, order)) + rng.normal(0, 0.003 * scale, phase.size)
+    # The least squares coefficients, so chi squared is lowest at them
+    columns = [np.cos(2 * np.pi * n * phase) for n in range(order + 1)] + \
+              [np.sin(2 * np.pi * n * phase) for n in range(1, order + 1)]
+    design = np.column_stack(columns) / err[:, None]
+    best = np.linalg.lstsq(design, flux / err, rcond=None)[0]
+    return order, phase, flux, err, list(best[:order + 1]), [0.0] + list(best[order + 1:]), columns
+
+
+@pytest.mark.parametrize("scale", [1.0, 1e4])
+def test_fourier_coefficient_errors_match_least_squares(scale):
+    # At the best fit, chi squared rises by 1 at 1 / sqrt(sum(basis^2 / err^2)) either side,
+    # whether the flux is near 1 or in the thousands (counts)
+    from EclipsingBinaries.vseq_updated import FT
+    order, phase, flux, err, a, b, columns = _fourier_data(scale)
+    for n in range(order + 1):
+        expected = 1 / np.sqrt(np.sum(columns[n] ** 2 / err ** 2))
+        sigma, ratio = FT.a_sig_fast(a, b, n, a[n], phase, flux, err, order)
+        assert sigma == pytest.approx(expected, rel=1e-6)
+        assert ratio == pytest.approx(1.0, abs=1e-6)
+    for n in range(1, order + 1):
+        expected = 1 / np.sqrt(np.sum(columns[order + n] ** 2 / err ** 2))
+        assert FT.b_sig_fast(a, b, n, b[n], phase, flux, err, order)[0] == pytest.approx(expected, rel=1e-6)
+
+
+def test_fourier_coefficient_errors_leave_the_coefficients_alone():
+    from EclipsingBinaries.vseq_updated import FT
+    order, phase, flux, err, a, b, _columns = _fourier_data()
+    before_a, before_b = list(a), list(b)
+    FT.a_sig_fast(a, b, 2, a[2], phase, flux, err, order)
+    FT.b_sig_fast(a, b, 1, b[1], phase, flux, err, order)
+    assert a == before_a and b == before_b

@@ -3,8 +3,7 @@
 Created on Sat Feb 22 16:09:28 2020
 @author: Alec Neal
 
-Last Updated: 10/19/2026
-Last Editor: Kyle Koeller
+Editor: Kyle Koeller
 
 Collection of functions, coefficients and equations commonly used
 with short-period variable stars, but many can be used more
@@ -1203,64 +1202,78 @@ class FT:  # Fourier transform
         sinlist[0] = 0
         return Fbfli, coslist, sinlist
 
-    def a_sig_fast(a, b, term, aterm, ob_phase, ob_flux, ob_fluxerr, order, dx0=1):
+    def _chi2_range(coefficients, term, value, chi2, step):
         """
-        Estimates the significance of an 'a' coefficient in Fourier fitting.
+        How far one coefficient can move up and down from value before chi
+        squared rises by 1, its 1 sigma range, as (up, down).
+
+        The Fourier series is linear in each coefficient, so chi squared is a
+        parabola in it, and the parabola through three values is exact. This
+        used to search for the two crossings with Newton's method, starting one
+        unit either side; working them out from the parabola needs no starting
+        guess and three chi squared values instead of a few dozen.
+        """
+        try:
+            here = chi2()
+            coefficients[term] = value + step
+            above = chi2()
+            coefficients[term] = value - step
+            below = chi2()
+        finally:
+            coefficients[term] = value
+        curve = (above + below - 2 * here) / (2 * step ** 2)
+        slope = (above - below) / (2 * step)
+        if not curve > 0:
+            raise ValueError(f"Chi squared doesn't change with coefficient {term}, so it has no error.")
+        root = (slope ** 2 + 4 * curve) ** 0.5
+        return (root - slope) / (2 * curve), (root + slope) / (2 * curve)
+
+    def a_sig_fast(a, b, term, aterm, ob_phase, ob_flux, ob_fluxerr, order, dx0=0.01):
+        """
+        Estimates the 1 sigma error of an 'a' coefficient in Fourier fitting:
+        how far it can move either way before chi squared rises by 1.
 
         Parameters:
             a (list): List of 'a' coefficients.
             b (list): List of 'b' coefficients.
             term (int): Index of the 'a' coefficient being evaluated.
-            aterm (float): Initial guess for the value of the 'a' coefficient.
+            aterm (float): The value of the 'a' coefficient.
             ob_phase (array-like): Array of observed phases.
             ob_flux (array-like): Array of observed fluxes.
             ob_fluxerr (array-like): Array of observed flux errors.
             order (int): Order of the Fourier fit.
-            dx0 (float): Step size for numerical differentiation (default is 1).
+            dx0 (float): How far either side of aterm chi squared is measured to find
+                its parabola. The answer doesn't depend on it.
 
         Returns:
-            tuple: A tuple containing the estimated significance and the ratio of upper to lower bounds.
+            tuple: The mean of the two distances, and the upper distance over the lower one.
         """
-        C = calc.error.red_X2(ob_flux, FT.synth(a, b, ob_phase, order), ob_fluxerr) + 1
-
-        def spec_a(mod_a):
-            a[term] = mod_a
-            F = calc.error.red_X2(ob_flux, FT.synth(a, b, ob_phase, order), ob_fluxerr) - C
-            return F
-
-        upper = abs(calc.Newton(spec_a, aterm + dx0, 1e-5, dx=1e-10) - aterm)
-        lower = abs(calc.Newton(spec_a, aterm - dx0, 1e-5, dx=1e-10) - aterm)
-        a[term] = aterm
+        upper, lower = FT._chi2_range(
+            a, term, aterm, lambda: calc.error.red_X2(ob_flux, FT.synth(a, b, ob_phase, order), ob_fluxerr), dx0)
         return (upper + lower) / 2, upper / lower
 
-    def b_sig_fast(a, b, term, bterm, ob_phase, ob_flux, ob_fluxerr, order, dx0=1):
+    def b_sig_fast(a, b, term, bterm, ob_phase, ob_flux, ob_fluxerr, order, dx0=0.01):
         """
-        Estimates the significance of a 'b' coefficient in Fourier fitting.
+        Estimates the 1 sigma error of a 'b' coefficient in Fourier fitting:
+        how far it can move either way before chi squared rises by 1.
 
         Parameters:
             a (list): List of 'a' coefficients.
             b (list): List of 'b' coefficients.
             term (int): Index of the 'b' coefficient being evaluated.
-            bterm (float): Initial guess for the value of the 'b' coefficient.
+            bterm (float): The value of the 'b' coefficient.
             ob_phase (array-like): Array of observed phases.
             ob_flux (array-like): Array of observed fluxes.
             ob_fluxerr (array-like): Array of observed flux errors.
             order (int): Order of the Fourier fit.
-            dx0 (float): Step size for numerical differentiation (default is 1).
+            dx0 (float): How far either side of bterm chi squared is measured to find
+                its parabola. The answer doesn't depend on it.
 
         Returns:
-            tuple: A tuple containing the estimated significance and the ratio of upper to lower bounds.
+            tuple: The mean of the two distances, and the upper distance over the lower one.
         """
-        C = calc.error.red_X2(ob_flux, FT.synth(a, b, ob_phase, order), ob_fluxerr) + 1
-
-        def spec_b(mod_b):
-            b[term] = mod_b
-            F = calc.error.red_X2(ob_flux, FT.synth(a, b, ob_phase, order), ob_fluxerr) - C
-            return F
-
-        upper = abs(calc.Newton(spec_b, bterm + dx0, 1e-5, dx=1e-10) - bterm)
-        lower = abs(calc.Newton(spec_b, bterm - dx0, 1e-5, dx=1e-10, central_diff=True) - bterm)
-        b[term] = bterm
+        upper, lower = FT._chi2_range(
+            b, term, bterm, lambda: calc.error.red_X2(ob_flux, FT.synth(a, b, ob_phase, order), ob_fluxerr), dx0)
         return (upper + lower) / 2, upper / lower
 
     def sumatphase(phase, order, a, b):

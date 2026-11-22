@@ -19,6 +19,12 @@ The trial periods are spaced evenly in frequency, with the spacing set by
 how long the observations span, so narrow peaks from long baselines aren't
 stepped over. Nothing here needs a display; the window is period_window.py.
 
+The error on the period comes from a least-squares fit at the best period
+(period_error): each filter's light curve is fitted with its own Fourier
+series, all sharing one frequency, and the frequency's error comes from the
+fit's covariance, scaled by how well the model actually fits. The width of
+the periodogram peak is kept as well, as a much more cautious figure.
+
 Author: Kyle Koeller
 Created: 10/10/2026
 """
@@ -37,6 +43,7 @@ DEFAULT_BINS = 20           # phase bins for ANOVA
 DEFAULT_MIN_BIN = 3         # bins with fewer points are left out
 DEFAULT_HARMONICS = 4       # sharp eclipses need more than one or two
 DEFAULT_OVERSAMPLE = 10     # trial frequencies per peak width
+MAX_ERROR_HARMONICS = 40    # most Fourier terms per filter in the fit for the period's error
 MAX_TRIALS = 300_000        # most trial periods in one search
 MAX_WORK = 150_000_000      # trial periods times points, to keep a search to seconds
 
@@ -345,6 +352,7 @@ class SearchResult:
     max_period: float
     settings: dict = field(default_factory=dict)
     doubled_from: float | None = None   # the periodogram's peak, when the orbital period is twice it
+    error: float | None = None          # 1 sigma error on best_period from period_error, in days
 
 
 def peak_sharpness(method, bins=DEFAULT_BINS, harmonics=DEFAULT_HARMONICS):
@@ -389,8 +397,10 @@ def search(curve, min_period, max_period, method=DEFAULT_METHOD, oversample=DEFA
         doubled_from = best
         best, half_width = 2 * best, 2 * half_width
         best_power = float(score(curve, [best], method, bins=bins, harmonics=harmonics)[0])
+    fit = period_error(curve, best)
     return SearchResult(method, grid.periods, power, best, best_power, half_width, grid,
-                        min_period, max_period, settings, doubled_from)
+                        min_period, max_period, settings, doubled_from,
+                        error=fit.error if fit is not None else None)
 
 
 def _refine_args(settings):
@@ -425,6 +435,134 @@ def refine(curve, period, method=DEFAULT_METHOD, bins=DEFAULT_BINS, harmonics=DE
     return best, best_power, float((periods[hi] - periods[lo]) / 2)
 
 
+@dataclass
+class PeriodFit:
+    """
+    The least-squares fit period_error makes: the period it settles on, the
+    1 sigma error on it in days, how many Fourier terms each filter got, and
+    the scatter left about the fit in magnitudes.
+    """
+    period: float
+    error: float
+    harmonics: int
+    rms: float
+
+
+def _fourier_columns(t, frequency, groups, n_groups, harmonics):
+    """
+    Columns of the fit and their derivatives with respect to the frequency.
+    Each filter (group) gets a constant and its own cosine and sine terms, so
+    the filters' different depths and offsets don't upset the shared period.
+    """
+    phase = 2 * np.pi * frequency * t
+    columns, derivatives = [], []
+    for g in range(n_groups):
+        inside = (groups == g).astype(float)
+        columns.append(inside)
+        derivatives.append(np.zeros_like(t))
+        for k in range(1, harmonics + 1):
+            cos, sin = np.cos(k * phase), np.sin(k * phase)
+            columns += [inside * cos, inside * sin]
+            derivatives += [-inside * sin * 2 * np.pi * k * t, inside * cos * 2 * np.pi * k * t]
+    return np.column_stack(columns), np.column_stack(derivatives)
+
+
+def _choose_harmonics(t, y, weights, frequency, groups, n_groups, most):
+    """
+    How many Fourier terms the fit needs, by the Bayesian information
+    criterion: more terms are only taken while they improve the fit by more
+    than they cost. Too few leave the eclipses' shape in the residuals, which
+    makes the period's error too small (and the period slightly off).
+    """
+    best, best_bic = 1, np.inf
+    n = len(y)
+    for harmonics in range(1, most + 1):
+        X, _dX = _fourier_columns(t, frequency, groups, n_groups, harmonics)
+        if X.shape[1] + 2 >= n:
+            break
+        beta = np.linalg.lstsq(X * weights[:, None], y * weights, rcond=None)[0]
+        chi2 = float(np.sum(((y - X @ beta) * weights) ** 2))
+        bic = n * np.log(chi2 / n) + X.shape[1] * np.log(n)
+        if bic < best_bic:
+            best, best_bic = harmonics, bic
+    return best
+
+
+def period_error(curve, period, harmonics=None, iterations=20):
+    """
+    The 1 sigma error on a period, from a least-squares fit at it. Returns a
+    PeriodFit, or None if the fit can't be made (too few points, or it wanders
+    off to another peak).
+
+    Each filter gets a constant and its own Fourier series, and all of them
+    share one frequency, which is fitted too, starting from 1 / period. The
+    number of terms is chosen by the Bayesian information criterion (up to
+    MAX_ERROR_HARMONICS) unless `harmonics` is given. The frequency's
+    error comes from the covariance of the fit, scaled by the reduced chi
+    squared so that errors on the magnitudes that are too small or too big,
+    and anything the model misses, show up in it. The period's error is the
+    frequency's error over the frequency squared.
+
+    This is the formal error, and treats every point as independent. Night to
+    night drifts and other correlated noise make the true error larger, and
+    the half width of the periodogram peak is a more cautious figure.
+    """
+    t = np.asarray(curve.time, float)
+    y = np.asarray(curve.mag, float)
+    if len(t) < 10 or not np.isfinite(period) or period <= 0:
+        return None
+    t = t - t.mean()   # keeps the phase and frequency from depending on each other
+    err = np.asarray(curve.err, float)
+    weights = 1 / err if np.all(np.isfinite(err)) and np.all(err > 0) else np.ones_like(y)
+    labels = np.asarray(curve.label)
+    names, groups = np.unique(labels, return_inverse=True)
+    smallest = min(int(np.sum(groups == g)) for g in range(len(names)))
+    most = min(MAX_ERROR_HARMONICS if harmonics is None else int(harmonics), (smallest - 2) // 2)
+    if most < 1:
+        return None
+    start = frequency = 1.0 / period
+    harmonics = most if harmonics is not None else _choose_harmonics(
+        t, y, weights, frequency, groups, len(names), most)
+    for _ in range(iterations):
+        X, dX = _fourier_columns(t, frequency, groups, len(names), harmonics)
+        beta = np.linalg.lstsq(X * weights[:, None], y * weights, rcond=None)[0]
+        J = np.column_stack([X, dX @ beta]) * weights[:, None]
+        residual = (y - X @ beta) * weights
+        step = np.linalg.lstsq(J, residual, rcond=None)[0][-1]
+        frequency += step
+        if abs(step) < 1e-12 * frequency:
+            break
+    # A good fit stays on the peak it started on, well within a peak width
+    baseline = float(np.ptp(t))
+    if baseline <= 0 or abs(frequency - start) > 0.5 / baseline:
+        return None
+    X, dX = _fourier_columns(t, frequency, groups, len(names), harmonics)
+    beta = np.linalg.lstsq(X * weights[:, None], y * weights, rcond=None)[0]
+    J = np.column_stack([X, dX @ beta]) * weights[:, None]
+    residual = (y - X @ beta) * weights
+    dof = len(y) - J.shape[1]
+    if dof <= 0:
+        return None
+    reduced_chi2 = float(residual @ residual) / dof
+    try:
+        covariance = np.linalg.inv(J.T @ J) * reduced_chi2
+    except np.linalg.LinAlgError:
+        return None
+    sigma_f = float(np.sqrt(covariance[-1, -1]))
+    if not np.isfinite(sigma_f):
+        return None
+    rms = float(np.sqrt(np.mean((y - X @ beta) ** 2)))
+    return PeriodFit(1.0 / frequency, sigma_f / frequency ** 2, harmonics, rms)
+
+
+def format_error(error):
+    """An error in days to two significant figures, written out in full (0.00000078, not 7.8e-07)."""
+    if error is None or not np.isfinite(error) or error <= 0:
+        return ""
+    decimals = max(0, 1 - int(np.floor(np.log10(error))))
+    return f"{error:.{decimals}f}"
+
+
 def nearest_peak(result, period, window=0.01):
     """
     The highest point of the periodogram within a fraction `window` of the
@@ -452,14 +590,17 @@ def period_file_name(obj_name):
     return f"{stem}_period.txt"
 
 
-def save_period(path, obj_name, period, result=None, files=()):
+def save_period(path, obj_name, period, result=None, files=(), error=None):
     """
     Write the period to a small text file: one "name<TAB>value" line, with
-    the search settings underneath for the record.
+    its 1 sigma error (when known) and the search settings underneath for the
+    record.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [f"# Period search for {obj_name}", f"period_days\t{period:.9f}"]
+    if error is not None and np.isfinite(error):
+        lines.append(f"period_error_days\t{error:.9f}")
     if result is not None:
         lines += [f"period_half_width_days\t{result.half_width:.9f}",
                   f"method\t{result.method}",

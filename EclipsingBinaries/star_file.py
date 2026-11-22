@@ -35,6 +35,7 @@ FIELDS = {
     "ra": "right ascension, J2000, as entered (hours)",
     "dec": "declination, J2000, as entered (degrees)",
     "period": "orbital period in days",
+    "period_error": "1 sigma error on the period, in days",
     "epoch": "a time of primary minimum (T0)",
     "epoch_error": "error on the epoch, in days",
     "time_system": "time system of the epoch and the minima",

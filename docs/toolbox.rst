@@ -62,7 +62,7 @@ Program                            What it adds
 AIJ Comparison Star Selector       RA and Dec, and the folder the RADEC files went in
 Archive Data                       RA and Dec (looked up from the name if not entered), the folder
 Multi-Aperture Photometry          The folder of reduced images and light curves
-Period Search                      The period, when **Save Period** is pressed, and its file
+Period Search                      The period and its error, when **Save Period** is pressed, and its file
 Find Minimum                       Each minimum file, and the time system of the minima
 O-C Plotting                       The period and epoch used, the time system, the O-C files
 ``EB_pipeline``                    RA and Dec, and the output folder
@@ -932,15 +932,31 @@ In the window:
   them up. The slider spans whatever the periodogram shows, so zoom in with the toolbar
   for finer control.
 + **Click** a peak without dragging to jump to its top, found automatically.
-+ **×2** and **÷2** double or halve the period; the left and right arrow keys nudge it.
-  **Refine Here** finds the top of the nearest peak again. The peak's half width at half
-  height is shown as a rough guide to how well these observations alone pin the period
-  down; times of minimum over a longer baseline (Find Minimum, then O-C Plotting) do much
-  better.
++ **×2** and **÷2** double or halve the period (and its error); the left and right arrow
+  keys nudge it. **Refine Here** finds the top of the nearest peak again.
++ **Error** is the period's 1 sigma error at the top of a peak (see below). It's shown
+  after a search, a click on a peak or **Refine Here**, and cleared when the period is
+  dragged, typed or nudged away from the top. The peak's half width at half height is
+  shown under it as a much more cautious figure.
 + The method, the period range and the filters used can be changed and searched again.
 + **Save Period** writes the period and search settings to ``<object>_period.txt``.
   **Send to O-C Plotting**, **Send to O'Connell Effect** and **Send to Color Light Curve**
   open that panel with the period filled in.
+
+The error comes from a least-squares fit at the best period. Each filter's light curve is
+fitted with its own Fourier series (so their different depths don't matter), all sharing
+one frequency, which is fitted as well. The number of terms is chosen by the Bayesian
+information criterion, up to 40, since sharp eclipses need many and too few makes the
+error too small. The frequency's error comes from the fit's covariance, scaled by the
+reduced chi squared so that magnitude errors that are too small or too large, and anything
+the model misses, are taken into account; the period's error is that over the frequency
+squared. In tests on simulated light curves it matched the scatter of the periods found
+from repeated noise. It treats every point as independent, though, so drifts from night to
+night make the true error larger. Times of minimum over a longer baseline (Find Minimum,
+then O-C Plotting) pin the period down far better.
+
+The search, the log, the saved ``<object>_period.txt`` (as ``period_error_days``) and the
+star's file all give the error with the period.
 
 The fold counts phase from the first observation, so only the period moves it. Where the
 eclipses fall in phase doesn't matter for finding the period; the epoch for O-C comes
@@ -954,7 +970,7 @@ From a script:
 
     curve = load_light_curves(["NSVS_B_magnitudes.txt"], ["B"])
     result = search(curve, 0.1, 1.0, "ANOVA")
-    print(result.best_period, result.half_width)
+    print(result.best_period, result.error, result.half_width)
 
 ``python -m EclipsingBinaries.period`` asks for the files in a terminal and opens the same
 window.

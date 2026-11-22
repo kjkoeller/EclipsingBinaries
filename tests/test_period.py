@@ -192,3 +192,58 @@ def test_trial_periods_catch_the_top_of_the_peak(example_bvr, method):
     result = pr.search(example_bvr, 0.1, 1.0, method)
     near = np.abs(result.periods - result.best_period) < 5 * result.half_width
     assert np.nanmax(result.power[near]) >= 0.98 * result.best_power
+
+
+# --- the period's error -------------------------------------------------------------------
+
+def test_period_error_matches_the_scatter_between_light_curves():
+    # Light curves that differ only in their noise: the fitted periods should scatter
+    # by about the error each fit reports
+    true = 0.4567891
+    found, errors = [], []
+    for seed in range(30):
+        fit = pr.period_error(_synthetic(period=true, n=800, noise=0.02, seed=seed), true * (1 + 2e-7))
+        found.append(fit.period)
+        errors.append(fit.error)
+    ratio = np.std(found) / np.mean(errors)
+    assert 0.7 < ratio < 1.4
+    assert abs(np.mean(found) - true) < 2 * np.mean(errors)
+
+
+def test_period_error_uses_enough_terms_for_sharp_eclipses():
+    fit = pr.period_error(_synthetic(), 0.4567891)
+    assert fit.harmonics >= 10       # narrow eclipses need many
+    assert fit.rms == pytest.approx(0.01, rel=0.15)
+    assert pr.period_error(_synthetic(), 0.4567891, harmonics=3).harmonics == 3
+
+
+def test_period_error_shrinks_with_more_data():
+    short = pr.period_error(_synthetic(span=50, seed=1), 0.4567891).error
+    long = pr.period_error(_synthetic(span=400, seed=1), 0.4567891).error
+    assert long < short / 4      # about baseline to the power -3/2
+
+
+def test_period_error_gives_each_filter_its_own_shape(example_bvr):
+    result = pr.search(example_bvr, 0.1, 1.0)
+    together = pr.period_error(example_bvr, result.best_period)
+    assert together is not None and together.error > 0
+    assert result.error == pytest.approx(together.error)
+    # A period that isn't the light curve's doesn't give an error
+    assert pr.period_error(example_bvr, 0.2) is None
+    assert pr.period_error(example_bvr.select(["B"]).__class__(
+        example_bvr.time[:5], example_bvr.mag[:5], example_bvr.err[:5], example_bvr.label[:5]), 0.3174) is None
+
+
+def test_saved_period_has_its_error(tmp_path, example_bvr):
+    result = pr.search(example_bvr.select(["B"]), 0.1, 1.0)
+    path = tmp_path / "p.txt"
+    pr.save_period(path, "NSVS 896797", result.best_period, result, error=result.error)
+    assert f"period_error_days\t{result.error:.9f}" in path.read_text()
+    pr.save_period(path, "NSVS 896797", result.best_period)
+    assert "period_error_days" not in path.read_text()
+
+
+@pytest.mark.parametrize("error, text", [(7.8412e-07, "0.00000078"), (0.0001004, "0.00010"),
+                                         (0.023, "0.023"), (1.5, "1.5"), (None, ""), (0.0, "")])
+def test_format_error(error, text):
+    assert pr.format_error(error) == text

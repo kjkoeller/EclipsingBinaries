@@ -83,6 +83,7 @@ class PeriodWindow(tk.Toplevel):
         self.result = None
         self.period = None
         self.half_width = None
+        self.period_error = None    # 1 sigma, from period.period_error; None away from a peak's top
         self._job = None
         self._drag = None           # set while the mouse is pressed on the periodogram
         self._syncing = False       # True while the program, not the user, moves the slider
@@ -180,13 +181,15 @@ class PeriodWindow(tk.Toplevel):
         period_entry.bind("<FocusOut>", lambda _e: self._typed_period())
         row = ttk.Frame(side)
         row.pack(anchor="w")
-        ttk.Button(row, text="\u00d72", width=4, command=lambda: self.set_period(self.period * 2),
+        ttk.Button(row, text="\u00d72", width=4, command=lambda: self.scale_period(2),
                    style=secondary).pack(side="left")
-        ttk.Button(row, text="÷2", width=4, command=lambda: self.set_period(self.period / 2),
+        ttk.Button(row, text="÷2", width=4, command=lambda: self.scale_period(0.5),
                    style=secondary).pack(side="left", padx=4)
         ttk.Button(row, text="Refine Here", command=self.refine_here, style=secondary).pack(side="left")
         self.value_var = tk.StringVar(master=self)
         ttk.Label(side, textvariable=self.value_var).pack(anchor="w", pady=(6, 0))
+        self.error_var = tk.StringVar(master=self)
+        ttk.Label(side, textvariable=self.error_var).pack(anchor="w", pady=(2, 0))
         self.width_var = tk.StringVar(master=self)
         ttk.Label(side, textvariable=self.width_var, foreground=MUTED_FG).pack(anchor="w", pady=(2, 12))
 
@@ -256,15 +259,17 @@ class PeriodWindow(tk.Toplevel):
             self._status(outcome["error"], error=True)
             return
         self.result = outcome["result"]
-        self._report_search()
         self.half_width = self.result.half_width
+        self.period_error = self.result.error
+        self._report_search()
         self._draw_periodogram()
         self.set_period(self.result.best_period)
         self._set_actions_enabled(True)
 
     def _report_search(self):
         r = self.result
-        text = (f"Best period {r.best_period:.6f} d from {r.method} "
+        error = f" \u00b1 {pr.format_error(r.error)}" if r.error is not None else ""
+        text = (f"Best period {r.best_period:.7f}{error} d from {r.method} "
                 f"({len(r.periods):,} trial periods).")
         if r.doubled_from is not None:
             text += (f" The highest peak was {r.doubled_from:.6f} d, but folded on twice that the two "
@@ -273,7 +278,12 @@ class PeriodWindow(tk.Toplevel):
             text += (" The trial periods had to be spaced more widely than usual to keep the search quick; "
                      "narrow the period range for a finer search.")
         self._status(text)
-        self.log(f"Period search ({r.method}): best period {r.best_period:.6f} d")
+        if r.error is not None:
+            self.log(f"Period search ({r.method}): best period {r.best_period:.7f} \u00b1 {pr.format_error(r.error)} d "
+                     f"(1 sigma, least-squares fit); periodogram peak half width \u00b1{r.half_width:.7f} d")
+        else:
+            self.log(f"Period search ({r.method}): best period {r.best_period:.7f} d; its error couldn't be "
+                     "worked out")
 
     def _status(self, text, error=False):
         self.status_var.set(text)
@@ -309,10 +319,29 @@ class PeriodWindow(tk.Toplevel):
         self._update_period_artists()
 
     def _show_width(self):
+        if self.period_error is not None and np.isfinite(self.period_error):
+            self.error_var.set(f"Error: \u00b1{pr.format_error(self.period_error)} d (1 sigma)")
+        else:
+            self.error_var.set("")
         if self.half_width and np.isfinite(self.half_width):
             self.width_var.set(f"Peak half width: \u00b1{self.half_width:.6f} d")
         else:
             self.width_var.set("")
+
+    def _fit_error(self, curve, period):
+        """The least-squares error at a peak's top, or None if it can't be worked out."""
+        fit = pr.period_error(curve, period)
+        return fit.error if fit is not None else None
+
+    def scale_period(self, factor):
+        """Double or halve the period; its error and the peak's width scale with it."""
+        if self.period is None:
+            return
+        if self.period_error is not None:
+            self.period_error *= factor
+        if self.half_width:
+            self.half_width *= factor
+        self.set_period(self.period * factor)
 
     def _typed_period(self):
         try:
@@ -322,6 +351,8 @@ class PeriodWindow(tk.Toplevel):
                 self.period_var.set(f"{self.period:.7f}")
             return
         if self.period is None or abs(value - self.period) > 1e-12:
+            # A typed period isn't a peak's top, so the error and width don't apply to it
+            self.period_error = self.half_width = None
             self.set_period(value)
 
     def refine_here(self):
@@ -331,6 +362,7 @@ class PeriodWindow(tk.Toplevel):
         curve = self.selected_curve() or self.curve
         best, _power, width = pr.refine(curve, self.period, self.method_var.get())
         self.half_width = width
+        self.period_error = self._fit_error(curve, best)
         self.set_period(best)
 
     def save(self):
@@ -338,12 +370,14 @@ class PeriodWindow(tk.Toplevel):
             return
         path = self.output_folder / pr.period_file_name(self.obj_name)
         try:
-            pr.save_period(path, self.obj_name, self.period, self.result, self.files)
+            pr.save_period(path, self.obj_name, self.period, self.result, self.files, error=self.period_error)
         except OSError as e:
             self._status(f"Couldn't save {path}: {e}", error=True)
             return
-        self.log(f"Saved period {self.period:.7f} d to {path}")
-        star_file.record(self.obj_name, "period", files=[path], write_callback=self.log, period=self.period)
+        error = f" \u00b1 {pr.format_error(self.period_error)}" if self.period_error is not None else ""
+        self.log(f"Saved period {self.period:.7f}{error} d to {path}")
+        star_file.record(self.obj_name, "period", files=[path], write_callback=self.log, period=self.period,
+                         period_error=self.period_error)
         self._status(f"Saved to {path}")
 
     def send_to(self, target):
@@ -490,7 +524,8 @@ class PeriodWindow(tk.Toplevel):
         lo, hi = self.ax_power.get_xlim()
         self.period = float(min(max(value, lo, 1e-6), hi))
         self.period_var.set(f"{self.period:.7f}")
-        self.half_width = None   # away from a peak's top the half width doesn't apply
+        self.half_width = None   # away from a peak's top the half width and error don't apply
+        self.period_error = None
         self._show_width()
         self._update_period_artists()
 
@@ -524,12 +559,14 @@ class PeriodWindow(tk.Toplevel):
         curve = self.selected_curve() or self.curve
         best, _power, width = pr.refine(curve, picked, self.result.method)
         self.half_width = width
+        self.period_error = self._fit_error(curve, best)
         self.set_period(best)
 
     def _on_key(self, event):
         if self.period is None or event.key not in ("left", "right"):
             return
         step = (self.half_width or self.period * 1e-4) / 5
+        self.period_error = None   # stepped off the peak's top, where the error was worked out
         self.set_period(self.period + (step if event.key == "right" else -step))
 
 

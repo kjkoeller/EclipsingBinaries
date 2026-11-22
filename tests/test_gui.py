@@ -934,9 +934,18 @@ def test_period_search_finds_the_period_and_sends_it(app, tmp_path):
     assert "double the peak" in window.status_var.get()
     assert window.save_button.instate(["!disabled"])
 
+    # The error is shown with the period, logged, saved and kept with the star
+    assert window.period_error is not None and 0 < window.period_error < 1e-4
+    assert window.error_var.get().startswith("Error: \u00b1")
+    assert "\u00b1" in window.status_var.get()
+    assert "(1 sigma, least-squares fit)" in app.log_area.get("1.0", "end")
+
     window.save()
     saved = tmp_path / "NSVS_896797_period.txt"
     assert saved.exists()
+    assert "period_error_days" in saved.read_text()
+    from EclipsingBinaries import star_file
+    assert star_file.known("NSVS 896797")["period_error"] == pytest.approx(window.period_error)
     from EclipsingBinaries.period import read_period
 
     assert read_period(saved) == pytest.approx(window.period, abs=1e-7)
@@ -956,17 +965,22 @@ def test_period_search_finds_the_period_and_sends_it(app, tmp_path):
 
 def test_period_window_controls(app, tmp_path):
     window = _open_period(app, tmp_path, count=1)
-    period = window.period
-    window.set_period(period * 2)
+    period, error = window.period, window.period_error
+    window.scale_period(2)
     assert window.period == pytest.approx(2 * period)
-    window.set_period(period)
+    assert window.period_error == pytest.approx(2 * error)
+    window.scale_period(0.5)
+    assert window.period_error == pytest.approx(error)
     assert not hasattr(window, "epoch")
 
+    # A typed period isn't a peak's top, so no error is shown until it's refined
     window.period_var.set("0.3175")
     window._typed_period()
     assert window.period == pytest.approx(0.3175)
+    assert window.period_error is None and window.error_var.get() == ""
     window.refine_here()
     assert window.period == pytest.approx(0.31741, abs=3e-4)
+    assert window.period_error is not None and window.error_var.get()
 
     before = window.period
     window._on_key(_PlotEvent(window, key="right"))

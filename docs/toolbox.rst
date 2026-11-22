@@ -1368,22 +1368,29 @@ and 0.58 / 3.1 = 0.187 off V-R whatever the star, so enter 0.207 to get the old 
 temperatures back.
 
 **Look Up** finds E(B-V) for the **Object Name**, using the RA and Dec in the star's file if
-there are any, or else the name resolver. It needs the internet:
+there are any, or else the name resolver. It needs the internet. The star's distance comes
+from its Gaia DR3 parallax, when that's at least 5 times its error, and then:
 
-1. The reddening along the whole line of sight comes from IRSA's dust service, using the
-   Schlafly & Finkbeiner (2011) recalibration of the Schlegel, Finkbeiner & Davis (1998)
-   map. That's the same value NED's extinction calculator gives.
-2. Those maps count all the dust in that direction, but most eclipsing binaries are only a
-   few hundred parsecs away, in front of much of it. When Gaia DR3 has a parallax at least
-   5 times its error, the total is scaled for the star's distance with a dust layer 125 pc
-   thick (Bonifacio, Caffau & Molaro 2000):
+1. **Bayestar19**, a 3D dust map (Green, Schlafly, Finkbeiner et al. 2019), gives the
+   reddening in front of the star at that distance. It's built from Pan-STARRS, 2MASS and
+   Gaia photometry, and covers the sky north of declination −30°. Its values are turned
+   into E(B-V) with the factor of 0.884 its authors give, which puts them on the same scale
+   as the 2D map below. The log gives the 16th to 84th percentile range as well, and warns
+   when the star is outside the distances the map is reliable for along that sightline,
+   which usually means it's very near.
+2. If Bayestar19 can't be used (a star south of −30°, no good parallax, or the service
+   being down), the 2D map is: the reddening along the whole line of sight from IRSA's dust
+   service, using the Schlafly & Finkbeiner (2011) recalibration of the Schlegel,
+   Finkbeiner & Davis (1998) map, the same value NED's extinction calculator gives. That
+   counts all the dust in that direction, so with a distance it's scaled down with a dust
+   layer 125 pc thick (Bonifacio, Caffau & Molaro 2000):
    :math:`E(B-V)_d = E(B-V)_{\rm total}\,(1 - e^{-d\,|\sin b|/125\,{\rm pc}})`, where
-   :math:`b` is the Galactic latitude.
+   :math:`b` is the Galactic latitude. Without a distance the whole line of sight is used,
+   which is too much for a nearby star.
 
-The scaled value goes in the field when there is one, otherwise the total, and the log gives
-both. The scaling is an approximation, since dust is clumpy; for stars near the Galactic
-plane a 3D dust map is better, and you can always type in a value of your own. The value
-looked up is saved in the star's file.
+The log says which was used, and gives the 2D total alongside a Bayestar19 value to compare
+with. You can always type in a value of your own. The value looked up is saved in the
+star's file.
 
 Subtract Light Curve
 ^^^^^^^^^^^^^^^^^^^^

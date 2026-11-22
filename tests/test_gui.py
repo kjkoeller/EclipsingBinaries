@@ -1371,7 +1371,7 @@ def test_colour_panel_looks_up_reddening(app):
     star_file.record("NSVS 896797", "archives", ra="00:28:27.96", dec="+78:57:42.65")
     app.open_panel("color")
     app._set_entry_text(app.color_name_entry, "nsvs 896797")
-    result = extinction.Reddening(total=0.2, total_error=0.01, latitude=16.0, distance_pc=250, scaled=0.1234)
+    result = extinction.Reddening(0.1234, extinction.SCALED_2D, 16.0, total=0.2, total_error=0.01, distance_pc=250)
     with patch("EclipsingBinaries.menu.extinction.look_up", return_value=result) as look_up:
         app.look_up_reddening(app.color_name_entry, app.color_ebv_entry)
         _wait_for_task(app)

@@ -35,35 +35,120 @@ def test_scaling_for_distance():
     assert ex.scale_for_distance(0.2, 250, 0) == 0.2
 
 
-def test_look_up_scales_by_the_gaia_distance():
+def _b64(array):
+    """An array as the Bayestar19 service encodes it."""
+    import base64
+    return {"_type": "np.ndarray", "data": base64.b64encode(np.ascontiguousarray(array).data).decode(),
+            "dtype": {"_type": "np.dtype", "descr": array.dtype.descr if array.dtype.names else array.dtype.str},
+            "shape": list(array.shape)}
+
+
+def _bayestar_reply(values, reliable=True):
+    import json
+    flags = np.zeros(1, dtype=[("converged", "?"), ("reliable_dist", "?")])
+    flags["converged"], flags["reliable_dist"] = True, reliable
+    return json.dumps([_b64(np.asarray(values, dtype="<f4")), _b64(flags)])
+
+
+class _Reply:
+    def __init__(self, text):
+        self.text = text
+
+    def raise_for_status(self):
+        pass
+
+
+def test_bayestar_request_and_reply():
+    import json
+    coord = SkyCoord(RA, DEC, unit=("hourangle", "deg"))
+    with patch("requests.post", return_value=_Reply(_bayestar_reply([0.05, 0.06, 0.08], reliable=False))) as post:
+        median, (low, high), reliable = ex.bayestar_reddening(coord, 250)
+    assert median == pytest.approx(0.884 * 0.06, rel=1e-5)
+    assert (low, high) == pytest.approx((0.884 * 0.05, 0.884 * 0.08), rel=1e-5)
+    assert reliable is False
+    sent = json.loads(post.call_args.kwargs["data"])
+    assert post.call_args.args[0] == ex.BAYESTAR_URL
+    assert sent["mode"] == "percentile" and sent["pct"] == [16, 50, 84] and sent["return_flags"] is True
+    assert sent["coords"]["frame"] == "galactic"
+    assert sent["coords"]["distance"] == {"_type": "astropy.units.Quantity", "value": 0.25, "unit": "kpc"}
+    assert sent["coords"]["lat"]["value"] == pytest.approx(coord.galactic.b.deg)
+
+
+def test_bayestar_reply_in_readable_form_and_outside_the_map():
+    readable = '[{"_type": "np.ndarray", "dtype": {"_type": "np.dtype", "descr": "<f4"}, "value": [0.1, 0.2, 0.3]}]'
+    with patch("requests.post", return_value=_Reply(readable)):
+        median, _range, reliable = ex.bayestar_reddening(SkyCoord(1, 2, unit="deg"), 300)
+    assert median == pytest.approx(0.884 * 0.2) and reliable is None
+    with patch("requests.post", return_value=_Reply(_bayestar_reply([np.nan] * 3))):
+        assert ex.bayestar_reddening(SkyCoord(1, 2, unit="deg"), 300) is None
+
+
+def test_bayestar_being_down_is_an_os_error():
+    import requests
+    with patch("requests.post", side_effect=requests.ConnectionError("down")):
+        with pytest.raises(OSError, match="Bayestar19"):
+            ex.bayestar_reddening(SkyCoord(1, 2, unit="deg"), 300)
+
+
+def test_look_up_uses_bayestar_with_the_gaia_distance():
     with patch.object(ex, "total_reddening", return_value=(0.2, 0.01)), \
-            patch("EclipsingBinaries.gaia.GaiaRows.from_query", return_value=_gaia(4.0, 0.05)):
+            patch("EclipsingBinaries.gaia.GaiaRows.from_query", return_value=_gaia(4.0, 0.05)), \
+            patch.object(ex, "bayestar_reddening", return_value=(0.06, (0.05, 0.08), True)) as bayestar:
         result = ex.look_up(ra=RA, dec=DEC)
-    assert result.distance_pc == pytest.approx(250)
-    assert 0 < result.scaled < result.total == 0.2
-    assert result.best == result.scaled
-    assert "250 pc" in result.message() and "which is used" in result.message()
+    assert bayestar.call_args.args[1] == pytest.approx(250)
+    assert result.method == ex.BAYESTAR19 and result.best == 0.06
+    assert result.total == 0.2      # kept to compare with
+    text = result.message()
+    assert "Bayestar19" in text and "This is used" in text and "Warning" not in text
+
+
+def test_look_up_falls_back_to_the_scaled_2d_map_when_bayestar_fails():
+    messages = []
+    with patch.object(ex, "total_reddening", return_value=(0.2, 0.01)), \
+            patch("EclipsingBinaries.gaia.GaiaRows.from_query", return_value=_gaia(4.0, 0.05)), \
+            patch.object(ex, "bayestar_reddening", side_effect=OSError("Bayestar19 couldn't be reached.")):
+        result = ex.look_up(ra=RA, dec=DEC, write_callback=messages.append)
+    assert result.method == ex.SCALED_2D and result.distance_pc == pytest.approx(250)
+    assert 0 < result.best < 0.2
+    assert any("2D map is used instead" in m for m in messages)
+    assert "which is used" in result.message()
+
+
+def test_southern_stars_skip_bayestar():
+    messages = []
+    south = SkyCoord(10, -45, unit="deg")
+    with patch.object(ex, "resolve", return_value=south), \
+            patch.object(ex, "total_reddening", return_value=(0.1, 0.01)), \
+            patch.object(ex, "gaia_distance", return_value=300.0), \
+            patch.object(ex, "bayestar_reddening") as bayestar:
+        result = ex.look_up(name="somewhere south", write_callback=messages.append)
+    bayestar.assert_not_called()
+    assert result.method == ex.SCALED_2D
+    assert any("south of declination -30" in m for m in messages)
 
 
 def test_a_poor_parallax_leaves_the_total():
     with patch.object(ex, "total_reddening", return_value=(0.2, 0.01)), \
-            patch("EclipsingBinaries.gaia.GaiaRows.from_query", return_value=_gaia(1.0, 0.5)):
+            patch("EclipsingBinaries.gaia.GaiaRows.from_query", return_value=_gaia(1.0, 0.5)), \
+            patch.object(ex, "bayestar_reddening") as bayestar:
         result = ex.look_up(ra=RA, dec=DEC)
-    assert result.scaled is None and result.best == 0.2
+    bayestar.assert_not_called()
+    assert result.method == ex.TOTAL_2D and result.best == 0.2
     assert "more reddening than it really has" in result.message()
 
 
-def test_gaia_being_down_leaves_the_total():
-    messages = []
-    with patch.object(ex, "total_reddening", return_value=(0.2, 0.01)), \
-            patch.object(ex, "gaia_distance", side_effect=OSError("down")):
-        result = ex.look_up(ra=RA, dec=DEC, write_callback=messages.append)
-    assert result.best == 0.2
-    assert "distance" in messages[0]
+def test_bayestar_still_answers_when_irsa_is_down():
+    with patch.object(ex, "total_reddening", side_effect=ConnectionError("down")), \
+            patch.object(ex, "gaia_distance", return_value=250.0), \
+            patch.object(ex, "bayestar_reddening", return_value=(0.06, (0.05, 0.08), False)):
+        result = ex.look_up(ra=RA, dec=DEC)
+    assert result.method == ex.BAYESTAR19 and result.total is None
+    assert "Warning" in result.message()
 
 
-def test_irsa_being_down_is_an_os_error():
-    with patch.object(ex, "total_reddening", side_effect=ConnectionError("down")):
+def test_nothing_answering_is_an_os_error():
+    with patch.object(ex, "total_reddening", side_effect=ConnectionError("down")), \
+            patch.object(ex, "gaia_distance", return_value=None):
         with pytest.raises(OSError, match="NED's extinction calculator"):
             ex.look_up(ra=RA, dec=DEC)
 

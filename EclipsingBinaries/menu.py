@@ -3039,9 +3039,10 @@ class ProgramLauncher(tk.Tk):
         look_up = self._button(ebv.master, "Look Up", lambda: self.look_up_reddening(name, ebv),
                                style="Browse.TButton", action=True)
         look_up.grid(row=0, column=1, padx=(5, 5), pady=2, sticky="w")
-        self._tooltip(look_up, "Get E(B-V) for the Object Name (or the RA and Dec in its star file) from "
-                               "the Schlafly & Finkbeiner (2011) dust map at IRSA, scaled down for the "
-                               "star's Gaia distance when it has a good parallax. Needs the internet.")
+        self._tooltip(look_up, "Get E(B-V) for the Object Name (or the RA and Dec in its star file) from the "
+                               "Bayestar19 3D dust map at the star's Gaia distance. South of declination -30, "
+                               "or without a good parallax, the Schlafly & Finkbeiner (2011) 2D map is used "
+                               "instead. Needs the internet.")
         self._fill_star_details = self._fill_from_star_file(name, {"ebv": ebv})
         self.color_name_entry, self.color_ebv_entry = name, ebv
 

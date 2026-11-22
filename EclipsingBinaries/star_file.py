@@ -38,6 +38,7 @@ FIELDS = {
     "epoch": "a time of primary minimum (T0)",
     "epoch_error": "error on the epoch, in days",
     "time_system": "time system of the epoch and the minima",
+    "ebv": "E(B-V) reddening",
 }
 HISTORY_LENGTH = 200  # older history lines are dropped past this many
 

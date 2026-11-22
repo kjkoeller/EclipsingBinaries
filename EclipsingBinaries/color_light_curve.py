@@ -66,27 +66,47 @@ def best_tol(B_HJD, V_HJD, period, lower_lim=0.05, max_tol=0.03):
     return tol
 
 
+# Effective wavelengths in nm (Johnson-Cousins UBVRI and Sloan ugriz), used to put
+# the filters in order from blue to red
+FILTER_WAVELENGTHS = {"U": 366, "B": 438, "V": 545, "R": 641, "I": 798,
+                      "u": 356, "g": 483, "r": 626, "i": 767, "z": 910}
+# Marker colours for each filter's light curve on the plot
+FILTER_COLOURS = {"U": "darkviolet", "B": "b", "V": "g", "R": "r", "I": "darkred",
+                  "u": "darkviolet", "g": "g", "r": "r", "i": "darkred", "z": "k"}
+# The colours a temperature can be worked out from: B-V with Flower (1996) and
+# V-R with Cousins R and Pecaut & Mamajek (2013)
+TEMPERATURE_COLOURS = (("B", "V"), ("V", "R"))
+# Reddening of each colour for E(B-V) = 1, from the Landolt filter extinctions in
+# Schlegel, Finkbeiner & Davis (1998), table 6, for R_V = 3.1
+COLOUR_EXCESS = {("B", "V"): 1.0, ("V", "R"): 0.642}
+
 lin_interp = lambda x, x1, x2, y1, y2: y1 + (x - x1) * ((y2 - y1) / (x2 - x1))
 mean_mag = lambda maglist: -2.5 * np.log10(np.mean(10 ** (-0.4 * np.array(maglist))))
 
 
 def subtract_LC(Bfile, Vfile, Epoch, period,
                 max_tol=0.03, lower_lim=0.05, FTinterp=True, quad_range=0.075, index="",
-                write_callback=None, cancel_event=None):
+                write_callback=None, cancel_event=None, ebv=0.0):
     """
-    This function actually creates the B-V and R-V values
+    Make a colour index from two filters' light curves: the bluer one (Bfile)
+    interpolated to the times of the redder one (Vfile), minus the redder one.
+    It works for any two filters; the B and V names are from when it only did B-V.
 
-    :param Bfile: input B file
-    :param Vfile: input V file
-    :param Epoch: epoch number
+    :param Bfile: light curve of the bluer filter
+    :param Vfile: light curve of the redder filter
+    :param Epoch: time of a primary minimum
     :param period: period of the system
     :param max_tol: maximum tolerance
     :param lower_lim: lower limit
-    :param FTinterp: interpolates number
-    :param quad_range: ?
-    :param index: type of color index to use
+    :param FTinterp: not used
+    :param quad_range: how far from phases 0.25 and 0.75 points count as at quadrature
+    :param index: the two filters, such as "BV". A temperature is only worked out
+        for "BV" and "VR" (see TEMPERATURE_COLOURS).
+    :param ebv: E(B-V) of the star, taken off the colour before the temperature is
+        looked up. The colours returned are as observed.
 
-    :return: returns the B-V value and other assorted values
+    :return: the colour curve, the two light curves, the colour at quadrature, its
+        error, and [Teff, error] or None
     """
     log = make_logger(write_callback)
 
@@ -143,137 +163,173 @@ def subtract_LC(Bfile, Vfile, Epoch, period,
     B = [aBphase, aB_mag, aB_interp_mag]
     V = [aVphase, aV_mag]
 
-    # print('T =', vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1)))
-    if index == "BV":
-        temp = []
-        # temp = vseq.Flower.T.Teff(quadcolor - (0.641 / 3.1), colorerr)
-        t1 = Flower.T.Teff(quadcolor - (0.641 / 3.1), colorerr)
-        temp_high = Flower.T.Teff(quadcolor - (0.641 / 3.1) - colorerr, colorerr)
-        temp_low = Flower.T.Teff(quadcolor - (0.641 / 3.1) + colorerr, colorerr)
-
-        # temp_err = (temp_high[0] - temp_low[0])/2
-        temp_err = np.sqrt(temp_high[1]**2 + temp_low[1]**2)
-        temp.append(t1[0])
-        temp.append(temp_err)
-        log('T_BV =' + str(temp[0]) + '+/-' + str(temp[1]))
-    elif index == "VR":
-        t1 = Pecaut.T.Teff(quadcolor - (0.58 / 3.1), colorerr)
-        temp = []
-        # t1 = Flower.T.Teff(quadcolor - 0.561 * (0.641 / 3.1), colorerr)
-        # E_V-R = 0.561*E_B-V
-        temp_high = Pecaut.T.Teff(quadcolor - (0.58 / 3.1) - colorerr, colorerr)
-        temp_low = Pecaut.T.Teff(quadcolor - (0.58 / 3.1) + colorerr, colorerr)
-        # temp_high = Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) - colorerr, colorerr)
-        # temp_low = Flower.T.Teff(quadcolor - 0.561* (0.641 / 3.1) + colorerr, colorerr)
-
-        # temp_err = (temp_high[0] - temp_low[0]) / 2
-        temp_err = np.sqrt(temp_high[1] ** 2 + temp_low[1] ** 2)
-        temp.append(t1[0])
-        temp.append(temp_err)
+    temp = None
+    pair = tuple(index) if len(index) == 2 else None
+    if pair in TEMPERATURE_COLOURS:
+        # Take the reddening off the colour before looking up the temperature
+        excess = COLOUR_EXCESS[pair] * ebv
+        intrinsic = quadcolor - excess
+        relation = Flower if pair == ("B", "V") else Pecaut
+        t1 = relation.T.Teff(intrinsic, colorerr)
+        temp_high = relation.T.Teff(intrinsic - colorerr, colorerr)
+        temp_low = relation.T.Teff(intrinsic + colorerr, colorerr)
+        temp = [t1[0], np.sqrt(temp_high[1] ** 2 + temp_low[1] ** 2)]
         if temp[0] == 0:
-            log("V-R color cannot be used to determine temperature.")
+            log(f"The {pair[0]}-{pair[1]} colour {intrinsic:.4f} is outside the range the temperature "
+                "relation covers, so no temperature could be worked out.")
+            temp = None
         else:
-            log('T_VR =' + str(temp[0]) + '+/-' + str(temp[1]))
+            log(f"T_{index} = {temp[0]} +/- {temp[1]} (after taking off E({pair[0]}-{pair[1]}) = {excess:.4f})")
 
     return B_V, B, V, quadcolor, colorerr, temp
 
 
-# use this function below
-def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile='', FTinterp=True,
-               save=False, outName='noname_color.png', fs=12, write_callback=None, cancel_event=None):
+def order_filters(labels):
     """
-    This is a function version of the GUI and produces the same values but without the plotting aspect
+    The filters in order from blue to red, by effective wavelength, if they're
+    all ones FILTER_WAVELENGTHS knows; otherwise in the order given. Returns
+    the order and whether it was sorted.
+    """
+    labels = list(labels)
+    if all(label in FILTER_WAVELENGTHS for label in labels):
+        return sorted(labels, key=FILTER_WAVELENGTHS.get), True
+    return labels, False
 
-    :param Bfile: input B text file
-    :param Vfile: input V text file
-    :param Epoch: epoch number
+
+def _band_name(label):
+    """How a filter is named on the plot. Johnson-Cousins R is written R_C, as before."""
+    return r"$\rm R_C$" if label == "R" else rf"$\rm {label}$"
+
+
+def colour_curves(files, labels, Epoch, period, ebv=0.0, max_tol=0.03, lower_lim=0.05, save=False,
+                  outName="noname_color.png", fs=12, write_callback=None, cancel_event=None):
+    """
+    Colour light curves for two or three filters.
+
+    The filters are put in order from blue to red (see order_filters) and a
+    colour index is made from each neighbouring pair, so B, V and R give B-V
+    and V-R. For each one, the bluer filter is interpolated to the times of
+    the redder one, and the colour near quadrature is averaged.
+
+    Temperatures need relations made for particular colours, so they're only
+    worked out for B-V (Flower 1996) and V-R with Cousins R (Pecaut & Mamajek
+    2013). Any other filters give their colour indices without a temperature.
+
+    :param files: a light curve file for each filter
+    :param labels: the filter of each file, such as "B", "V" and "R" or "g" and "r"
+    :param ebv: E(B-V) reddening of the star, taken off the colours before the
+        temperatures are looked up (see COLOUR_EXCESS). 0 leaves them as observed.
+    :return: a list with a dict for each colour index: "index" (such as "B-V"),
+        "colour" and "error" at quadrature as observed, and "temperature",
+        a (Teff, error) pair or None
+    """
+    log = make_logger(write_callback)
+    files, labels = list(files), [str(label).strip() for label in labels]
+    if len(files) != len(labels) or not 2 <= len(files) <= 3:
+        raise ValueError("Give two or three light curve files, each with its filter.")
+    if len(set(labels)) != len(labels) or not all(labels):
+        raise ValueError("Each file needs its own filter.")
+    if ebv < 0:
+        raise ValueError("E(B-V) can't be negative.")
+    by_label = dict(zip(labels, files))
+    ordered, sorted_ = order_filters(labels)
+    if not sorted_:
+        log(f"Not every filter has a known wavelength, so they're used in the order given: "
+            f"{', '.join(ordered)}. Put the bluest first.")
+    pairs = list(zip(ordered, ordered[1:]))
+    if not any(pair in TEMPERATURE_COLOURS for pair in pairs):
+        log("Temperatures are only worked out from B-V and V-R (Cousins R), so none will be given for "
+            f"{', '.join(f'{blue}-{red}' for blue, red in pairs)}.")
+
+    results, curves = [], {}
+    for blue, red in pairs:
+        if cancel_event is not None and cancel_event.is_set():
+            return results
+        out = subtract_LC(by_label[blue], by_label[red], Epoch, period, max_tol=max_tol, lower_lim=lower_lim,
+                          index=blue + red, ebv=ebv, write_callback=write_callback, cancel_event=cancel_event)
+        B_V, B, V, quadcolor, colorerr, temp = out
+        curves.setdefault(blue, (B[0], B[1]))
+        curves[red] = (V[0], V[1])
+        results.append({"index": f"{blue}-{red}", "pair": (blue, red), "colour": float(quadcolor),
+                        "error": float(colorerr), "temperature": tuple(temp) if temp else None,
+                        "phase": V[0], "values": B_V[3]})
+
+    many = len(results) > 1
+    fig = Figure(figsize=(7, 9 if many else 7.5), dpi=256)
+    axs, _ = plot.multiplot(height_ratios=[8] + ([3] * len(results) if many else [4.5]), fig=fig)
+    mag, colour_axes = axs[0], list(axs[1:])
+    for label in ordered:
+        phase, mags = curves[label]
+        mag.plot(phase, mags, "o", color=FILTER_COLOURS.get(label, "k"), ms=2)
+    mag.set_ylim(mag.get_ylim()[::-1])
+    plot.sm_format(mag, X=0.25, x=0.05, Y=None, numbersize=fs, xbottom=False, bottomspine=False, tickwidth=1,
+                   Xsize=7, xsize=3.5)
+    maxtick = max(len(str(t)) for t in np.array(mag.get_yticks()).round(8))
+    ytickpad = -0.835 if maxtick == 5 else -0.81
+    for label in ordered:
+        mags = curves[label][1]
+        mag.text(ytickpad, (max(mags) + min(mags)) / 2, _band_name(label), rotation=90, fontsize=fs * 1.2)
+
+    # The reddest colour goes at the top, under the light curves, as the B, V, R plot always had it
+    for ax, result in zip(colour_axes, reversed(results)):
+        ax.plot(result["phase"], result["values"], "ok", ms=3 if many else 2)
+        ax.axhline(result["colour"], color="gray", linewidth=None)
+        ax.margins(y=0.07 if many else 0.1, x=1 / 24)
+        ax.set_ylim(ax.get_ylim()[::-1])
+        blue, red = result["pair"]
+        name = _band_name(red).replace("$", "").replace(r"\rm ", "")
+        ax.set_ylabel(rf"$\rm {blue}-{name}$", fontsize=fs * 1.2)
+        last = ax is colour_axes[-1]
+        plot.sm_format(ax, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, xbottom=last,
+                       bottomspine=last, tickwidth=1, Xsize=7, xsize=3.5)
+    colour_axes[-1].set_xlabel(r"$\Phi$", fontsize=fs * 1.5, usetex=False)
+    if save:
+        fig.savefig(outName, bbox_inches="tight")
+
+    for result in results:
+        line = f"{result['index']} at quadrature = {result['colour']:.4f} +/- {result['error']:.4f}"
+        if result["temperature"]:
+            line += f", Teff = {result['temperature'][0]:.0f} +/- {result['temperature'][1]:.0f} K"
+        log(line)
+    return results
+
+
+def color_plot(Bfile, Vfile, Epoch, period, max_tol=0.03, lower_lim=0.05, Rfile='', FTinterp=True,
+               save=False, outName='noname_color.png', fs=12, write_callback=None, cancel_event=None,
+               labels=None, ebv=0.0):
+    """
+    Colour light curves from two or three files: B and V, plus R if Rfile is
+    given. labels gives other filters for the same files, such as
+    ("g", "r", "i"). See colour_curves, which this calls, for what's worked
+    out and returned.
+
+    :param Bfile: first (usually B) light curve file
+    :param Vfile: second (usually V) light curve file
+    :param Epoch: time of a primary minimum
     :param period: period of the system
     :param max_tol: maximum tolerance
     :param lower_lim: lower limit
-    :param Rfile: input R text file
-    :param FTinterp: interpolate number
-    :param save: save the output image
+    :param Rfile: third (usually R) light curve file, or '' for two filters
+    :param FTinterp: not used; kept so older calls still work
+    :param save: save the plot
     :param outName: output image name
-    :param fs:
-    :return: assorted values
+    :param fs: font size
+    :param labels: the filters of the files, ("B", "V", "R") or ("B", "V") if not given
+    :param ebv: E(B-V) of the star, taken off before the temperatures are worked out
     """
-    log = make_logger(write_callback)
+    files = [Bfile, Vfile] + ([Rfile] if Rfile else [])
+    if labels is None:
+        labels = ["B", "V", "R"][:len(files)]
+    return colour_curves(files, labels, Epoch, period, ebv=ebv, max_tol=max_tol, lower_lim=lower_lim,
+                         save=save, outName=outName, fs=fs, write_callback=write_callback,
+                         cancel_event=cancel_event)
 
-    B_V = subtract_LC(Bfile, Vfile, Epoch, period, max_tol=max_tol, lower_lim=lower_lim, FTinterp=FTinterp, index="BV", write_callback=write_callback, cancel_event=cancel_event)
-    Bphase, Bmag, B_interp_mag = B_V[1][:3:]
-    Vphase, Vmag = B_V[2][:2:]
-    aB_minus_V = B_V[0][3]
-    quadcolor, colorerr = B_V[3:5:]
-    if Rfile == '':
-        fig = Figure(figsize=(7, 7.5), dpi=256)
-        axs, _ = plot.multiplot(height_ratios=[8, 4.5], fig=fig)
-        mag = axs[0]
-        bv = axs[1]
-        mag.plot(Vphase, Vmag, 'og', ms=2)
-        mag.plot(Bphase, Bmag, 'ob', ms=2)
-        bv.plot(Vphase, aB_minus_V, 'ok', ms=2)
-        bv.margins(y=0.1, x=1 / 24)
-        mag.set_ylim(mag.get_ylim()[::-1])
-        bv.set_ylim(bv.get_ylim()[::-1])
-        plot.sm_format(mag, X=0.25, x=0.05, Y=None, numbersize=fs, xbottom=False, bottomspine=False, tickwidth=1,
-                            Xsize=7, xsize=3.5)
-        plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, tickwidth=1, Xsize=7,
-                            xsize=3.5)
 
-        maxtick = max(list(map(len, (list(map(str, np.array(mag.get_yticks()).round(8)))))))
-        if maxtick == 5:
-            ytickpad = -0.835
-        else:
-            ytickpad = -0.81
-        mag.text(ytickpad, (max(Bmag) + min(Bmag)) / 2, 'B', rotation=90, fontsize=fs * 1.2)
-        mag.text(ytickpad, (max(Vmag) + min(Vmag)) / 2, 'V', rotation=90, fontsize=fs * 1.2)
-        # bv.set_xlabel('$\Phi$',fontsize=fs*1.2)
-        bv.set_xlabel(r'$\Phi$', fontsize=fs * 1.5, usetex=False)
-        bv.set_ylabel(r'$\rm B-V$', fontsize=fs * 1.2)
-        # quadcolor,colorerr=B_V[3:5:]
-        bv.axhline(quadcolor, color='gray', linewidth=None)
-    else:
-        V_R = subtract_LC(Vfile, Rfile, Epoch, period, max_tol, lower_lim=lower_lim, index="VR",
-                          write_callback=write_callback, cancel_event=cancel_event)
-        Rphase, Rmag = V_R[2][:2:]
-        # V_interp_mag = V_R[1][2]
-        aV_minus_R = V_R[0][3]
-        fig = Figure(figsize=(7, 9), dpi=256)
-        axs, _ = plot.multiplot(height_ratios=[8, 3, 3], fig=fig)
-        mag = axs[0]
-        bv = axs[2]
-        vr = axs[1]
-        mag.plot(Vphase, Vmag, 'og', ms=2)
-        mag.plot(Bphase, Bmag, 'ob', ms=2)
-        mag.plot(Rphase, Rmag, 'or', ms=2)
-
-        bv.plot(Vphase, aB_minus_V, 'ok', ms=3)
-        vr.plot(Rphase, aV_minus_R, 'ok', ms=3)
-        bv.margins(y=0.07, x=1 / 24)
-        vr.margins(y=0.07)
-        # mag.margins(y=0.09)
-        mag.set_ylim(mag.get_ylim()[::-1])
-        bv.set_ylim(bv.get_ylim()[::-1])
-        vr.set_ylim(vr.get_ylim()[::-1])
-        plot.sm_format(mag, X=0.25, x=0.05, numbersize=fs, xbottom=False, bottomspine=False)
-        plot.sm_format(vr, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False, xbottom=False,
-                            bottomspine=False)
-        plot.sm_format(bv, X=0.25, x=0.05, numbersize=fs, xtop=False, topspine=False)
-        maxtick = max(list(map(len, (list(map(str, np.array(mag.get_yticks()).round(8)))))))
-        if maxtick == 5:
-            ytickpad = -0.835
-        else:
-            ytickpad = -0.81
-        mag.text(ytickpad, (max(Bmag) + min(Bmag)) / 2, r'$\rm B$', rotation=90, fontsize=fs * 1.2)
-        mag.text(ytickpad, (max(Vmag) + min(Vmag)) / 2, r'$\rm V$', rotation=90, fontsize=fs * 1.2)
-        mag.text(ytickpad, (max(Rmag) + min(Rmag)) / 2, r'$\rm R_C$', rotation=90, fontsize=fs * 1.2)
-        bv.set_ylabel(r'$\rm B-V$', fontsize=fs * 1.2)
-        vr.set_ylabel(r'$\rm V-R_C$', fontsize=fs * 1.2)
-        bv.set_xlabel(r'$\Phi$', fontsize=fs * 1.2)
-    if save:
-        fig.savefig(outName, bbox_inches='tight')
-    # plt.show()
-    log(f"Color Temp = {quadcolor} {colorerr}")
+def _temperature_text(index, temp):
+    """The temperature line in color_gui's window, or a note when there's no temperature."""
+    if not temp:
+        return f"T_({index}) couldn't be worked out"
+    return f"T_({index}) = {temp[0]:.4f} +/- {temp[1]:.4f}"
 
 
 # ==
@@ -574,7 +630,7 @@ def color_gui(developer=False):
 
             VRL.config(text='(V-R) = ' + str(round(VRc, 6)) + ' +/- ' + str(round(VRerr, 6)), bg='white',
                        relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
-            VRL_temp.config(text='T_(V-R) = ' + str(format(VR_temp[0], ".4f")) + " +/- " + str(format(VR_temp[1], ".4f")), bg='white', relief='solid', borderwidth=1,
+            VRL_temp.config(text=_temperature_text("V-R", VR_temp), bg='white', relief='solid', borderwidth=1,
                             padx=5,
                             pady=5, font=('None', 14))
             show_color = False
@@ -613,7 +669,7 @@ def color_gui(developer=False):
 
         BVL.config(text='(B-V) = ' + str(round(quadcolor, 6)) + ' +/- ' + str(round(colorerr, 6)), bg='white',
                    relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
-        BVL_temp.config(text='T_(B-V) = ' + str(format(BV_temp[0], ".4f")) + " +/- " + str(format(BV_temp[1], ".4f")),
+        BVL_temp.config(text=_temperature_text("B-V", BV_temp),
                         bg='white', relief='solid', borderwidth=1, padx=5, pady=5, font=('None', 14))
 
         # max1.config(text='Phase -0.25 = ' + str(round(quadcolor, 6)), bg='white',

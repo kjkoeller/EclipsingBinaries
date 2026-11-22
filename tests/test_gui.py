@@ -1312,3 +1312,90 @@ def test_oconnell_defaults_button_puts_them_back(app):
                   if w.winfo_class() == "TButton" and w.cget("text") == "Defaults")
     button.invoke()
     assert app.oconnell_settings["sims"].get() == "1000"
+
+
+# --- Color Light Curve filters ---------------------------------------------------------
+
+def _fill_colour(app, labels, files):
+    app.open_panel("color")
+    rows = app.color_curves
+    rows.count.set(len(labels))
+    rows.update()
+    for (picker, entry), label, path in zip(rows.rows, labels, files):
+        picker.set(label)
+        app._set_entry_text(entry, str(path))
+    rows.picked = True
+    app._set_entry_text(app._panel_fields["Period (days)"], "0.3174245")
+    app._set_entry_text(app._panel_fields["HJD (Epoch)"], "2458403.58763")
+
+
+def test_colour_panel_offers_two_or_three_filters(app):
+    app.open_panel("color")
+    assert app.color_curves.count.get() == 3
+    assert [p.get() for p, _e in app.color_curves.rows] == ["B", "V", "R"]
+    app.color_curves.count.set(2)
+    app.color_curves.update()
+    assert [p.get() for p, _e in app.color_curves.rows[:2]] == ["B", "V"]
+    assert "1 Filter" not in [w.cget("text") for w in app.right_frame.grid_slaves(row=1)[0].winfo_children()]
+
+
+def test_colour_panel_passes_the_filters_and_reddening(app, tmp_path):
+    files = [EXAMPLES / "test_B.txt", EXAMPLES / "test_V.txt", EXAMPLES / "test_R.txt"]
+    _fill_colour(app, ["g", "r", "i"], files)
+    app._set_entry_text(app._panel_fields["E(B-V)"], "0.12")
+    with patch("EclipsingBinaries.menu.colour_curves") as run:
+        app._run_button.invoke()
+        _wait_for_task(app)
+    args, kwargs = run.call_args
+    assert args[0] == [str(f) for f in files]
+    assert args[1] == ["g", "r", "i"]
+    assert kwargs["ebv"] == pytest.approx(0.12)
+
+
+@pytest.mark.parametrize("labels, ebv, message", [
+    (["B", "B"], "0", "Each filter can only be chosen once"),
+    (["B", " "], "0", "Choose or type a filter"),
+    (["B", "V"], "-1", "E(B-V) must be a number, 0 or more"),
+])
+def test_colour_panel_refuses_bad_inputs(app, labels, ebv, message):
+    _fill_colour(app, labels, [EXAMPLES / "test_B.txt", EXAMPLES / "test_V.txt"])
+    app._set_entry_text(app._panel_fields["E(B-V)"], ebv)
+    with patch("EclipsingBinaries.menu.colour_curves") as run:
+        app._run_button.invoke()
+    run.assert_not_called()
+    assert message in app.log_area.get("1.0", "end")
+
+
+def test_colour_panel_looks_up_reddening(app):
+    from EclipsingBinaries import extinction, star_file
+    star_file.record("NSVS 896797", "archives", ra="00:28:27.96", dec="+78:57:42.65")
+    app.open_panel("color")
+    app._set_entry_text(app.color_name_entry, "nsvs 896797")
+    result = extinction.Reddening(total=0.2, total_error=0.01, latitude=16.0, distance_pc=250, scaled=0.1234)
+    with patch("EclipsingBinaries.menu.extinction.look_up", return_value=result) as look_up:
+        app.look_up_reddening(app.color_name_entry, app.color_ebv_entry)
+        _wait_for_task(app)
+        _pump(app, 0.2)
+    # The saved position is used rather than the name
+    assert look_up.call_args.args[1:] == ("00:28:27.96", "+78:57:42.65")
+    assert app._entry_value(app.color_ebv_entry) == "0.1234"
+    assert star_file.known("NSVS 896797")["ebv"] == 0.1234
+    assert "which is used" in app.log_area.get("1.0", "end")
+
+
+def test_colour_panel_reddening_look_up_needs_a_name(app):
+    app.open_panel("color")
+    with patch("EclipsingBinaries.menu.extinction.look_up") as look_up:
+        app.look_up_reddening(app.color_name_entry, app.color_ebv_entry)
+    look_up.assert_not_called()
+    assert "Enter the Object Name" in app.log_area.get("1.0", "end")
+
+
+def test_colour_panel_reports_an_unreachable_dust_service(app):
+    app.open_panel("color")
+    app._set_entry_text(app.color_name_entry, "SW Lac")
+    with patch("EclipsingBinaries.menu.extinction.look_up", side_effect=OSError("IRSA's dust service is down")):
+        app.look_up_reddening(app.color_name_entry, app.color_ebv_entry)
+        _wait_for_task(app)
+    assert "Error: IRSA's dust service is down" in app.log_area.get("1.0", "end")
+    assert app._entry_value(app.color_ebv_entry) in ("", "0")

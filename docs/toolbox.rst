@@ -1330,20 +1330,60 @@ Color Light Curve
 .. note::
     Originally created by Alec J. Neal, updated for this package by Kyle Koeller.
 
-The Color Light Curve panel calculates B-V and optionally V-R color indices and
-effective temperatures from multi-filter light curve data.
+The Color Light Curve panel calculates color indices from two or three filters' light
+curves, and effective temperatures from B-V and V-R.
 
 The GUI panel accepts the following inputs:
 
-+ **B-band File** — Johnson B light curve file
-+ **V-band File** — Johnson V light curve file
++ **Number of Filters** — 2 or 3
++ **Light Curve (… Filter)** — one file per filter. Pick its filter from the list (U, B, V,
+  R, I, u, g, r, i, z) or type another name.
 + **Period** — orbital period in days
 + **HJD (Epoch)** — first primary ToM
++ **Object Name** — optional. Needed to look up E(B-V), and fills E(B-V) in from the star's
+  file once it's been looked up (see `Star files`_).
++ **E(B-V)** — the star's reddening, 0 to leave the colours as observed (see below).
+  **Look Up** gets it from the dust maps.
 + **Output Image Name** — filename for the saved plot (must end in ``.png``). Leave it empty
   for ``color_curve.png``. A bare file name is saved in the folder you launched
   ``EclipsingBinaries`` from, so give a full path to save it elsewhere.
 
-The B and V files can be in any of the formats in `Light Curve Files`_.
+The files can be in any of the formats in `Light Curve Files`_.
+
+The filters are put in order from blue to red by wavelength, whatever order the files are
+entered in, and a color index is made from each neighbouring pair: B, V and R give B-V and
+V-R, and g, r and i give g-r and r-i. If a filter isn't one of those listed, the order the
+files were entered in is used, so put the bluest first.
+
+Temperatures come from relations made for particular colors, so they're only worked out
+for B-V (Flower 1996) and V-R with Cousins R (Pecaut & Mamajek 2013). With any other
+filters the color indices are still measured and plotted, and the log says no temperature
+was worked out.
+
+Reddening makes a star look cooler than it is. **E(B-V)** is taken off B-V, and 0.642 times
+it off V-R (the Landolt filter extinctions in Schlegel, Finkbeiner & Davis 1998, for
+:math:`R_V = 3.1`), before the temperatures are looked up. The colors in the plot and log
+are as observed. Before this setting, the program always took 0.641 / 3.1 = 0.207 off B-V
+and 0.58 / 3.1 = 0.187 off V-R whatever the star, so enter 0.207 to get the old B-V
+temperatures back.
+
+**Look Up** finds E(B-V) for the **Object Name**, using the RA and Dec in the star's file if
+there are any, or else the name resolver. It needs the internet:
+
+1. The reddening along the whole line of sight comes from IRSA's dust service, using the
+   Schlafly & Finkbeiner (2011) recalibration of the Schlegel, Finkbeiner & Davis (1998)
+   map. That's the same value NED's extinction calculator gives.
+2. Those maps count all the dust in that direction, but most eclipsing binaries are only a
+   few hundred parsecs away, in front of much of it. When Gaia DR3 has a parallax at least
+   5 times its error, the total is scaled for the star's distance with a dust layer 125 pc
+   thick (Bonifacio, Caffau & Molaro 2000):
+   :math:`E(B-V)_d = E(B-V)_{\rm total}\,(1 - e^{-d\,|\sin b|/125\,{\rm pc}})`, where
+   :math:`b` is the Galactic latitude.
+
+The scaled value goes in the field when there is one, otherwise the total, and the log gives
+both. The scaling is an approximation, since dust is clumpy; for stars near the Galactic
+plane a 3D dust map is better, and you can always type in a value of your own. The value
+looked up is saved in the star's file.
 
 Subtract Light Curve
 ^^^^^^^^^^^^^^^^^^^^

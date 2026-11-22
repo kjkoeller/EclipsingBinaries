@@ -1400,3 +1400,29 @@ def test_colour_panel_reports_an_unreachable_dust_service(app):
         _wait_for_task(app)
     assert "Error: IRSA's dust service is down" in app.log_area.get("1.0", "end")
     assert app._entry_value(app.color_ebv_entry) in ("", "0")
+
+
+def test_reddening_found_after_leaving_the_panel_doesnt_crash(app):
+    from EclipsingBinaries import extinction, star_file
+    app.open_panel("color")
+    app._set_entry_text(app.color_name_entry, "SW Lac")
+    old_entry = app.color_ebv_entry
+    result = extinction.Reddening(0.1234, extinction.TOTAL_2D, 16.0, total=0.1234, total_error=0.01)
+
+    def slow_look_up(*args, **kwargs):
+        # The panel is switched away from while the lookup is running
+        app.call_in_ui(app.open_panel, "oc")
+        time.sleep(0.3)
+        return result
+    with patch("EclipsingBinaries.menu.extinction.look_up", side_effect=slow_look_up):
+        app.look_up_reddening(app.color_name_entry, old_entry)
+        _wait_for_task(app)
+        _pump(app, 0.3)
+    assert not old_entry.winfo_exists()
+    assert "it's filled in when you open Color Light Curve" in app.log_area.get("1.0", "end")
+    assert star_file.known("SW Lac")["ebv"] == 0.1234
+
+    # Opening the panel again and the lookup finishing there puts it in the new field
+    app.open_panel("color")
+    app._put_reddening(old_entry, "0.1234", "SW Lac")
+    assert app._entry_value(app.color_ebv_entry) == "0.1234"

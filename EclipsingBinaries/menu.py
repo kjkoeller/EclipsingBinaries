@@ -3085,10 +3085,27 @@ class ProgramLauncher(tk.Tk):
                 return
             self.write_to_log(result.message())
             value = f"{result.best:.4f}"
-            self.call_in_ui(self._set_entry_text, ebv_entry, value)
             star_file.record(name, "reddening", write_callback=self.write_to_log, ebv=round(result.best, 4))
+            self.call_in_ui(self._put_reddening, ebv_entry, value, name)
 
         self.run_task(task)
+
+    def _put_reddening(self, ebv_entry, value, name):
+        """
+        Put a looked-up E(B-V) in the panel's field. The lookup can take a while,
+        and if the panel was left or opened again meanwhile, the field it was
+        started from is gone; then the open panel's field gets it, or if Color
+        Light Curve isn't open, the log says where the value was saved.
+        """
+        for entry in (ebv_entry, getattr(self, "color_ebv_entry", None)):
+            try:
+                if entry is not None and entry.winfo_exists():
+                    self._set_entry_text(entry, value)
+                    return
+            except tk.TclError:
+                continue
+        self.write_to_log(f"E(B-V) = {value} is saved for {name}; it's filled in when you open Color Light "
+                          "Curve and enter the name.")
 
     def run_color_light_curve(self, period, hjd, ebv, outname, name=None):
         """Validate the color light curve inputs, then run it on a worker thread."""

@@ -1373,17 +1373,26 @@ from its Gaia DR3 parallax, when that's at least 5 times its error, and then:
 
 1. **Bayestar19**, a 3D dust map (Green, Schlafly, Finkbeiner et al. 2019), gives the
    reddening in front of the star at that distance. It's built from Pan-STARRS, 2MASS and
-   Gaia photometry, and covers the sky north of declination −30°. Its values are turned
-   into E(B-V) with the factor of 0.884 its authors give, which puts them on the same scale
-   as the 2D map below. The log gives the 16th to 84th percentile range as well, and warns
+   Gaia photometry, and covers the sky north of declination −30°. Its values are on the
+   scale of the Schlegel, Finkbeiner & Davis (1998) map, and are turned into E(B-V) with the
+   factor of 0.884 its authors give, the same as :math:`A_V / 3.1` with :math:`A_V` worked
+   out as for the 2D map below (2.742 / 3.1 = 0.8845). Bayestar19 gives a spread of possible dust maps rather than one;
+   the value used is their median, and the log gives the 16th to 84th percentile range
+   as its uncertainty (about 1 sigma either side). It also warns
    when the star is outside the distances the map is reliable for along that sightline,
    which usually means it's very near.
 2. If Bayestar19 can't be used (a star south of −30°, no good parallax, or the service
    being down), the 2D map is: the reddening along the whole line of sight from IRSA's dust
-   service, using the Schlafly & Finkbeiner (2011) recalibration of the Schlegel,
-   Finkbeiner & Davis (1998) map, the same value NED's extinction calculator gives. It's
-   used as it is. It counts all the dust in that direction, so for a nearby star it can be
-   more than the star really has.
+   service. :math:`A_V` for the Landolt V band is the Schlegel, Finkbeiner & Davis (1998)
+   map's value in the pixel at the star times 2.742, from Table 6 of Schlafly & Finkbeiner
+   (2011) for :math:`R_V = 3.1`. That's the :math:`A_V` NED's extinction calculator gives,
+   and :math:`E(B-V) = A_V / 3.1`. It counts all the dust in that direction, so for a
+   nearby star it can be more than the star really has. The log also gives the standard
+   deviation of the map within 5 arcmin of the star, which IRSA works out; that shows how
+   patchy the dust is around the star, not how well the value is known.
+
+Both use :math:`R = A_V / E(B-V) = 3.1`, and the log gives :math:`A_V` as well as
+:math:`E(B-V)`.
 
 The log says which was used, and gives the 2D total alongside a Bayestar19 value to compare
 with. You can always type in a value of your own. The value looked up is saved in the

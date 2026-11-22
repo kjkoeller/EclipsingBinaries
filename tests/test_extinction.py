@@ -15,8 +15,10 @@ from EclipsingBinaries.gaia import GaiaRows
 RA, DEC = "00:28:27.96", "+78:57:42.65"
 
 
-def _dust(mean=0.2, std=0.01):
-    return Table({"ext SandF mean": [mean], "ext SandF std": [std]})
+def _dust(sfd=0.2, std=0.01):
+    """IRSA's E(B-V) table. The other columns differ, so using the wrong one shows."""
+    return Table({"ext SFD ref": [sfd], "ext SFD mean": [sfd + 0.05], "ext SFD std": [std],
+                  "ext SandF ref": [0.86 * sfd], "ext SandF mean": [0.86 * sfd + 0.05], "ext SandF std": [std]})
 
 
 def _gaia(parallax, error, ra=None, dec=None):
@@ -102,6 +104,8 @@ def test_look_up_falls_back_to_the_2d_map_as_it_is_when_bayestar_fails():
     # The 2D value isn't changed for the star's distance
     assert result.method == ex.TOTAL_2D and result.best == 0.2
     assert any("2D map is used instead" in m for m in messages)
+    # Only the real reason is given, not "no value at the star's position" as well
+    assert not any("no value at the star's position" in m for m in messages)
     assert "This is used" in result.message()
 
 
@@ -126,6 +130,8 @@ def test_a_poor_parallax_leaves_the_total():
     bayestar.assert_not_called()
     assert result.method == ex.TOTAL_2D and result.best == 0.2
     assert "more reddening than the star really has" in result.message()
+    assert "0.0100 in E(B-V) (standard deviation) within 5 arcmin" in result.message()
+    assert "not an uncertainty" in result.message()
 
 
 def test_bayestar_still_answers_when_irsa_is_down():
@@ -144,10 +150,23 @@ def test_nothing_answering_is_an_os_error():
             ex.look_up(ra=RA, dec=DEC)
 
 
-def test_irsa_table_is_read():
-    with patch("astroquery.ipac.irsa.irsa_dust.IrsaDust.get_query_table", return_value=_dust(0.31, 0.02)) as query:
-        assert ex.total_reddening(SkyCoord(1, 2, unit="deg")) == (0.31, 0.02)
+def test_irsa_table_is_read_as_ned_a_v_over_3_1():
+    # NSVS 254037: NED gives A_V = 0.641 (Landolt V), so E(B-V) = 0.641 / 3.1
+    sfd = 0.641 / 2.742
+    with patch("astroquery.ipac.irsa.irsa_dust.IrsaDust.get_query_table", return_value=_dust(sfd, 0.02)) as query:
+        ebv, spread = ex.total_reddening(SkyCoord(1, 2, unit="deg"))
+    assert ebv == pytest.approx(0.641 / 3.1)
+    assert spread == pytest.approx(0.02 * 2.742 / 3.1)
     assert query.call_args.kwargs["section"] == "ebv"
+
+
+def test_the_log_gives_a_v_and_the_division_by_3_1():
+    result = ex.Reddening(0.2068, ex.TOTAL_2D, 16.1, total=0.2068, total_error=0.008)
+    text = result.message()
+    assert "A_V at the star's position is 0.6411" in text
+    assert "E(B-V) = A_V / 3.1 = 0.2068" in text
+    bayestar = ex.Reddening(0.1, ex.BAYESTAR19, 16.1, distance_pc=300, bayestar_range=(0.09, 0.11))
+    assert "so A_V = 0.3100" in bayestar.message()
 
 
 def test_a_name_is_resolved_when_there_is_no_position():

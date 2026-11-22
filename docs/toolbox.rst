@@ -1381,12 +1381,9 @@ from its Gaia DR3 parallax, when that's at least 5 times its error, and then:
 2. If Bayestar19 can't be used (a star south of −30°, no good parallax, or the service
    being down), the 2D map is: the reddening along the whole line of sight from IRSA's dust
    service, using the Schlafly & Finkbeiner (2011) recalibration of the Schlegel,
-   Finkbeiner & Davis (1998) map, the same value NED's extinction calculator gives. That
-   counts all the dust in that direction, so with a distance it's scaled down with a dust
-   layer 125 pc thick (Bonifacio, Caffau & Molaro 2000):
-   :math:`E(B-V)_d = E(B-V)_{\rm total}\,(1 - e^{-d\,|\sin b|/125\,{\rm pc}})`, where
-   :math:`b` is the Galactic latitude. Without a distance the whole line of sight is used,
-   which is too much for a nearby star.
+   Finkbeiner & Davis (1998) map, the same value NED's extinction calculator gives. It's
+   used as it is. It counts all the dust in that direction, so for a nearby star it can be
+   more than the star really has.
 
 The log says which was used, and gives the 2D total alongside a Bayestar19 value to compare
 with. You can always type in a value of your own. The value looked up is saved in the

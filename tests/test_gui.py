@@ -1371,7 +1371,8 @@ def test_colour_panel_looks_up_reddening(app):
     star_file.record("NSVS 896797", "archives", ra="00:28:27.96", dec="+78:57:42.65")
     app.open_panel("color")
     app._set_entry_text(app.color_name_entry, "nsvs 896797")
-    result = extinction.Reddening(0.1234, extinction.SCALED_2D, 16.0, total=0.2, total_error=0.01, distance_pc=250)
+    result = extinction.Reddening(0.1234, extinction.BAYESTAR19, 16.0, total=0.2, total_error=0.01,
+                                  distance_pc=250, bayestar_range=(0.11, 0.14), bayestar_reliable=True)
     with patch("EclipsingBinaries.menu.extinction.look_up", return_value=result) as look_up:
         app.look_up_reddening(app.color_name_entry, app.color_ebv_entry)
         _wait_for_task(app)
@@ -1380,7 +1381,7 @@ def test_colour_panel_looks_up_reddening(app):
     assert look_up.call_args.args[1:] == ("00:28:27.96", "+78:57:42.65")
     assert app._entry_value(app.color_ebv_entry) == "0.1234"
     assert star_file.known("NSVS 896797")["ebv"] == 0.1234
-    assert "which is used" in app.log_area.get("1.0", "end")
+    assert "This is used" in app.log_area.get("1.0", "end")
 
 
 def test_colour_panel_reddening_look_up_needs_a_name(app):

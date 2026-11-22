@@ -26,15 +26,6 @@ def _gaia(parallax, error, ra=None, dec=None):
                            "phot_g_mean_mag": [11.0]}))
 
 
-def test_scaling_for_distance():
-    # Far above the dust layer, all of it counts
-    assert ex.scale_for_distance(0.2, 5000, 30) == pytest.approx(0.2, rel=1e-6)
-    # 250 pc at 30 degrees is 125 pc up: 1 - 1/e of it
-    assert ex.scale_for_distance(0.2, 250, 30) == pytest.approx(0.2 * (1 - np.exp(-1)))
-    assert ex.scale_for_distance(0.2, 250, -30) == ex.scale_for_distance(0.2, 250, 30)
-    assert ex.scale_for_distance(0.2, 250, 0) == 0.2
-
-
 def _b64(array):
     """An array as the Bayestar19 service encodes it."""
     import base64
@@ -102,16 +93,16 @@ def test_look_up_uses_bayestar_with_the_gaia_distance():
     assert "Bayestar19" in text and "This is used" in text and "Warning" not in text
 
 
-def test_look_up_falls_back_to_the_scaled_2d_map_when_bayestar_fails():
+def test_look_up_falls_back_to_the_2d_map_as_it_is_when_bayestar_fails():
     messages = []
     with patch.object(ex, "total_reddening", return_value=(0.2, 0.01)), \
             patch("EclipsingBinaries.gaia.GaiaRows.from_query", return_value=_gaia(4.0, 0.05)), \
             patch.object(ex, "bayestar_reddening", side_effect=OSError("Bayestar19 couldn't be reached.")):
         result = ex.look_up(ra=RA, dec=DEC, write_callback=messages.append)
-    assert result.method == ex.SCALED_2D and result.distance_pc == pytest.approx(250)
-    assert 0 < result.best < 0.2
+    # The 2D value isn't changed for the star's distance
+    assert result.method == ex.TOTAL_2D and result.best == 0.2
     assert any("2D map is used instead" in m for m in messages)
-    assert "which is used" in result.message()
+    assert "This is used" in result.message()
 
 
 def test_southern_stars_skip_bayestar():
@@ -123,7 +114,7 @@ def test_southern_stars_skip_bayestar():
             patch.object(ex, "bayestar_reddening") as bayestar:
         result = ex.look_up(name="somewhere south", write_callback=messages.append)
     bayestar.assert_not_called()
-    assert result.method == ex.SCALED_2D
+    assert result.method == ex.TOTAL_2D and result.best == 0.1
     assert any("south of declination -30" in m for m in messages)
 
 
@@ -134,7 +125,7 @@ def test_a_poor_parallax_leaves_the_total():
         result = ex.look_up(ra=RA, dec=DEC)
     bayestar.assert_not_called()
     assert result.method == ex.TOTAL_2D and result.best == 0.2
-    assert "more reddening than it really has" in result.message()
+    assert "more reddening than the star really has" in result.message()
 
 
 def test_bayestar_still_answers_when_irsa_is_down():

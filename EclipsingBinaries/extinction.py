@@ -13,14 +13,9 @@ or the service being down), the 2D map is used instead: the reddening along
 the whole line of sight out of the Galaxy, from the IRSA Galactic Dust
 Reddening and Extinction service, using the Schlafly & Finkbeiner (2011)
 recalibration of the Schlegel, Finkbeiner & Davis (1998) map. That's the same
-value NED's extinction calculator gives. Most eclipsing binaries studied from
-the ground are only a few hundred parsecs away, in front of much of that dust,
-so with a distance it's scaled down with a dust layer 125 pc thick (Bonifacio,
-Caffau & Molaro 2000):
-
-    E(B-V)(d) = E(B-V)(total) * (1 - exp(-d |sin b| / 125 pc))
-
-where b is the Galactic latitude.
+value NED's extinction calculator gives, and it's used as it is. It counts
+all the dust in that direction, so for a nearby star it can be more than the
+star really has.
 
 Bayestar19 is reached the same way the dustmaps package does it, but without
 that package, because it needs healpy, which can't be installed on Windows.
@@ -36,7 +31,6 @@ from astropy.coordinates import SkyCoord
 
 from ._log import make_logger
 
-DUST_SCALE_HEIGHT_PC = 125.0
 # A parallax has to be this many times its error to give a distance worth using
 MIN_PARALLAX_OVER_ERROR = 5.0
 GAIA_CONE_ARCSEC = 5.0
@@ -48,7 +42,6 @@ BAYESTAR_TIMEOUT = 30  # seconds
 BAYESTAR_MIN_DEC = -30.0
 
 BAYESTAR19 = "Bayestar19"
-SCALED_2D = "Schlafly & Finkbeiner (2011), scaled for distance"
 TOTAL_2D = "Schlafly & Finkbeiner (2011), whole line of sight"
 
 
@@ -56,7 +49,7 @@ TOTAL_2D = "Schlafly & Finkbeiner (2011), whole line of sight"
 class Reddening:
     """
     What was found for a star. value is the E(B-V) to use and method says
-    where it came from (BAYESTAR19, SCALED_2D or TOTAL_2D). The rest is kept
+    where it came from (BAYESTAR19 or TOTAL_2D). The rest is kept
     for the log: the 2D map's total and its spread over the area IRSA
     averages, the Gaia distance, and Bayestar19's 16th to 84th percentile
     range and whether the star is within the distances the map is reliable for
@@ -89,24 +82,11 @@ class Reddening:
         if self.total is not None:
             text = (f"Along the whole line of sight, E(B-V) is {self.total:.4f} +/- {self.total_error:.4f} "
                     f"(Schlafly & Finkbeiner 2011, from IRSA; Galactic latitude {self.latitude:.1f} deg).")
-            if self.method == SCALED_2D:
-                text += (f" At the Gaia distance of {self.distance_pc:.0f} pc, with a dust layer "
-                         f"{DUST_SCALE_HEIGHT_PC:.0f} pc thick, that's about {self.value:.4f}, which is used.")
-            elif self.method == TOTAL_2D:
-                text += (" Gaia has no good distance for the star, so the whole line of sight is used; for "
-                         "a nearby star that's more reddening than it really has.")
+            if self.method == TOTAL_2D:
+                text += (" This is used. It counts all the dust in that direction, so for a nearby star it "
+                         "can be more reddening than the star really has.")
             lines.append(text)
         return " ".join(lines)
-
-
-def scale_for_distance(total, distance_pc, latitude_deg, scale_height=DUST_SCALE_HEIGHT_PC):
-    """The share of a line of sight's reddening in front of a star at distance_pc."""
-    height = distance_pc * abs(np.sin(np.radians(latitude_deg)))
-    if height == 0:
-        # In the plane the formula gives nothing; all the dust out to the star counts, but
-        # there's no way to say how much that is here, so the total is returned
-        return float(total)
-    return float(total * (1 - np.exp(-height / scale_height)))
 
 
 def resolve(name=None, ra=None, dec=None):
@@ -275,7 +255,4 @@ def look_up(name=None, ra=None, dec=None, write_callback=None, cancel_event=None
     if result is not None:
         result.total, result.total_error = total, error
         return result
-    if distance is not None:
-        return Reddening(scale_for_distance(total, distance, latitude), SCALED_2D, latitude, total=total,
-                         total_error=error, distance_pc=distance)
-    return Reddening(total, TOTAL_2D, latitude, total=total, total_error=error)
+    return Reddening(total, TOTAL_2D, latitude, total=total, total_error=error, distance_pc=distance)

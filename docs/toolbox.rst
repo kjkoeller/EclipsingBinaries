@@ -934,29 +934,43 @@ In the window:
 + **Click** a peak without dragging to jump to its top, found automatically.
 + **×2** and **÷2** double or halve the period (and its error); the left and right arrow
   keys nudge it. **Refine Here** finds the top of the nearest peak again.
-+ **Error** is the period's 1 sigma error at the top of a peak (see below). It's shown
-  after a search, a click on a peak or **Refine Here**, and cleared when the period is
-  dragged, typed or nudged away from the top. The peak's half width at half height is
-  shown under it as a much more cautious figure.
++ After a search, a click on a peak or **Refine Here**, the period is fitted from the top
+  of the peak (see below) and shown with its **Error**. The **Periodogram peak** is shown
+  under it with the error Peranso would give it, and under that the peak's half width at
+  half height, the most cautious figure. They're cleared when the period is dragged,
+  typed or nudged away, since they only apply at a peak.
 + The method, the period range and the filters used can be changed and searched again.
 + **Save Period** writes the period and search settings to ``<object>_period.txt``.
   **Send to O-C Plotting**, **Send to O'Connell Effect** and **Send to Color Light Curve**
   open that panel with the period filled in.
 
-The error comes from a least-squares fit at the best period. Each filter's light curve is
-fitted with its own Fourier series (so their different depths don't matter), all sharing
-one frequency, which is fitted as well. The number of terms is chosen by the Bayesian
-information criterion, up to 40, since sharp eclipses need many and too few makes the
-error too small. The frequency's error comes from the fit's covariance, scaled by the
-reduced chi squared so that magnitude errors that are too small or too large, and anything
-the model misses, are taken into account; the period's error is that over the frequency
-squared. In tests on simulated light curves it matched the scatter of the periods found
-from repeated noise. It treats every point as independent, though, so drifts from night to
-night make the true error larger. Times of minimum over a longer baseline (Find Minimum,
-then O-C Plotting) pin the period down far better.
+The period given is a least-squares fit, started from the top of the periodogram's peak.
+Each filter's light curve is fitted with its own Fourier series (so their different
+depths don't matter), all sharing one frequency, which is fitted as well. The number of
+terms is chosen by the Bayesian information criterion, up to 40, since sharp eclipses need
+many and too few makes the error too small. The frequency's error comes from the fit's
+covariance, scaled by the reduced chi squared so that magnitude errors that are too small
+or too large, and anything the model misses, are taken into account; the period's error
+is that over the frequency squared. In tests on simulated light curves it matched the
+scatter of the fitted periods from repeated noise. It treats every point as independent,
+though, so drifts from night to night make the true error larger.
 
-The search, the log, the saved ``<object>_period.txt`` (as ``period_error_days``) and the
-star's file all give the error with the period.
+The fit is a sharper measure of the period than the periodogram's peak, so the two can
+differ by more than the fit's error. The peak is kept too, with the error Peranso gives:
+Schwarzenberg-Czerny's (1991) "post-mortem" method. The mean noise power level around the
+peak is taken from the periodogram (within 25% of the peak's frequency either side,
+leaving out the peak and clipping other strong lines), and the 1 sigma interval is the
+width of the peak where it has dropped by that much from its top; the error is half the
+interval. On simulated light curves it matched the real scatter of the peak for the
+Multi-harmonic method. ANOVA's peaks have ragged tops when the eclipses are sharp, and
+there it came out far too small, so the window and log warn about it for ANOVA.
+
+Times of minimum over a longer baseline (Find Minimum, then O-C Plotting) pin the period
+down far better than any of these.
+
+The search, the log, the star's file and the saved ``<object>_period.txt`` give them all:
+``period_days`` and ``period_error_days`` for the fit, ``periodogram_peak_days`` and
+``periodogram_peak_error_days`` for the peak.
 
 The fold counts phase from the first observation, so only the period moves it. Where the
 eclipses fall in phase doesn't matter for finding the period; the epoch for O-C comes
@@ -970,7 +984,9 @@ From a script:
 
     curve = load_light_curves(["NSVS_B_magnitudes.txt"], ["B"])
     result = search(curve, 0.1, 1.0, "ANOVA")
-    print(result.best_period, result.error, result.half_width)
+    print(result.period, result.error)                    # the least-squares fit
+    print(result.best_period, result.postmortem_error)    # the periodogram's peak
+    print(result.half_width)
 
 ``python -m EclipsingBinaries.period`` asks for the files in a terminal and opens the same
 window.

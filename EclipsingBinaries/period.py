@@ -19,11 +19,19 @@ The trial periods are spaced evenly in frequency, with the spacing set by
 how long the observations span, so narrow peaks from long baselines aren't
 stepped over. Nothing here needs a display; the window is period_window.py.
 
-The error on the period comes from a least-squares fit at the best period
-(period_error): each filter's light curve is fitted with its own Fourier
-series, all sharing one frequency, and the frequency's error comes from the
-fit's covariance, scaled by how well the model actually fits. The width of
-the periodogram peak is kept as well, as a much more cautious figure.
+The period given is a least-squares fit started from the periodogram's
+best peak (period_error): each filter's light curve is fitted with its own
+Fourier series, all sharing one frequency, and the frequency's error comes
+from the fit's covariance, scaled by how well the model actually fits. The
+fit and the peak can differ by more than that error, since a periodogram's
+peak is a rougher measure of the period than the fit, so the peak is kept
+too, with the error Peranso gives for it (postmortem_error):
+Schwarzenberg-Czerny's (1991) "post-mortem" method, which reads it off the
+width of the peak at the level of the noise around it. That error matches
+the real scatter of the peak for Multi-harmonic and Lomb-Scargle
+periodograms, but ANOVA's peaks have ragged tops with sharp eclipses, and
+for those it can be far too small. The peak's half width at half height is
+kept as well, as the most cautious figure.
 
 Author: Kyle Koeller
 Created: 10/10/2026
@@ -352,7 +360,15 @@ class SearchResult:
     max_period: float
     settings: dict = field(default_factory=dict)
     doubled_from: float | None = None   # the periodogram's peak, when the orbital period is twice it
-    error: float | None = None          # 1 sigma error on best_period from period_error, in days
+    fit_period: float | None = None     # the least-squares fit's period (period_error), the one to use
+    error: float | None = None          # its 1 sigma error, in days
+    postmortem_error: float | None = None   # 1 sigma error on best_period (the peak) from postmortem_error
+    noise_level: float | None = None        # the mean noise power postmortem_error used
+
+    @property
+    def period(self):
+        """The period to use: the least-squares fit's, or the peak's if the fit couldn't be made."""
+        return self.fit_period if self.fit_period is not None else self.best_period
 
 
 def peak_sharpness(method, bins=DEFAULT_BINS, harmonics=DEFAULT_HARMONICS):
@@ -398,9 +414,17 @@ def search(curve, min_period, max_period, method=DEFAULT_METHOD, oversample=DEFA
         best, half_width = 2 * best, 2 * half_width
         best_power = float(score(curve, [best], method, bins=bins, harmonics=harmonics)[0])
     fit = period_error(curve, best)
+    # The post-mortem error is read off the periodogram's own peak; when the orbital
+    # period is double that, so is its error
+    peak = doubled_from if doubled_from is not None else best
+    post = postmortem_error(curve, peak, grid.periods, power, method, bins=bins, harmonics=harmonics)
+    scale = 2 if doubled_from is not None else 1
     return SearchResult(method, grid.periods, power, best, best_power, half_width, grid,
                         min_period, max_period, settings, doubled_from,
-                        error=fit.error if fit is not None else None)
+                        fit_period=fit.period if fit is not None else None,
+                        error=fit.error if fit is not None else None,
+                        postmortem_error=post.error * scale if post is not None else None,
+                        noise_level=post.noise if post is not None else None)
 
 
 def _refine_args(settings):
@@ -555,6 +579,118 @@ def period_error(curve, period, harmonics=None, iterations=20):
     return PeriodFit(1.0 / frequency, sigma_f / frequency ** 2, harmonics, rms)
 
 
+@dataclass
+class PostMortem:
+    """
+    What postmortem_error found: the 1 sigma error in days, the mean noise
+    power around the peak, the level (peak minus noise) the peak's width was
+    measured at, and the 1 sigma interval of periods, shortest first.
+    """
+    error: float
+    noise: float
+    level: float
+    interval: tuple
+
+
+NOISE_WINDOW = 0.25     # mean noise power is taken within this fraction of the frequency either side
+NOISE_EXCLUDE = 3       # peak widths (1 / baseline) left out around the peak itself
+
+
+def mean_noise_power(periods, power, period, baseline):
+    """
+    The mean noise power level of a periodogram around a period: the mean
+    power within NOISE_WINDOW of its frequency either side, leaving out the
+    peak itself and, by clipping anything more than 5 sigma above the rest,
+    other strong peaks and their aliases. Returns None if there's too little
+    periodogram around the period to tell.
+    """
+    from astropy.stats import sigma_clip
+    frequencies = 1.0 / np.asarray(periods, float)
+    power = np.asarray(power, float)
+    f0 = 1.0 / period
+    near = np.abs(frequencies - f0) <= NOISE_WINDOW * f0
+    away = np.abs(frequencies - f0) > NOISE_EXCLUDE / baseline
+    values = power[near & away & np.isfinite(power)]
+    if len(values) < 20:
+        return None
+    clipped = sigma_clip(values, sigma_lower=10, sigma_upper=5, maxiters=10)
+    noise = float(np.ma.mean(clipped))
+    return noise if np.isfinite(noise) else None
+
+
+def _crossing(at, frequencies, power, start, step, level, peak):
+    """
+    Walk from the grid point `start` one way until the power drops below
+    level, then find the frequency where it crosses exactly, between the last
+    point above the level and the first below. The drop is often far smaller
+    than the grid spacing, so the peak's top (`peak`, found between grid
+    points) is the starting point when the grid itself has nothing above the
+    level.
+    """
+    from scipy.optimize import brentq
+    inside, i = peak, start
+    if power[i] >= level and (frequencies[i] - peak) * step > 0:
+        inside = frequencies[i]
+    while 0 <= i + step < len(power):
+        if power[i + step] < level:
+            outside = frequencies[i + step]
+            return float(brentq(lambda f: at(f) - level, min(inside, outside), max(inside, outside),
+                                xtol=1e-14 * peak, rtol=1e-12))
+        i += step
+        inside = frequencies[i]
+    return None
+
+
+def postmortem_error(curve, period, periods, power, method=DEFAULT_METHOD, bins=DEFAULT_BINS,
+                     harmonics=DEFAULT_HARMONICS):
+    """
+    The 1 sigma error on a period by Schwarzenberg-Czerny's (1991) "post-mortem"
+    method, as Peranso gives it. The periodogram is scored finely across the
+    peak at `period`, and the 1 sigma interval is the width of the peak at the
+    level of its top minus the mean noise power level around it (from the
+    search's periodogram, periods and power); the error is half that interval.
+
+    Because the noise level comes from the periodogram itself, this allows for
+    noise that isn't independent from point to point, which the least-squares
+    error doesn't. Returns a PostMortem, or None if the noise level can't be
+    found or the peak doesn't stand clear of it.
+    """
+    baseline = curve.baseline
+    noise = mean_noise_power(periods, power, period, baseline)
+    if noise is None or noise <= 0:
+        return None
+    from scipy.optimize import minimize_scalar
+
+    def at(frequency):
+        value = float(score(curve, [1.0 / frequency], method, bins=bins, harmonics=harmonics)[0])
+        return value if np.isfinite(value) else -np.inf
+
+    f0 = 1.0 / period
+    frequencies = np.linspace(max(f0 - 1.5 / baseline, f0 * 0.5), f0 + 1.5 / baseline, 801)
+    fine = np.asarray(score(curve, 1.0 / frequencies, method, bins=bins, harmonics=harmonics), float)
+    if not np.any(np.isfinite(fine)):
+        return None
+    fine = np.where(np.isfinite(fine), fine, -np.inf)
+    top = int(np.argmax(fine))
+    # The top itself, between the grid points either side of the highest one
+    lo_f, hi_f = frequencies[max(top - 1, 0)], frequencies[min(top + 1, len(fine) - 1)]
+    peak = minimize_scalar(lambda f: -at(f), bounds=(lo_f, hi_f), method="bounded",
+                           options={"xatol": 1e-14 * f0})
+    if fine[top] >= -peak.fun:
+        top_frequency, top_power = frequencies[top], fine[top]
+    else:
+        top_frequency, top_power = float(peak.x), -peak.fun
+    level = top_power - noise
+    if level <= np.min(fine[np.isfinite(fine)]):
+        return None
+    low = _crossing(at, frequencies, fine, top, -1, level, top_frequency)
+    high = _crossing(at, frequencies, fine, top, 1, level, top_frequency)
+    if low is None or high is None or low <= 0:
+        return None
+    interval = (1.0 / high, 1.0 / low)
+    return PostMortem((interval[1] - interval[0]) / 2, noise, float(level), interval)
+
+
 def format_error(error):
     """An error in days to two significant figures, written out in full (0.00000078, not 7.8e-07)."""
     if error is None or not np.isfinite(error) or error <= 0:
@@ -590,17 +726,21 @@ def period_file_name(obj_name):
     return f"{stem}_period.txt"
 
 
-def save_period(path, obj_name, period, result=None, files=(), error=None):
+def save_period(path, obj_name, period, result=None, files=(), error=None, peak=None, postmortem=None):
     """
     Write the period to a small text file: one "name<TAB>value" line, with
-    its 1 sigma error (when known) and the search settings underneath for the
-    record.
+    its 1 sigma error when known, the periodogram peak and its post-mortem
+    error when known, and the search settings underneath for the record.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [f"# Period search for {obj_name}", f"period_days\t{period:.9f}"]
     if error is not None and np.isfinite(error):
         lines.append(f"period_error_days\t{error:.9f}")
+    if peak is not None and np.isfinite(peak):
+        lines.append(f"periodogram_peak_days\t{peak:.9f}")
+    if postmortem is not None and np.isfinite(postmortem):
+        lines.append(f"periodogram_peak_error_days\t{postmortem:.9f}")
     if result is not None:
         lines += [f"period_half_width_days\t{result.half_width:.9f}",
                   f"method\t{result.method}",

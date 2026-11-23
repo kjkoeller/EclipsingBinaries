@@ -228,19 +228,78 @@ def test_period_error_gives_each_filter_its_own_shape(example_bvr):
     together = pr.period_error(example_bvr, result.best_period)
     assert together is not None and together.error > 0
     assert result.error == pytest.approx(together.error)
+    # The period to use is the fit's, which stays on the peak it started from
+    assert result.fit_period == pytest.approx(together.period)
+    assert result.period == result.fit_period
+    assert abs(result.fit_period - result.best_period) < result.half_width
     # A period that isn't the light curve's doesn't give an error
     assert pr.period_error(example_bvr, 0.2) is None
     assert pr.period_error(example_bvr.select(["B"]).__class__(
         example_bvr.time[:5], example_bvr.mag[:5], example_bvr.err[:5], example_bvr.label[:5]), 0.3174) is None
 
 
-def test_saved_period_has_its_error(tmp_path, example_bvr):
+def test_saved_period_has_its_errors_and_peak(tmp_path, example_bvr):
     result = pr.search(example_bvr.select(["B"]), 0.1, 1.0)
     path = tmp_path / "p.txt"
-    pr.save_period(path, "NSVS 896797", result.best_period, result, error=result.error)
-    assert f"period_error_days\t{result.error:.9f}" in path.read_text()
+    pr.save_period(path, "NSVS 896797", result.period, result, error=result.error,
+                   peak=result.best_period, postmortem=result.postmortem_error)
+    text = path.read_text()
+    assert f"period_error_days\t{result.error:.9f}" in text
+    assert f"periodogram_peak_days\t{result.best_period:.9f}" in text
+    assert f"periodogram_peak_error_days\t{result.postmortem_error:.9f}" in text
+    assert pr.read_period(path) == pytest.approx(result.period, abs=1e-9)
     pr.save_period(path, "NSVS 896797", result.best_period)
-    assert "period_error_days" not in path.read_text()
+    assert "period_error_days" not in path.read_text() and "peak" not in path.read_text()
+
+
+# --- Schwarzenberg-Czerny's post-mortem error --------------------------------------------------
+
+def test_postmortem_error_matches_the_scatter_of_the_peak():
+    # For a Multi-harmonic periodogram the peak's own scatter between noise
+    # realisations is what the post-mortem error should give
+    true = 0.4567891
+    peaks, errors = [], []
+    for seed in range(20):
+        result = pr.search(_synthetic(period=true, n=800, noise=0.02, seed=seed), 0.3, 0.6, "Multi-harmonic")
+        peaks.append(result.best_period)
+        errors.append(result.postmortem_error)
+    ratio = np.std(peaks) / np.mean(errors)
+    assert 0.6 < ratio < 1.6
+
+
+def test_postmortem_error_is_read_off_the_peak_at_the_noise_level():
+    curve = _synthetic(n=800, noise=0.02)
+    result = pr.search(curve, 0.3, 0.6, "Multi-harmonic")
+    post = pr.postmortem_error(curve, result.best_period, result.periods, result.power, "Multi-harmonic")
+    assert post.error == pytest.approx(result.postmortem_error)
+    assert post.interval[0] < result.best_period < post.interval[1]
+    assert post.error == pytest.approx((post.interval[1] - post.interval[0]) / 2)
+    # The edges of the interval are where the power is the noise level below the top
+    at = pr.score(curve, list(post.interval), "Multi-harmonic")
+    assert at == pytest.approx([post.level, post.level], rel=1e-6)
+    # (the search's best period is within a grid step of the very top, so a little lower)
+    top = float(pr.score(curve, [result.best_period], "Multi-harmonic")[0])
+    assert 0.8 * post.noise < top - post.level <= post.noise * (1 + 1e-9)
+    # The noise is the periodogram's typical level, far below the peak
+    assert post.noise < 0.01 * top
+
+
+def test_mean_noise_power_ignores_the_peak_and_other_strong_lines():
+    periods = 1 / np.linspace(1.0, 3.0, 4001)
+    rng = np.random.default_rng(2)
+    power = rng.exponential(1.0, periods.size)
+    power[2000] = 500                 # the peak itself, at frequency 2
+    power[2600] = 300                 # another strong line nearby
+    noise = pr.mean_noise_power(periods, power, periods[2000], baseline=100)
+    assert noise == pytest.approx(1.0, rel=0.1)
+    assert pr.mean_noise_power(periods[:10], power[:10], periods[5], baseline=100) is None
+
+
+def test_doubled_period_doubles_the_peak_error(example_bvr):
+    result = pr.search(example_bvr, 0.1, 1.0, "ANOVA")
+    assert result.doubled_from is not None
+    single = pr.postmortem_error(example_bvr, result.doubled_from, result.periods, result.power, "ANOVA")
+    assert result.postmortem_error == pytest.approx(2 * single.error)
 
 
 @pytest.mark.parametrize("error, text", [(7.8412e-07, "0.00000078"), (0.0001004, "0.00010"),

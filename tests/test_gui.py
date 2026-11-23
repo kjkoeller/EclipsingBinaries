@@ -939,13 +939,24 @@ def test_period_search_finds_the_period_and_sends_it(app, tmp_path):
     assert window.error_var.get().startswith("Error: \u00b1")
     assert "\u00b1" in window.status_var.get()
     assert "(1 sigma, least-squares fit)" in app.log_area.get("1.0", "end")
+    # The period shown is the fit's; the periodogram's peak is given too, with Peranso's error
+    assert window.period == pytest.approx(window.result.fit_period)
+    assert window.peak_period == pytest.approx(window.result.best_period)
+    assert window.peak_error == pytest.approx(window.result.postmortem_error)
+    assert window.peak_var.get().startswith("Periodogram peak: ")
+    assert "(post-mortem)" in window.peak_var.get() and "ANOVA" in window.peak_var.get()
+    assert "Schwarzenberg-Czerny post-mortem" in app.log_area.get("1.0", "end")
 
     window.save()
     saved = tmp_path / "NSVS_896797_period.txt"
     assert saved.exists()
     assert "period_error_days" in saved.read_text()
+    assert "periodogram_peak_error_days" in saved.read_text()
     from EclipsingBinaries import star_file
-    assert star_file.known("NSVS 896797")["period_error"] == pytest.approx(window.period_error)
+    known = star_file.known("NSVS 896797")
+    assert known["period_error"] == pytest.approx(window.period_error)
+    assert known["periodogram_peak"] == pytest.approx(window.peak_period)
+    assert known["periodogram_peak_error"] == pytest.approx(window.peak_error)
     from EclipsingBinaries.period import read_period
 
     assert read_period(saved) == pytest.approx(window.period, abs=1e-7)
@@ -966,9 +977,11 @@ def test_period_search_finds_the_period_and_sends_it(app, tmp_path):
 def test_period_window_controls(app, tmp_path):
     window = _open_period(app, tmp_path, count=1)
     period, error = window.period, window.period_error
+    peak, peak_error = window.peak_period, window.peak_error
     window.scale_period(2)
     assert window.period == pytest.approx(2 * period)
     assert window.period_error == pytest.approx(2 * error)
+    assert (window.peak_period, window.peak_error) == pytest.approx((2 * peak, 2 * peak_error))
     window.scale_period(0.5)
     assert window.period_error == pytest.approx(error)
     assert not hasattr(window, "epoch")
@@ -978,9 +991,11 @@ def test_period_window_controls(app, tmp_path):
     window._typed_period()
     assert window.period == pytest.approx(0.3175)
     assert window.period_error is None and window.error_var.get() == ""
+    assert window.peak_period is None and window.peak_var.get() == ""
     window.refine_here()
     assert window.period == pytest.approx(0.31741, abs=3e-4)
     assert window.period_error is not None and window.error_var.get()
+    assert window.peak_error is not None and window.peak_var.get()
 
     before = window.period
     window._on_key(_PlotEvent(window, key="right"))

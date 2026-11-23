@@ -122,6 +122,11 @@ class PeriodWindow(tk.Toplevel):
         ttk.Label(top, text="Longest period (d):").pack(side="left")
         self.max_var = tk.StringVar(master=self, value=f"{max_period:g}")
         ttk.Entry(top, textvariable=self.max_var, width=8).pack(side="left", padx=(4, 14))
+        resolution_label = ttk.Label(top, text="Resolution:")
+        resolution_label.pack(side="left")
+        self.resolution_var = tk.StringVar(master=self, value=str(pr.DEFAULT_OVERSAMPLE))
+        ttk.Spinbox(top, from_=1, to=pr.MAX_OVERSAMPLE, increment=10, textvariable=self.resolution_var,
+                    width=6).pack(side="left", padx=(4, 14))
         self.search_button = ttk.Button(top, text="Search", command=self.start_search, style=accent)
         self.search_button.pack(side="left")
 
@@ -234,12 +239,20 @@ class PeriodWindow(tk.Toplevel):
         except ValueError:
             self._status("The period range needs two numbers, in days.", error=True)
             return
+        try:
+            resolution = float(self.resolution_var.get())
+            if not 1 <= resolution <= pr.MAX_OVERSAMPLE:
+                raise ValueError
+        except ValueError:
+            self._status(f"Resolution has to be a number from 1 to {pr.MAX_OVERSAMPLE}: the trial periods "
+                         "per peak width.", error=True)
+            return
         method = self.method_var.get()
         outcome = {}
 
         def work():
             try:
-                outcome["result"] = pr.search(curve, lo, hi, method)
+                outcome["result"] = pr.search(curve, lo, hi, method, oversample=resolution)
             except pr.PeriodError as e:
                 outcome["error"] = str(e)
             except Exception as e:  # shown in the window rather than lost on a thread
@@ -275,7 +288,8 @@ class PeriodWindow(tk.Toplevel):
         r = self.result
         error = f" \u00b1 {pr.format_error(r.error)}" if r.error is not None else ""
         text = (f"Best period {r.period:.7f}{error} d, fitted from the {r.method} peak at "
-                f"{r.best_period:.7f} d ({len(r.periods):,} trial periods).")
+                f"{r.best_period:.7f} d ({len(r.periods):,} trial periods, "
+                f"{pr.format_error(r.step)} d apart there).")
         if r.doubled_from is not None:
             text += (f" The highest peak was {r.doubled_from:.6f} d, but folded on twice that the two "
                      "eclipses differ, so the orbital period is double the peak.")
@@ -285,7 +299,8 @@ class PeriodWindow(tk.Toplevel):
         self._status(text)
         if r.error is not None:
             self.log(f"Period search ({r.method}): best period {r.period:.7f} \u00b1 {pr.format_error(r.error)} d "
-                     "(1 sigma, least-squares fit)")
+                     f"(1 sigma, least-squares fit; {pr.format_error(r.white_error)} d for independent noise, "
+                     f"times {r.red_noise:.2f} for drifts during the nights)")
         else:
             self.log(f"Period search ({r.method}): best period {r.period:.7f} d, the periodogram peak; the "
                      "least-squares fit couldn't be made, so it has no error")
@@ -334,8 +349,6 @@ class PeriodWindow(tk.Toplevel):
             peak = f"Periodogram peak: {self.peak_period:.7f} d"
             if self.peak_error is not None:
                 peak += f" \u00b1{pr.format_error(self.peak_error)} (post-mortem)"
-                if self.result is not None and self.result.method == "ANOVA":
-                    peak += "; may be too small for ANOVA"
             self.peak_var.set(peak)
         else:
             self.peak_var.set("")
@@ -348,10 +361,10 @@ class PeriodWindow(tk.Toplevel):
     def _peak_error_text(error, method):
         if error is None:
             return " d; its post-mortem error couldn't be worked out"
-        text = f" \u00b1 {pr.format_error(error)} d (1 sigma, Schwarzenberg-Czerny post-mortem, as Peranso gives it)"
+        text = f" \u00b1 {pr.format_error(error)} d (1 sigma, Schwarzenberg-Czerny post-mortem, as Peranso gives it"
         if method == "ANOVA":
-            text += "; with sharp eclipses this can be far too small for ANOVA, whose peaks have ragged tops"
-        return text
+            text += ", read off a Multi-harmonic periodogram since that's Peranso's ANOVA"
+        return text + ")"
 
     def _fit_at_peak(self, curve, peak):
         """
@@ -362,7 +375,7 @@ class PeriodWindow(tk.Toplevel):
         fit = pr.period_error(curve, peak)
         post = None
         if self.result is not None:
-            post = pr.postmortem_error(curve, peak, self.result.periods, self.result.power, self.result.method,
+            post = pr.peranso_error(curve, peak, self.result.periods, self.result.power, self.result.method,
                                        **pr._refine_args(self.result.settings))
         self.period_error = fit.error if fit is not None else None
         self.peak_period, self.peak_error = peak, (post.error if post is not None else None)

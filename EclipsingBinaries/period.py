@@ -27,11 +27,14 @@ fit and the peak can differ by more than that error, since a periodogram's
 peak is a rougher measure of the period than the fit, so the peak is kept
 too, with the error Peranso gives for it (postmortem_error):
 Schwarzenberg-Czerny's (1991) "post-mortem" method, which reads it off the
-width of the peak at the level of the noise around it. That error matches
-the real scatter of the peak for Multi-harmonic and Lomb-Scargle
-periodograms, but ANOVA's peaks have ragged tops with sharp eclipses, and
-for those it can be far too small. The peak's half width at half height is
-kept as well, as the most cautious figure.
+width of the peak at the level of the noise around it. For ANOVA it's read
+off a Multi-harmonic periodogram, as Peranso's ANOVA is Schwarzenberg-
+Czerny's multi-harmonic one (peranso_error). The peak's half width at half
+height is kept as well, as the most cautious figure.
+
+The least-squares error is raised for correlated noise (red_noise_factor):
+drifts during a night make the period less certain than independent points
+would, and with only a few nights that's usually most of the error.
 
 Author: Kyle Koeller
 Created: 10/10/2026
@@ -51,6 +54,7 @@ DEFAULT_BINS = 20           # phase bins for ANOVA
 DEFAULT_MIN_BIN = 3         # bins with fewer points are left out
 DEFAULT_HARMONICS = 4       # sharp eclipses need more than one or two
 DEFAULT_OVERSAMPLE = 10     # trial frequencies per peak width
+MAX_OVERSAMPLE = 1000       # the most the window lets that be set to
 MAX_ERROR_HARMONICS = 40    # most Fourier terms per filter in the fit for the period's error
 MAX_TRIALS = 300_000        # most trial periods in one search
 MAX_WORK = 150_000_000      # trial periods times points, to keep a search to seconds
@@ -362,6 +366,8 @@ class SearchResult:
     doubled_from: float | None = None   # the periodogram's peak, when the orbital period is twice it
     fit_period: float | None = None     # the least-squares fit's period (period_error), the one to use
     error: float | None = None          # its 1 sigma error, in days
+    white_error: float | None = None    # that error before allowing for correlated noise
+    red_noise: float = 1.0              # the factor it was raised by (red_noise_factor)
     postmortem_error: float | None = None   # 1 sigma error on best_period (the peak) from postmortem_error
     noise_level: float | None = None        # the mean noise power postmortem_error used
 
@@ -369,6 +375,13 @@ class SearchResult:
     def period(self):
         """The period to use: the least-squares fit's, or the peak's if the fit couldn't be made."""
         return self.fit_period if self.fit_period is not None else self.best_period
+
+    @property
+    def step(self):
+        """How far apart the trial periods are near the peak, in days."""
+        peak = self.doubled_from if self.doubled_from is not None else self.best_period
+        i = int(np.clip(np.searchsorted(self.periods, peak), 1, len(self.periods) - 1))
+        return float(self.periods[i] - self.periods[i - 1])
 
 
 def peak_sharpness(method, bins=DEFAULT_BINS, harmonics=DEFAULT_HARMONICS):
@@ -408,21 +421,29 @@ def search(curve, min_period, max_period, method=DEFAULT_METHOD, oversample=DEFA
     # highest peak is often half the orbital period. If the fold on twice it
     # shows two different eclipses, the doubled period is the orbit.
     if 4 * best <= curve.baseline and halves_differ(curve, best)[0]:
-        # The peak itself is the sharpest measure, so double it rather than
-        # searching again around the orbital period, where the score is weaker
+        # Then the peak at the orbital period is the one to give, at its very top,
+        # the same as a search of a narrower range around it would find
+        # Lomb-Scargle has no peak there (one sine wave can't fit two eclipses a cycle),
+        # so if the top found is more than the peak's width away, the doubled peak is kept
         doubled_from = best
-        best, half_width = 2 * best, 2 * half_width
-        best_power = float(score(curve, [best], method, bins=bins, harmonics=harmonics)[0])
+        top, top_power, top_width = refine(curve, 2 * best, method, **_refine_args(settings))
+        if abs(top - 2 * best) <= 2 * half_width:
+            best, best_power, half_width, scale = top, top_power, top_width, 1
+        else:
+            best, half_width, scale = 2 * best, 2 * half_width, 2
+            best_power = float(score(curve, [best], method, bins=bins, harmonics=harmonics)[0])
+    else:
+        scale = 1
     fit = period_error(curve, best)
-    # The post-mortem error is read off the periodogram's own peak; when the orbital
-    # period is double that, so is its error
-    peak = doubled_from if doubled_from is not None else best
-    post = postmortem_error(curve, peak, grid.periods, power, method, bins=bins, harmonics=harmonics)
-    scale = 2 if doubled_from is not None else 1
+    # The post-mortem error is read off the peak the period came from, doubled with it
+    peak = best / scale
+    post = peranso_error(curve, peak, grid.periods, power, method, bins=bins, harmonics=harmonics)
     return SearchResult(method, grid.periods, power, best, best_power, half_width, grid,
                         min_period, max_period, settings, doubled_from,
                         fit_period=fit.period if fit is not None else None,
                         error=fit.error if fit is not None else None,
+                        white_error=fit.white_error if fit is not None else None,
+                        red_noise=fit.red_noise if fit is not None else 1.0,
                         postmortem_error=post.error * scale if post is not None else None,
                         noise_level=post.noise if post is not None else None)
 
@@ -434,10 +455,12 @@ def _refine_args(settings):
 def refine(curve, period, method=DEFAULT_METHOD, bins=DEFAULT_BINS, harmonics=DEFAULT_HARMONICS):
     """
     Look closely around one period: score 401 trials across one peak width
-    either side and return (best period, its score, half width of the peak
-    at half height in days). The half width is a rough guide to how well the
+    either side, then find the very top between the trials either side of the
+    highest, and return (best period, its score, half width of the peak at
+    half height in days). The half width is a rough guide to how well the
     period is pinned down by these observations alone.
     """
+    from scipy.optimize import minimize_scalar
     baseline = curve.baseline
     f0 = 1.0 / period
     span = 1.0 / baseline
@@ -448,6 +471,17 @@ def refine(curve, period, method=DEFAULT_METHOD, bins=DEFAULT_BINS, harmonics=DE
         return float(period), float("nan"), float("nan")
     i = int(np.nanargmax(power))
     best, best_power = float(periods[i]), float(power[i])
+
+    # The very top lies somewhere between the grid points either side of the highest,
+    # so look for it there; that gives the highest score the peak has
+    def minus(p):
+        value = float(score(curve, [p], method, bins=bins, harmonics=harmonics)[0])
+        return -value if np.isfinite(value) else np.inf
+    lo_p, hi_p = periods[max(i - 1, 0)], periods[min(i + 1, len(periods) - 1)]
+    if hi_p > lo_p:
+        top = minimize_scalar(minus, bounds=(lo_p, hi_p), method="bounded", options={"xatol": 1e-12 * best})
+        if np.isfinite(top.fun) and -top.fun > best_power:
+            best, best_power = float(top.x), float(-top.fun)
     floor = np.nanmin(power)
     half = floor + (best_power - floor) / 2
     lo = i
@@ -463,13 +497,65 @@ def refine(curve, period, method=DEFAULT_METHOD, bins=DEFAULT_BINS, harmonics=DE
 class PeriodFit:
     """
     The least-squares fit period_error makes: the period it settles on, the
-    1 sigma error on it in days, how many Fourier terms each filter got, and
-    the scatter left about the fit in magnitudes.
+    1 sigma error on it in days, how many Fourier terms each filter got, the
+    scatter left about the fit in magnitudes, the error before allowing for
+    correlated noise, and the factor (red_noise, at least 1) it was raised by.
     """
     period: float
     error: float
     harmonics: int
     rms: float
+    white_error: float = None
+    red_noise: float = 1.0
+
+
+NIGHT_GAP = 0.2                     # days; a gap longer than this starts a new night
+RED_NOISE_BINS_MIN = (10, 15, 20, 30, 45, 60, 90, 120)   # bin widths tried, in minutes
+
+
+def red_noise_factor(time, residuals, labels, period):
+    """
+    How much correlated noise there is in the residuals of a fit, as the
+    factor beta that the error has to be raised by (Pont, Zucker & Queloz
+    2006; Winn et al. 2008). Within each night of each filter the residuals
+    are averaged in bins of a given width; with independent noise the
+    scatter of those averages is the scatter of the points over the square
+    root of the points per bin, and drifts make it larger. beta is the
+    ratio of the two, the median over nights and filters, taking the largest
+    over bin widths from 10 minutes up to a fifth of the period (the time
+    scale of an eclipse), and never less than 1. Taking the largest rather
+    than the average made the errors match the real scatter of the period in
+    simulated nights with drifts.
+    """
+    time = np.asarray(time, float)
+    residuals = np.asarray(residuals, float)
+    labels = np.asarray(labels)
+    order = np.argsort(time, kind="stable")
+    time, residuals, labels = time[order], residuals[order], labels[order]
+    night = np.concatenate([[0], np.cumsum(np.diff(time) > NIGHT_GAP)])
+    widths = [m / 1440 for m in RED_NOISE_BINS_MIN if m / 1440 <= period / 5]
+    betas = []
+    for width in widths:
+        ratios = []
+        for label in np.unique(labels):
+            for n in np.unique(night):
+                keep = (labels == label) & (night == n)
+                if keep.sum() < 20:
+                    continue
+                t, r = time[keep], residuals[keep]
+                index = np.floor((t - t[0]) / width).astype(int)
+                counts = np.bincount(index)
+                full = np.flatnonzero(counts >= 2)
+                if len(full) < 3:
+                    continue
+                means = np.bincount(index, weights=r)[full] / counts[full]
+                per_bin = counts[full].mean()
+                expected = r.std() / np.sqrt(per_bin) * np.sqrt(len(full) / (len(full) - 1))
+                if expected > 0:
+                    ratios.append(means.std() / expected)
+        if ratios:
+            betas.append(float(np.median(ratios)))
+    return max(1.0, float(np.max(betas))) if betas else 1.0
 
 
 def _fourier_columns(t, frequency, groups, n_groups, harmonics):
@@ -527,9 +613,11 @@ def period_error(curve, period, harmonics=None, iterations=20):
     and anything the model misses, show up in it. The period's error is the
     frequency's error over the frequency squared.
 
-    This is the formal error, and treats every point as independent. Night to
-    night drifts and other correlated noise make the true error larger, and
-    the half width of the periodogram peak is a more cautious figure.
+    That alone treats every point as independent, and drifts during a night
+    (from the sky, the comparison stars or the detector) make the true error
+    larger, often several times larger. So it's raised by red_noise_factor,
+    which measures how much the residuals drift on time scales up to that of
+    an eclipse. Both are kept in the PeriodFit.
     """
     t = np.asarray(curve.time, float)
     y = np.asarray(curve.mag, float)
@@ -576,7 +664,9 @@ def period_error(curve, period, harmonics=None, iterations=20):
     if not np.isfinite(sigma_f):
         return None
     rms = float(np.sqrt(np.mean((y - X @ beta) ** 2)))
-    return PeriodFit(1.0 / frequency, sigma_f / frequency ** 2, harmonics, rms)
+    white = sigma_f / frequency ** 2
+    red = red_noise_factor(curve.time, y - X @ beta, curve.label, 1.0 / frequency)
+    return PeriodFit(1.0 / frequency, white * red, harmonics, rms, white_error=white, red_noise=red)
 
 
 @dataclass
@@ -590,6 +680,7 @@ class PostMortem:
     noise: float
     level: float
     interval: tuple
+    method: str = None     # the periodogram it was read off
 
 
 NOISE_WINDOW = 0.25     # mean noise power is taken within this fraction of the frequency either side
@@ -688,7 +779,32 @@ def postmortem_error(curve, period, periods, power, method=DEFAULT_METHOD, bins=
     if low is None or high is None or low <= 0:
         return None
     interval = (1.0 / high, 1.0 / low)
-    return PostMortem((interval[1] - interval[0]) / 2, noise, float(level), interval)
+    return PostMortem((interval[1] - interval[0]) / 2, noise, float(level), interval, method)
+
+
+def peranso_error(curve, period, periods, power, method=DEFAULT_METHOD, bins=DEFAULT_BINS,
+                  harmonics=DEFAULT_HARMONICS):
+    """
+    The post-mortem error as Peranso would give it for this method. Peranso's
+    ANOVA is Schwarzenberg-Czerny's (1996), which fits Fourier harmonics like
+    the Multi-harmonic method here rather than grouping the fold into phase
+    bins, so for ANOVA the error is read off a Multi-harmonic periodogram of
+    the same stretch. The phase-binned ANOVA's peaks have ragged tops with
+    sharp eclipses, and read off those the error comes out far too small.
+    Otherwise it's postmortem_error on the search's own periodogram.
+    """
+    if method != "ANOVA":
+        return postmortem_error(curve, period, periods, power, method, bins=bins, harmonics=harmonics)
+    f0 = 1.0 / period
+    shortest = 1.0 / (f0 * (1 + NOISE_WINDOW))
+    longest = min(1.0 / (f0 * (1 - NOISE_WINDOW)), 0.999 * curve.baseline)
+    if longest <= shortest:
+        return None
+    grid = frequency_grid(curve.time, shortest, longest,
+                          oversample=3 * peak_sharpness("Multi-harmonic", harmonics=harmonics),
+                          n_points=len(curve.time))
+    stretch = score(curve, grid.periods, "Multi-harmonic", harmonics=harmonics)
+    return postmortem_error(curve, period, grid.periods, stretch, "Multi-harmonic", harmonics=harmonics)
 
 
 def format_error(error):

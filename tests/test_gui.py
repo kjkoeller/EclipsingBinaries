@@ -938,14 +938,16 @@ def test_period_search_finds_the_period_and_sends_it(app, tmp_path):
     assert window.period_error is not None and 0 < window.period_error < 1e-4
     assert window.error_var.get().startswith("Error: \u00b1")
     assert "\u00b1" in window.status_var.get()
-    assert "(1 sigma, least-squares fit)" in app.log_area.get("1.0", "end")
+    assert "(1 sigma, least-squares fit;" in app.log_area.get("1.0", "end")
+    assert "for drifts during the nights" in app.log_area.get("1.0", "end")
+    assert "apart there)" in window.status_var.get()
     # The period shown is the fit's; the periodogram's peak is given too, with Peranso's error
     assert window.period == pytest.approx(window.result.fit_period)
     assert window.peak_period == pytest.approx(window.result.best_period)
     assert window.peak_error == pytest.approx(window.result.postmortem_error)
     assert window.peak_var.get().startswith("Periodogram peak: ")
-    assert "(post-mortem)" in window.peak_var.get() and "ANOVA" in window.peak_var.get()
-    assert "Schwarzenberg-Czerny post-mortem" in app.log_area.get("1.0", "end")
+    assert "(post-mortem)" in window.peak_var.get()
+    assert "since that's Peranso's ANOVA" in app.log_area.get("1.0", "end")
 
     window.save()
     saved = tmp_path / "NSVS_896797_period.txt"
@@ -1455,3 +1457,18 @@ def test_reddening_found_after_leaving_the_panel_doesnt_crash(app):
     app.open_panel("color")
     app._put_reddening(old_entry, "0.1234", "SW Lac")
     assert app._entry_value(app.color_ebv_entry) == "0.1234"
+
+
+def test_period_search_resolution_sets_the_trial_spacing(app, tmp_path):
+    window = _open_period(app, tmp_path, count=1)
+    coarse = window.result.step
+    window.min_var.set("0.31")
+    window.max_var.set("0.325")
+    window.resolution_var.set("500")
+    window.start_search()
+    _finish_search(window)
+    assert window.result.settings["oversample"] == 500
+    assert window.result.step < coarse / 10
+    window.resolution_var.set("0")
+    window.start_search()
+    assert "Resolution has to be a number from 1 to 1000" in window.status_var.get()

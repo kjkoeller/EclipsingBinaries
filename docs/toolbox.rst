@@ -918,13 +918,22 @@ Folding two similar eclipses on top of each other scores well with every method,
 highest peak is often half the orbital period. After each search the light curve is
 folded on twice the best period and the two halves are compared. If they hold different
 eclipses (one deeper than the other), the period is doubled and the window explains why.
-The comparison is made against the night-to-night scatter in the data itself, so it
+The top of the periodogram's own peak at the doubled period is then found, so the result
+is the same as searching a narrow range around the orbital period. (Lomb-Scargle fits a
+single sine wave, which has no peak there, so for it the doubled peak is kept.) The
+comparison is made against the night-to-night scatter in the data itself, so it
 doesn't double a period that's already right. When the two eclipses are too alike to tell
 apart, nothing in the light curve can settle it: the fold shows one dip per cycle, and
 **×2** fixes it.
 
 In the window:
 
++ **Resolution** is how many trial periods are scored across each peak's width, 10 to
+  start with and up to 1000. Like Peranso's resolution, raise it and narrow the
+  **Shortest** and **Longest** period around a peak, then **Search** again, to sample
+  the peak more finely; the status line says how far apart the trial periods are there.
+  The very top of the chosen peak is found between the trial periods whatever the
+  resolution, so the statistic shown there is the highest the peak reaches.
 + **Drag** along the periodogram, or move the **Period** slider under the plots, and the
   fold follows the period as it changes. A red dot rides the periodogram at the current
   period and the side panel shows the statistic there. A period that's slightly off
@@ -932,7 +941,7 @@ In the window:
   them up. The slider spans whatever the periodogram shows, so zoom in with the toolbar
   for finer control.
 + **Click** a peak without dragging to jump to its top, found automatically.
-+ **×2** and **÷2** double or halve the period (and its error); the left and right arrow
++ **×2** and **÷2** double or halve the period (and its errors); the left and right arrow
   keys nudge it. **Refine Here** finds the top of the nearest peak again.
 + After a search, a click on a peak or **Refine Here**, the period is fitted from the top
   of the peak (see below) and shown with its **Error**. The **Periodogram peak** is shown
@@ -951,9 +960,23 @@ terms is chosen by the Bayesian information criterion, up to 40, since sharp ecl
 many and too few makes the error too small. The frequency's error comes from the fit's
 covariance, scaled by the reduced chi squared so that magnitude errors that are too small
 or too large, and anything the model misses, are taken into account; the period's error
-is that over the frequency squared. In tests on simulated light curves it matched the
-scatter of the fitted periods from repeated noise. It treats every point as independent,
-though, so drifts from night to night make the true error larger.
+is that over the frequency squared.
+
+That much treats every point as independent, but photometry drifts during a night (with
+the sky, the airmass of the comparison stars, the detector), and neighbouring points then
+share the same error. With only a few nights that's usually most of the real error, so the
+error is raised by a factor for it, found the way Pont, Zucker & Queloz (2006) and Winn
+et al. (2008) do: within each night of each filter the fit's residuals are averaged in
+bins from 10 minutes up to a fifth of the period, and the scatter of those averages is
+compared with what independent noise would give. The factor is the largest ratio over
+those bin widths (the median over nights and filters), and never less than 1. The log
+gives the error before and after it.
+
+On simulated nights like the example data's, with drifts lasting about an hour, the error
+without the factor was 2 to 3 times smaller than the real scatter of the fitted periods,
+and with it they matched. For the example data the factor is about 2.7, and fitting each
+filter on its own gives periods that agree within the raised errors but not within the
+unraised ones.
 
 The fit is a sharper measure of the period than the periodogram's peak, so the two can
 differ by more than the fit's error. The peak is kept too, with the error Peranso gives:
@@ -962,8 +985,11 @@ peak is taken from the periodogram (within 25% of the peak's frequency either si
 leaving out the peak and clipping other strong lines), and the 1 sigma interval is the
 width of the peak where it has dropped by that much from its top; the error is half the
 interval. On simulated light curves it matched the real scatter of the peak for the
-Multi-harmonic method. ANOVA's peaks have ragged tops when the eclipses are sharp, and
-there it came out far too small, so the window and log warn about it for ANOVA.
+Multi-harmonic method. Peranso's ANOVA is Schwarzenberg-Czerny's (1996), which fits
+Fourier harmonics rather than grouping the fold into phase bins, so for ANOVA the error is
+read off a Multi-harmonic periodogram of the same stretch, as Peranso would. The
+phase-binned ANOVA's own peaks have ragged tops with sharp eclipses, and read off those it
+came out far too small.
 
 Times of minimum over a longer baseline (Find Minimum, then O-C Plotting) pin the period
 down far better than any of these.

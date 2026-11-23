@@ -118,7 +118,17 @@ def test_half_period_peak_is_doubled(example_bvr):
     """ANOVA prefers half the period for alike eclipses; the fold check doubles it."""
     result = pr.search(example_bvr, 0.1, 1.0, "ANOVA")
     assert result.doubled_from == pytest.approx(TRUE_PERIOD / 2, abs=1e-4)
+    # The top of the orbital period's own peak, as a search of a narrow range around it gives
+    assert result.best_period == pytest.approx(2 * result.doubled_from, abs=result.half_width)
+    narrow = pr.search(example_bvr, 0.3, 0.33, "ANOVA", oversample=200)
+    assert result.best_power == pytest.approx(narrow.best_power, rel=1e-3)
+
+
+def test_lomb_scargle_keeps_the_doubled_peak(example_bvr):
+    # One sine wave has no peak at the orbital period, so the doubled peak is kept
+    result = pr.search(example_bvr, 0.1, 1.0, "Lomb-Scargle")
     assert result.best_period == pytest.approx(2 * result.doubled_from)
+    assert result.period == pytest.approx(TRUE_PERIOD, abs=3e-5)
 
 
 @pytest.mark.parametrize("method", pr.METHODS)
@@ -295,11 +305,62 @@ def test_mean_noise_power_ignores_the_peak_and_other_strong_lines():
     assert pr.mean_noise_power(periods[:10], power[:10], periods[5], baseline=100) is None
 
 
-def test_doubled_period_doubles_the_peak_error(example_bvr):
-    result = pr.search(example_bvr, 0.1, 1.0, "ANOVA")
-    assert result.doubled_from is not None
-    single = pr.postmortem_error(example_bvr, result.doubled_from, result.periods, result.power, "ANOVA")
-    assert result.postmortem_error == pytest.approx(2 * single.error)
+def test_anova_post_mortem_error_is_read_off_a_multi_harmonic_periodogram(example_bvr):
+    # Peranso's ANOVA is Schwarzenberg-Czerny's multi-harmonic one
+    anova = pr.search(example_bvr, 0.3, 0.33, "ANOVA")
+    post = pr.peranso_error(example_bvr, anova.best_period, anova.periods, anova.power, "ANOVA")
+    assert post.method == "Multi-harmonic"
+    assert anova.postmortem_error == pytest.approx(post.error)
+    multi = pr.search(example_bvr, 0.3, 0.33, "Multi-harmonic")
+    # (the narrow search has less periodogram to take the noise from, so only roughly)
+    assert anova.postmortem_error == pytest.approx(multi.postmortem_error, rel=0.6)
+
+
+# --- drifts during the night ------------------------------------------------------------------
+
+def _nights(seed, drift=0.0, period=0.3174164):
+    """Four nights of six hours like the example data, with optional drifts lasting about an hour."""
+    rng = np.random.default_rng(seed)
+    t = np.concatenate([n + 0.55 + np.arange(0, 0.25, 1.5 / 1440) for n in (0, 24, 29, 31)]) + 2458379.0
+    phase = np.mod((t - t[0]) / period, 1.0)
+    dip = lambda p, depth: depth * np.exp(-0.5 * (np.minimum(np.abs(p), 1 - np.abs(p)) / 0.06) ** 2)
+    mag = dip(phase, 0.45) + dip(phase - 0.5, 0.3) + rng.normal(0, 0.004, t.size)
+    if drift:
+        walk = np.zeros_like(t)
+        for i in range(1, t.size):
+            keep = np.exp(-(t[i] - t[i - 1]) * 24)
+            walk[i] = keep * walk[i - 1] + np.sqrt(1 - keep ** 2) * rng.normal(0, drift)
+        mag = mag + walk
+    return pr.LightCurve(t, mag - np.median(mag), np.full(t.size, 0.004), np.array(["V"] * t.size), ("V",))
+
+
+def test_red_noise_factor_is_one_for_independent_noise():
+    fit = pr.period_error(_nights(0), 0.3174164)
+    assert fit.red_noise == pytest.approx(1.0, abs=0.15)
+    assert fit.error == pytest.approx(fit.white_error * fit.red_noise)
+
+
+def test_drifts_raise_the_error_to_match_the_real_scatter():
+    true = 0.3174164
+    found, errors, white = [], [], []
+    for seed in range(20):
+        fit = pr.period_error(_nights(seed, drift=0.006), true * (1 + 1e-6))
+        found.append(fit.period)
+        errors.append(fit.error)
+        white.append(fit.white_error)
+    # Without the factor the error is several times too small; with it, about right
+    assert np.std(found) / np.mean(white) > 2
+    assert 0.7 < np.std(found) / np.mean(errors) < 1.5
+
+
+def test_example_errors_allow_for_its_drifts(example_bvr):
+    fit = pr.period_error(example_bvr, TRUE_PERIOD)
+    assert fit.red_noise > 1.5
+    # Each filter alone should agree with the others within the errors
+    single = {lab: pr.period_error(example_bvr.select([lab]), TRUE_PERIOD) for lab in "BVR"}
+    for a, b in (("B", "V"), ("B", "R"), ("V", "R")):
+        gap = abs(single[a].period - single[b].period)
+        assert gap < 2 * np.hypot(single[a].error, single[b].error)
 
 
 @pytest.mark.parametrize("error, text", [(7.8412e-07, "0.00000078"), (0.0001004, "0.00010"),

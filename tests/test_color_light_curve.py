@@ -291,3 +291,73 @@ class TestIntegration:
         result = mean_mag(mags)
         assert np.isfinite(result)
         assert 13.0 <= result <= 15.0
+
+# ===========================================================================
+# colour_curves: any two or three filters
+# ===========================================================================
+from importlib.resources import files as _files
+
+from EclipsingBinaries import color_light_curve as clc
+
+_EX = _files("EclipsingBinaries.examples")
+_B, _V, _R = (str(_EX / f"test_{band}.txt") for band in "BVR")
+_EPOCH, _PERIOD = 2458403.58763, 0.3174245
+
+
+@pytest.fixture(scope="module")
+def bvr_results(tmp_path_factory):
+    out = tmp_path_factory.mktemp("colour") / "bvr.png"
+    # Given out of order, to check they're sorted blue to red
+    return clc.colour_curves([_R, _B, _V], ["R", "B", "V"], _EPOCH, _PERIOD, ebv=0.641 / 3.1,
+                             save=True, outName=str(out)), out
+
+
+def test_three_filters_give_two_colours_in_order(bvr_results):
+    results, out = bvr_results
+    assert [r["index"] for r in results] == ["B-V", "V-R"]
+    assert out.exists()
+
+
+def test_b_minus_v_temperature_matches_the_old_fixed_reddening(bvr_results):
+    # The code used to take 0.641 / 3.1 off B-V for every star; with that E(B-V) the answer is the same
+    results, _out = bvr_results
+    assert results[0]["colour"] == pytest.approx(0.69659, abs=1e-4)
+    assert results[0]["temperature"][0] == pytest.approx(6324.35, abs=0.5)
+
+
+def test_v_minus_r_uses_its_own_share_of_the_reddening(bvr_results):
+    results, _out = bvr_results
+    expected = clc.Pecaut.T.Teff(results[1]["colour"] - 0.642 * 0.641 / 3.1, results[1]["error"])[0]
+    assert results[1]["temperature"][0] == pytest.approx(expected)
+
+
+def test_other_filters_get_colours_but_no_temperature(tmp_path):
+    messages = []
+    results = clc.colour_curves([_B, _V], ["g", "r"], _EPOCH, _PERIOD, write_callback=messages.append)
+    assert results[0]["index"] == "g-r" and results[0]["temperature"] is None
+    assert results[0]["colour"] == pytest.approx(0.69659, abs=1e-4)
+    assert any("Temperatures are only worked out from B-V and V-R" in m for m in messages)
+
+
+def test_unknown_filters_keep_the_order_given():
+    assert clc.order_filters(["X", "Y"]) == (["X", "Y"], False)
+    assert clc.order_filters(["r", "g", "i"]) == (["g", "r", "i"], True)
+    assert clc.order_filters(["V", "B"]) == (["B", "V"], True)
+
+
+@pytest.mark.parametrize("files, labels, ebv, message", [
+    ([_B], ["B"], 0, "two or three"),
+    ([_B, _V], ["B", "B"], 0, "its own filter"),
+    ([_B, _V], ["B", "V"], -0.1, "negative"),
+])
+def test_bad_inputs_are_refused(files, labels, ebv, message):
+    with pytest.raises(ValueError, match=message):
+        clc.colour_curves(files, labels, _EPOCH, _PERIOD, ebv=ebv)
+
+
+def test_color_plot_still_takes_b_v_and_r_files():
+    results = clc.color_plot(_B, _V, _EPOCH, _PERIOD)
+    assert [r["index"] for r in results] == ["B-V"]
+    # Without reddening the temperature is that of the observed colour
+    assert results[0]["temperature"][0] == pytest.approx(
+        clc.Flower.T.Teff(results[0]["colour"], results[0]["error"])[0])

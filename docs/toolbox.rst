@@ -62,7 +62,7 @@ Program                            What it adds
 AIJ Comparison Star Selector       RA and Dec, and the folder the RADEC files went in
 Archive Data                       RA and Dec (looked up from the name if not entered), the folder
 Multi-Aperture Photometry          The folder of reduced images and light curves
-Period Search                      The period, when **Save Period** is pressed, and its file
+Period Search                      The period and its error, when **Save Period** is pressed, and its file
 Find Minimum                       Each minimum file, and the time system of the minima
 O-C Plotting                       The period and epoch used, the time system, the O-C files
 ``EB_pipeline``                    RA and Dec, and the output folder
@@ -918,13 +918,22 @@ Folding two similar eclipses on top of each other scores well with every method,
 highest peak is often half the orbital period. After each search the light curve is
 folded on twice the best period and the two halves are compared. If they hold different
 eclipses (one deeper than the other), the period is doubled and the window explains why.
-The comparison is made against the night-to-night scatter in the data itself, so it
+The top of the periodogram's own peak at the doubled period is then found, so the result
+is the same as searching a narrow range around the orbital period. (Lomb-Scargle fits a
+single sine wave, which has no peak there, so for it the doubled peak is kept.) The
+comparison is made against the night-to-night scatter in the data itself, so it
 doesn't double a period that's already right. When the two eclipses are too alike to tell
 apart, nothing in the light curve can settle it: the fold shows one dip per cycle, and
 **×2** fixes it.
 
 In the window:
 
++ **Resolution** is how many trial periods are scored across each peak's width, 10 to
+  start with and up to 1000. Like Peranso's resolution, raise it and narrow the
+  **Shortest** and **Longest** period around a peak, then **Search** again, to sample
+  the peak more finely; the status line says how far apart the trial periods are there.
+  The very top of the chosen peak is found between the trial periods whatever the
+  resolution, so the statistic shown there is the highest the peak reaches.
 + **Drag** along the periodogram, or move the **Period** slider under the plots, and the
   fold follows the period as it changes. A red dot rides the periodogram at the current
   period and the side panel shows the statistic there. A period that's slightly off
@@ -932,15 +941,62 @@ In the window:
   them up. The slider spans whatever the periodogram shows, so zoom in with the toolbar
   for finer control.
 + **Click** a peak without dragging to jump to its top, found automatically.
-+ **×2** and **÷2** double or halve the period; the left and right arrow keys nudge it.
-  **Refine Here** finds the top of the nearest peak again. The peak's half width at half
-  height is shown as a rough guide to how well these observations alone pin the period
-  down; times of minimum over a longer baseline (Find Minimum, then O-C Plotting) do much
-  better.
++ **×2** and **÷2** double or halve the period (and its errors); the left and right arrow
+  keys nudge it. **Refine Here** finds the top of the nearest peak again.
++ After a search, a click on a peak or **Refine Here**, the period is fitted from the top
+  of the peak (see below) and shown with its **Error**. The **Periodogram peak** is shown
+  under it with the error Peranso would give it, and under that the peak's half width at
+  half height, the most cautious figure. They're cleared when the period is dragged,
+  typed or nudged away, since they only apply at a peak.
 + The method, the period range and the filters used can be changed and searched again.
 + **Save Period** writes the period and search settings to ``<object>_period.txt``.
   **Send to O-C Plotting**, **Send to O'Connell Effect** and **Send to Color Light Curve**
   open that panel with the period filled in.
+
+The period given is a least-squares fit, started from the top of the periodogram's peak.
+Each filter's light curve is fitted with its own Fourier series (so their different
+depths don't matter), all sharing one frequency, which is fitted as well. The number of
+terms is chosen by the Bayesian information criterion, up to 40, since sharp eclipses need
+many and too few makes the error too small. The frequency's error comes from the fit's
+covariance, scaled by the reduced chi squared so that magnitude errors that are too small
+or too large, and anything the model misses, are taken into account; the period's error
+is that over the frequency squared.
+
+That much treats every point as independent, but photometry drifts during a night (with
+the sky, the airmass of the comparison stars, the detector), and neighbouring points then
+share the same error. With only a few nights that's usually most of the real error, so the
+error is raised by a factor for it, found the way Pont, Zucker & Queloz (2006) and Winn
+et al. (2008) do: within each night of each filter the fit's residuals are averaged in
+bins from 10 minutes up to a fifth of the period, and the scatter of those averages is
+compared with what independent noise would give. The factor is the largest ratio over
+those bin widths (the median over nights and filters), and never less than 1. The log
+gives the error before and after it.
+
+On simulated nights like the example data's, with drifts lasting about an hour, the error
+without the factor was 2 to 3 times smaller than the real scatter of the fitted periods,
+and with it they matched. For the example data the factor is about 2.7, and fitting each
+filter on its own gives periods that agree within the raised errors but not within the
+unraised ones.
+
+The fit is a sharper measure of the period than the periodogram's peak, so the two can
+differ by more than the fit's error. The peak is kept too, with the error Peranso gives:
+Schwarzenberg-Czerny's (1991) "post-mortem" method. The mean noise power level around the
+peak is taken from the periodogram (within 25% of the peak's frequency either side,
+leaving out the peak and clipping other strong lines), and the 1 sigma interval is the
+width of the peak where it has dropped by that much from its top; the error is half the
+interval. On simulated light curves it matched the real scatter of the peak for the
+Multi-harmonic method. Peranso's ANOVA is Schwarzenberg-Czerny's (1996), which fits
+Fourier harmonics rather than grouping the fold into phase bins, so for ANOVA the error is
+read off a Multi-harmonic periodogram of the same stretch, as Peranso would. The
+phase-binned ANOVA's own peaks have ragged tops with sharp eclipses, and read off those it
+came out far too small.
+
+Times of minimum over a longer baseline (Find Minimum, then O-C Plotting) pin the period
+down far better than any of these.
+
+The search, the log, the star's file and the saved ``<object>_period.txt`` give them all:
+``period_days`` and ``period_error_days`` for the fit, ``periodogram_peak_days`` and
+``periodogram_peak_error_days`` for the peak.
 
 The fold counts phase from the first observation, so only the period moves it. Where the
 eclipses fall in phase doesn't matter for finding the period; the epoch for O-C comes
@@ -954,7 +1010,9 @@ From a script:
 
     curve = load_light_curves(["NSVS_B_magnitudes.txt"], ["B"])
     result = search(curve, 0.1, 1.0, "ANOVA")
-    print(result.best_period, result.half_width)
+    print(result.period, result.error)                    # the least-squares fit
+    print(result.best_period, result.postmortem_error)    # the periodogram's peak
+    print(result.half_width)
 
 ``python -m EclipsingBinaries.period`` asks for the files in a terminal and opens the same
 window.
@@ -1330,20 +1388,73 @@ Color Light Curve
 .. note::
     Originally created by Alec J. Neal, updated for this package by Kyle Koeller.
 
-The Color Light Curve panel calculates B-V and optionally V-R color indices and
-effective temperatures from multi-filter light curve data.
+The Color Light Curve panel calculates color indices from two or three filters' light
+curves, and effective temperatures from B-V and V-R.
 
 The GUI panel accepts the following inputs:
 
-+ **B-band File** — Johnson B light curve file
-+ **V-band File** — Johnson V light curve file
++ **Number of Filters** — 2 or 3
++ **Light Curve (… Filter)** — one file per filter. Pick its filter from the list (U, B, V,
+  R, I, u, g, r, i, z) or type another name.
 + **Period** — orbital period in days
 + **HJD (Epoch)** — first primary ToM
++ **Object Name** — optional. Needed to look up E(B-V), and fills E(B-V) in from the star's
+  file once it's been looked up (see `Star files`_).
++ **E(B-V)** — the star's reddening, 0 to leave the colours as observed (see below).
+  **Look Up** gets it from the dust maps.
 + **Output Image Name** — filename for the saved plot (must end in ``.png``). Leave it empty
   for ``color_curve.png``. A bare file name is saved in the folder you launched
   ``EclipsingBinaries`` from, so give a full path to save it elsewhere.
 
-The B and V files can be in any of the formats in `Light Curve Files`_.
+The files can be in any of the formats in `Light Curve Files`_.
+
+The filters are put in order from blue to red by wavelength, whatever order the files are
+entered in, and a color index is made from each neighbouring pair: B, V and R give B-V and
+V-R, and g, r and i give g-r and r-i. If a filter isn't one of those listed, the order the
+files were entered in is used, so put the bluest first.
+
+Temperatures come from relations made for particular colors, so they're only worked out
+for B-V (Flower 1996) and V-R with Cousins R (Pecaut & Mamajek 2013). With any other
+filters the color indices are still measured and plotted, and the log says no temperature
+was worked out.
+
+Reddening makes a star look cooler than it is. **E(B-V)** is taken off B-V, and 0.642 times
+it off V-R (the Landolt filter extinctions in Schlegel, Finkbeiner & Davis 1998, for
+:math:`R_V = 3.1`), before the temperatures are looked up. The colors in the plot and log
+are as observed. Before this setting, the program always took 0.641 / 3.1 = 0.207 off B-V
+and 0.58 / 3.1 = 0.187 off V-R whatever the star, so enter 0.207 to get the old B-V
+temperatures back.
+
+**Look Up** finds E(B-V) for the **Object Name**, using the RA and Dec in the star's file if
+there are any, or else the name resolver. It needs the internet. The star's distance comes
+from its Gaia DR3 parallax, when that's at least 5 times its error, and then:
+
+1. **Bayestar19**, a 3D dust map (Green, Schlafly, Finkbeiner et al. 2019), gives the
+   reddening in front of the star at that distance. It's built from Pan-STARRS, 2MASS and
+   Gaia photometry, and covers the sky north of declination −30°. Its values are on the
+   scale of the Schlegel, Finkbeiner & Davis (1998) map, and are turned into E(B-V) with the
+   factor of 0.884 its authors give, the same as :math:`A_V / 3.1` with :math:`A_V` worked
+   out as for the 2D map below (2.742 / 3.1 = 0.8845). Bayestar19 gives a spread of possible dust maps rather than one;
+   the value used is their median, and the log gives the 16th to 84th percentile range
+   as its uncertainty (about 1 sigma either side). It also warns
+   when the star is outside the distances the map is reliable for along that sightline,
+   which usually means it's very near.
+2. If Bayestar19 can't be used (a star south of −30°, no good parallax, or the service
+   being down), the 2D map is: the reddening along the whole line of sight from IRSA's dust
+   service. :math:`A_V` for the Landolt V band is the Schlegel, Finkbeiner & Davis (1998)
+   map's value in the pixel at the star times 2.742, from Table 6 of Schlafly & Finkbeiner
+   (2011) for :math:`R_V = 3.1`. That's the :math:`A_V` NED's extinction calculator gives,
+   and :math:`E(B-V) = A_V / 3.1`. It counts all the dust in that direction, so for a
+   nearby star it can be more than the star really has. The log also gives the standard
+   deviation of the map within 5 arcmin of the star, which IRSA works out; that shows how
+   patchy the dust is around the star, not how well the value is known.
+
+Both use :math:`R = A_V / E(B-V) = 3.1`, and the log gives :math:`A_V` as well as
+:math:`E(B-V)`.
+
+The log says which was used, and gives the 2D total alongside a Bayestar19 value to compare
+with. You can always type in a value of your own. The value looked up is saved in the
+star's file.
 
 Subtract Light Curve
 ^^^^^^^^^^^^^^^^^^^^

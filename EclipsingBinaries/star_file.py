@@ -35,9 +35,13 @@ FIELDS = {
     "ra": "right ascension, J2000, as entered (hours)",
     "dec": "declination, J2000, as entered (degrees)",
     "period": "orbital period in days",
+    "period_error": "1 sigma error on the period, in days",
+    "periodogram_peak": "the periodogram's best peak, in days",
+    "periodogram_peak_error": "1 sigma error on the peak (Schwarzenberg-Czerny post-mortem), in days",
     "epoch": "a time of primary minimum (T0)",
     "epoch_error": "error on the epoch, in days",
     "time_system": "time system of the epoch and the minima",
+    "ebv": "E(B-V) reddening",
 }
 HISTORY_LENGTH = 200  # older history lines are dropped past this many
 

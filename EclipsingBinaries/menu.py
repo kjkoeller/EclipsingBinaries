@@ -48,7 +48,8 @@ from . import archives
 from .OC_plot import BSUO, TESS_OC, all_data, data_fit
 from .OConnell import main as oconnell
 from . import OConnell as oconnell_settings
-from .color_light_curve import color_plot
+from .color_light_curve import colour_curves
+from . import extinction
 from .find_min import MinimumError
 from .find_min_window import MinimumFinderWindow
 from .Night_Filters import combine_nights, NightFileError
@@ -121,6 +122,8 @@ DND_FILES = "DND_Files"
 PHOTOMETRY_FILTERS = ("B", "V", "R")
 # Filters suggested for each number of filters until the user picks their own
 PHOTOMETRY_DEFAULTS = {1: ("V",), 2: ("B", "V"), 3: ("B", "V", "R")}
+# Filters Color Light Curve offers; others can be typed in
+COLOUR_FILTERS = ("U", "B", "V", "R", "I", "u", "g", "r", "i", "z")
 
 # How often the main thread checks for log lines and other updates queued
 # by worker threads, in milliseconds.
@@ -164,33 +167,42 @@ class _LightCurveRows:
     "Number of Filters" radio buttons plus a "Light Curve (B Filter)" row for
     each filter, with a B/V/R picker and a file field. Hidden rows keep what
     was typed in them. Values are remembered with the panel's settings.
+
+    counts are the numbers of filters offered (1 to 3 unless given), filters
+    the ones in the picker, and defaults the filters suggested for each count.
+    With editable set, other filter names can be typed into the picker.
     """
 
-    def __init__(self, app, panel, first_row, count_tip):
+    def __init__(self, app, panel, first_row, count_tip, counts=None, filters=PHOTOMETRY_FILTERS,
+                 defaults=PHOTOMETRY_DEFAULTS, editable=False):
         self.app = app
+        self.defaults = defaults
+        counts = tuple(counts or range(1, len(PHOTOMETRY_FILTERS) + 1))
         frame = app.right_frame
         count_label = tk.Label(frame, text="Number of Filters:", font=app.label_font, bg=BG_PANEL, fg=FG_TEXT)
         count_label.grid(row=first_row, column=0, padx=(16, 10), pady=5, sticky="e")
         app._tooltip(count_label, count_tip)
-        self.count = app._remember_var("filter_count", tk.IntVar(master=app, value=len(PHOTOMETRY_FILTERS)))
+        self.count = app._remember_var("filter_count", tk.IntVar(master=app, value=max(counts)))
+        if self.count.get() not in counts:
+            self.count.set(max(counts))
         radio_frame = tk.Frame(frame, bg=BG_PANEL)
         radio_frame.grid(row=first_row, column=1, padx=(0, 10), pady=5, sticky="w")
-        for count in range(1, len(PHOTOMETRY_FILTERS) + 1):
+        for count in counts:
             tk.Radiobutton(radio_frame, text=f"{count} Filter{'s' if count > 1 else ''}", variable=self.count,
                            value=count, command=self.update, font=app.label_font, bg=BG_PANEL,
                            fg=FG_TEXT).pack(side="left", padx=(0, 12))
 
         saved = app.settings.section(panel)
         # Until someone picks filters by hand, the usual ones for the count are suggested
-        self.picked = any(f"filter_{i}" in saved for i in range(len(PHOTOMETRY_FILTERS)))
+        self.picked = any(f"filter_{i}" in saved for i in range(max(counts)))
         self.rows = []
-        for i, default_filter in enumerate(PHOTOMETRY_FILTERS):
+        for i, default_filter in enumerate(defaults[max(counts)]):
             label_frame = tk.Frame(frame, bg=BG_PANEL)
             tk.Label(label_frame, text="Light Curve (", font=app.label_font, bg=BG_PANEL,
                      fg=FG_TEXT).pack(side="left")
             picker_var = app._remember_var(f"filter_{i}", tk.StringVar(master=app, value=default_filter))
-            picker = ttk.Combobox(label_frame, values=PHOTOMETRY_FILTERS, state="readonly", width=3,
-                                  font=app.label_font, textvariable=picker_var)
+            picker = ttk.Combobox(label_frame, values=filters, state="normal" if editable else "readonly",
+                                  width=3, font=app.label_font, textvariable=picker_var)
             picker.pack(side="left")
             tk.Label(label_frame, text=" Filter):", font=app.label_font, bg=BG_PANEL,
                      fg=FG_TEXT).pack(side="left")
@@ -202,6 +214,8 @@ class _LightCurveRows:
                                                    "(HJD, magnitude, error) or a light curve CSV from "
                                                    "Multi-Aperture Photometry.")
             picker.bind("<<ComboboxSelected>>", lambda _e, p=picker, ent=entry: self._picked(p, ent))
+            if editable:
+                picker.bind("<KeyRelease>", lambda _e, p=picker, ent=entry: self._picked(p, ent), add="+")
             self.rows.append((picker, entry))
         self.update()
 
@@ -209,7 +223,7 @@ class _LightCurveRows:
         """Show one row per chosen filter and hide the rest."""
         count = self.count.get()
         if not self.picked:
-            for (picker, entry), filt in zip(self.rows, PHOTOMETRY_DEFAULTS[count]):
+            for (picker, entry), filt in zip(self.rows, self.defaults[count]):
                 picker.set(filt)
                 self.app._set_placeholder(entry, _example_path(f"{filt}_magnitudes.txt"))
         for i, (_picker, entry) in enumerate(self.rows):
@@ -225,8 +239,11 @@ class _LightCurveRows:
         wrong: a filter chosen twice, an empty row, or a missing file.
         """
         app = self.app
-        choices = [(picker.get(), app._path_value(entry)) for picker, entry in self.rows[:self.count.get()]]
+        choices = [(picker.get().strip(), app._path_value(entry)) for picker, entry in self.rows[:self.count.get()]]
         labels = [label for label, _ in choices]
+        if not all(labels):
+            app.write_to_log("Error: Choose or type a filter for each light curve.")
+            return None
         if len(set(labels)) != len(labels):
             app.write_to_log("Error: Each filter can only be chosen once.")
             return None
@@ -2352,13 +2369,13 @@ class ProgramLauncher(tk.Tk):
                                cancellable=False, obj_name=obj_name, output_folder=output_folder)
         self._log_section(9)
 
-    def _light_curve_rows(self, panel, first_row, count_tip):
+    def _light_curve_rows(self, panel, first_row, count_tip, **options):
         """
         The "Number of Filters" choice and one "Light Curve (B Filter)" row per
-        filter, shared by Find Minimum and Period Search. Uses rows first_row
-        to first_row + 3.
+        filter, shared by Find Minimum, Period Search and Color Light Curve.
+        Uses rows first_row to first_row + 3. options go to _LightCurveRows.
         """
-        return _LightCurveRows(self, panel, first_row, count_tip)
+        return _LightCurveRows(self, panel, first_row, count_tip, **options)
 
     def run_find_minimum(self, obj_name, output_folder):
         """Check the inputs and open the interactive Find Minimum window."""
@@ -2988,35 +3005,49 @@ class ProgramLauncher(tk.Tk):
         self.clear_right_frame()
         self._panel_title("Color Light Curve", "color")
 
-        bfile = self.create_input_field(self.right_frame, "B-band File:",
-                                        _example_path("b_band.txt"), row=1,
-                                        error_message="Please select a valid B-band file.",
-                                        browse_type="file",
-                                        tooltip="Johnson B light curve: a Night Filters file (HJD, magnitude, "
-                                                "error), a light curve CSV from Multi-Aperture Photometry, "
-                                                "or an AIJ measurement table saved as CSV.")
-
-        vfile = self.create_input_field(self.right_frame, "V-band File:",
-                                        _example_path("v_band.txt"), row=2,
-                                        error_message="Please select a valid V-band file.",
-                                        browse_type="file",
-                                        tooltip="Johnson V light curve, in any of the formats the B file "
-                                                "can be.")
+        self.color_curves = self._light_curve_rows(
+            "color", first_row=1, counts=(2, 3), filters=COLOUR_FILTERS, editable=True,
+            count_tip="Two filters give one colour index, three give two (B, V and R give B-V and V-R). "
+                      "Pick each file's filter or type another name. Temperatures are only worked out "
+                      "for B-V and V-R; other filters give their colours without one.")
 
         period = self.create_input_field(self.right_frame, "Period (days):",
-                                         "e.g. 1.234", row=3,
+                                         "e.g. 1.234", row=5,
                                          validation_func=_is_float,
                                          error_message="Enter a numeric period.",
                                          tooltip="Orbital period in days.")
 
         hjd = self.create_input_field(self.right_frame, "HJD (Epoch):",
-                                      "e.g. 2459000.123", row=4,
+                                      "e.g. 2459000.123", row=6,
                                       validation_func=_is_float,
                                       error_message="Enter a numeric HJD.",
                                       tooltip="HJD of a primary minimum, used to phase the light curves.")
 
+        name = self.create_input_field(self.right_frame, "Object Name:", "e.g. NSVS 896797", row=7,
+                                       optional=True,
+                                       tooltip="Optional. Used to look up E(B-V), and fills it in from the "
+                                               "star's file when it's been looked up before.")
+
+        ebv = self.create_input_field(self.right_frame, "E(B-V):", "0", row=8,
+                                      validation_func=lambda x: _is_float(x) and float(x) >= 0,
+                                      error_message="Enter the reddening as a number, 0 or more.",
+                                      default="0",
+                                      tooltip="Reddening of the star. It's taken off B-V, and 0.642 times "
+                                              "it off V-R, before the temperatures are looked up; the "
+                                              "colours shown are as observed. Leave at 0 for none, or "
+                                              "press Look Up to get it from the dust maps.")
+        look_up = self._button(ebv.master, "Look Up", lambda: self.look_up_reddening(name, ebv),
+                               style="Browse.TButton", action=True)
+        look_up.grid(row=0, column=1, padx=(5, 5), pady=2, sticky="w")
+        self._tooltip(look_up, "Get E(B-V) for the Object Name (or the RA and Dec in its star file) from the "
+                               "Bayestar19 3D dust map at the star's Gaia distance. South of declination -30, "
+                               "or without a good parallax, the Schlafly & Finkbeiner (2011) 2D map is used "
+                               "instead. Needs the internet.")
+        self._fill_star_details = self._fill_from_star_file(name, {"ebv": ebv})
+        self.color_name_entry, self.color_ebv_entry = name, ebv
+
         outname = self.create_input_field(self.right_frame, "Output Image Name:",
-                                          "color_curve.png", row=5,
+                                          "color_curve.png", row=9,
                                           validation_func=lambda x: x.strip().lower().endswith(".png"),
                                           error_message="Output must be a PNG file.",
                                           default="color_curve.png", wide=True,
@@ -3024,15 +3055,60 @@ class ProgramLauncher(tk.Tk):
                                                   "the app was started from, so give a full path to save it "
                                                   "somewhere specific.")
 
-        self.create_run_button(self.right_frame, self.run_color_light_curve, row=6,
-                               bfile=bfile, vfile=vfile, period=period, hjd=hjd, outname=outname)
+        self.create_run_button(self.right_frame, self.run_color_light_curve, row=10,
+                               period=period, hjd=hjd, ebv=ebv, outname=outname, name=name)
 
-        self._log_section(7)
+        self._log_section(11)
 
-    def run_color_light_curve(self, bfile, vfile, period, hjd, outname):
+    def look_up_reddening(self, name_entry, ebv_entry):
+        """Look up E(B-V) for the named star on a worker thread and put it in the E(B-V) field."""
+        name = self._entry_value(name_entry)
+        if not name:
+            self.write_to_log("Error: Enter the Object Name to look up its E(B-V).")
+            return
+        saved = star_file.known(name)
+
+        def task():
+            where = "its saved RA and Dec" if saved.get("ra") and saved.get("dec") else "its name"
+            self.write_to_log(f"Looking up E(B-V) for {name} from {where}...")
+            try:
+                result = extinction.look_up(name, saved.get("ra"), saved.get("dec"),
+                                            write_callback=self.write_to_log, cancel_event=self.cancel_event)
+            except (OSError, ValueError) as e:
+                self.write_to_log(f"Error: {e}")
+                return
+            except Exception as e:  # the name resolver raises its own kinds for unknown names
+                self.write_to_log(f"Error: {name} couldn't be found ({type(e).__name__}: {e}). "
+                                  "Check the name, or add its RA and Dec with Archive Data first.")
+                return
+            if result is None:
+                return
+            self.write_to_log(result.message())
+            value = f"{result.best:.4f}"
+            star_file.record(name, "reddening", write_callback=self.write_to_log, ebv=round(result.best, 4))
+            self.call_in_ui(self._put_reddening, ebv_entry, value, name)
+
+        self.run_task(task)
+
+    def _put_reddening(self, ebv_entry, value, name):
+        """
+        Put a looked-up E(B-V) in the panel's field. The lookup can take a while,
+        and if the panel was left or opened again meanwhile, the field it was
+        started from is gone; then the open panel's field gets it, or if Color
+        Light Curve isn't open, the log says where the value was saved.
+        """
+        for entry in (ebv_entry, getattr(self, "color_ebv_entry", None)):
+            try:
+                if entry is not None and entry.winfo_exists():
+                    self._set_entry_text(entry, value)
+                    return
+            except tk.TclError:
+                continue
+        self.write_to_log(f"E(B-V) = {value} is saved for {name}; it's filled in when you open Color Light "
+                          "Curve and enter the name.")
+
+    def run_color_light_curve(self, period, hjd, ebv, outname, name=None):
         """Validate the color light curve inputs, then run it on a worker thread."""
-        b = self._path_value(bfile)
-        v = self._path_value(vfile)
         out = self._path_value(outname)
         try:
             per = float(self._entry_value(period))
@@ -3040,20 +3116,32 @@ class ProgramLauncher(tk.Tk):
         except ValueError:
             self.write_to_log("Error: Period and HJD must be numbers.")
             return
-        if not b or not v:
-            self.write_to_log("Error: Both B-band and V-band files are required.")
+        ebv_text = self._entry_value(ebv) or "0"
+        if not _is_float(ebv_text) or float(ebv_text) < 0:
+            self.write_to_log("Error: E(B-V) must be a number, 0 or more.")
             return
+        reddening = float(ebv_text)
+        choices = self.color_curves.choices()
+        if choices is None:
+            return
+        labels = [label for label, _path in choices]
+        paths = [path for _label, path in choices]
+        name_value = self._entry_value(name) if name is not None else ""
 
         def task():
             self.write_to_log("Starting color light curve processing...")
-            self.write_to_log(f"B-band file: {b}")
-            self.write_to_log(f"V-band file: {v}")
+            for label, path in choices:
+                self.write_to_log(f"{label} file: {path}")
             self.write_to_log(f"Period: {per}")
             self.write_to_log(f"HJD Epoch: {epoch}")
+            self.write_to_log(f"E(B-V): {reddening}")
             self.write_to_log(f"Output: {out}")
             try:
-                color_plot(Bfile=b, Vfile=v, Epoch=epoch, period=per, outName=out, save=True,
-                           write_callback=self.write_to_log, cancel_event=self.cancel_event)
+                colour_curves(paths, labels, epoch, per, ebv=reddening, outName=out, save=True,
+                              write_callback=self.write_to_log, cancel_event=self.cancel_event)
+                if not self.cancel_event.is_set():
+                    star_file.record(name_value, "color", files=[out], write_callback=self.write_to_log,
+                                     ebv=reddening if reddening else None)
                 if self.cancel_event.is_set():
                     self.write_to_log("Color light curve was canceled.")
                 else:

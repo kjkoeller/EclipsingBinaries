@@ -934,9 +934,31 @@ def test_period_search_finds_the_period_and_sends_it(app, tmp_path):
     assert "double the peak" in window.status_var.get()
     assert window.save_button.instate(["!disabled"])
 
+    # The error is shown with the period, logged, saved and kept with the star
+    assert window.period_error is not None and 0 < window.period_error < 1e-4
+    assert window.error_var.get().startswith("Error: \u00b1")
+    assert "\u00b1" in window.status_var.get()
+    assert "(1 sigma, least-squares fit;" in app.log_area.get("1.0", "end")
+    assert "for drifts during the nights" in app.log_area.get("1.0", "end")
+    assert "apart there)" in window.status_var.get()
+    # The period shown is the fit's; the periodogram's peak is given too, with Peranso's error
+    assert window.period == pytest.approx(window.result.fit_period)
+    assert window.peak_period == pytest.approx(window.result.best_period)
+    assert window.peak_error == pytest.approx(window.result.postmortem_error)
+    assert window.peak_var.get().startswith("Periodogram peak: ")
+    assert "(post-mortem)" in window.peak_var.get()
+    assert "since that's Peranso's ANOVA" in app.log_area.get("1.0", "end")
+
     window.save()
     saved = tmp_path / "NSVS_896797_period.txt"
     assert saved.exists()
+    assert "period_error_days" in saved.read_text()
+    assert "periodogram_peak_error_days" in saved.read_text()
+    from EclipsingBinaries import star_file
+    known = star_file.known("NSVS 896797")
+    assert known["period_error"] == pytest.approx(window.period_error)
+    assert known["periodogram_peak"] == pytest.approx(window.peak_period)
+    assert known["periodogram_peak_error"] == pytest.approx(window.peak_error)
     from EclipsingBinaries.period import read_period
 
     assert read_period(saved) == pytest.approx(window.period, abs=1e-7)
@@ -956,17 +978,26 @@ def test_period_search_finds_the_period_and_sends_it(app, tmp_path):
 
 def test_period_window_controls(app, tmp_path):
     window = _open_period(app, tmp_path, count=1)
-    period = window.period
-    window.set_period(period * 2)
+    period, error = window.period, window.period_error
+    peak, peak_error = window.peak_period, window.peak_error
+    window.scale_period(2)
     assert window.period == pytest.approx(2 * period)
-    window.set_period(period)
+    assert window.period_error == pytest.approx(2 * error)
+    assert (window.peak_period, window.peak_error) == pytest.approx((2 * peak, 2 * peak_error))
+    window.scale_period(0.5)
+    assert window.period_error == pytest.approx(error)
     assert not hasattr(window, "epoch")
 
+    # A typed period isn't a peak's top, so no error is shown until it's refined
     window.period_var.set("0.3175")
     window._typed_period()
     assert window.period == pytest.approx(0.3175)
+    assert window.period_error is None and window.error_var.get() == ""
+    assert window.peak_period is None and window.peak_var.get() == ""
     window.refine_here()
     assert window.period == pytest.approx(0.31741, abs=3e-4)
+    assert window.period_error is not None and window.error_var.get()
+    assert window.peak_error is not None and window.peak_var.get()
 
     before = window.period
     window._on_key(_PlotEvent(window, key="right"))
@@ -1312,3 +1343,132 @@ def test_oconnell_defaults_button_puts_them_back(app):
                   if w.winfo_class() == "TButton" and w.cget("text") == "Defaults")
     button.invoke()
     assert app.oconnell_settings["sims"].get() == "1000"
+
+
+# --- Color Light Curve filters ---------------------------------------------------------
+
+def _fill_colour(app, labels, files):
+    app.open_panel("color")
+    rows = app.color_curves
+    rows.count.set(len(labels))
+    rows.update()
+    for (picker, entry), label, path in zip(rows.rows, labels, files):
+        picker.set(label)
+        app._set_entry_text(entry, str(path))
+    rows.picked = True
+    app._set_entry_text(app._panel_fields["Period (days)"], "0.3174245")
+    app._set_entry_text(app._panel_fields["HJD (Epoch)"], "2458403.58763")
+
+
+def test_colour_panel_offers_two_or_three_filters(app):
+    app.open_panel("color")
+    assert app.color_curves.count.get() == 3
+    assert [p.get() for p, _e in app.color_curves.rows] == ["B", "V", "R"]
+    app.color_curves.count.set(2)
+    app.color_curves.update()
+    assert [p.get() for p, _e in app.color_curves.rows[:2]] == ["B", "V"]
+    assert "1 Filter" not in [w.cget("text") for w in app.right_frame.grid_slaves(row=1)[0].winfo_children()]
+
+
+def test_colour_panel_passes_the_filters_and_reddening(app, tmp_path):
+    files = [EXAMPLES / "test_B.txt", EXAMPLES / "test_V.txt", EXAMPLES / "test_R.txt"]
+    _fill_colour(app, ["g", "r", "i"], files)
+    app._set_entry_text(app._panel_fields["E(B-V)"], "0.12")
+    with patch("EclipsingBinaries.menu.colour_curves") as run:
+        app._run_button.invoke()
+        _wait_for_task(app)
+    args, kwargs = run.call_args
+    assert args[0] == [str(f) for f in files]
+    assert args[1] == ["g", "r", "i"]
+    assert kwargs["ebv"] == pytest.approx(0.12)
+
+
+@pytest.mark.parametrize("labels, ebv, message", [
+    (["B", "B"], "0", "Each filter can only be chosen once"),
+    (["B", " "], "0", "Choose or type a filter"),
+    (["B", "V"], "-1", "E(B-V) must be a number, 0 or more"),
+])
+def test_colour_panel_refuses_bad_inputs(app, labels, ebv, message):
+    _fill_colour(app, labels, [EXAMPLES / "test_B.txt", EXAMPLES / "test_V.txt"])
+    app._set_entry_text(app._panel_fields["E(B-V)"], ebv)
+    with patch("EclipsingBinaries.menu.colour_curves") as run:
+        app._run_button.invoke()
+    run.assert_not_called()
+    assert message in app.log_area.get("1.0", "end")
+
+
+def test_colour_panel_looks_up_reddening(app):
+    from EclipsingBinaries import extinction, star_file
+    star_file.record("NSVS 896797", "archives", ra="00:28:27.96", dec="+78:57:42.65")
+    app.open_panel("color")
+    app._set_entry_text(app.color_name_entry, "nsvs 896797")
+    result = extinction.Reddening(0.1234, extinction.BAYESTAR19, 16.0, total=0.2, total_error=0.01,
+                                  distance_pc=250, bayestar_range=(0.11, 0.14), bayestar_reliable=True)
+    with patch("EclipsingBinaries.menu.extinction.look_up", return_value=result) as look_up:
+        app.look_up_reddening(app.color_name_entry, app.color_ebv_entry)
+        _wait_for_task(app)
+        _pump(app, 0.2)
+    # The saved position is used rather than the name
+    assert look_up.call_args.args[1:] == ("00:28:27.96", "+78:57:42.65")
+    assert app._entry_value(app.color_ebv_entry) == "0.1234"
+    assert star_file.known("NSVS 896797")["ebv"] == 0.1234
+    assert "This is used" in app.log_area.get("1.0", "end")
+
+
+def test_colour_panel_reddening_look_up_needs_a_name(app):
+    app.open_panel("color")
+    with patch("EclipsingBinaries.menu.extinction.look_up") as look_up:
+        app.look_up_reddening(app.color_name_entry, app.color_ebv_entry)
+    look_up.assert_not_called()
+    assert "Enter the Object Name" in app.log_area.get("1.0", "end")
+
+
+def test_colour_panel_reports_an_unreachable_dust_service(app):
+    app.open_panel("color")
+    app._set_entry_text(app.color_name_entry, "SW Lac")
+    with patch("EclipsingBinaries.menu.extinction.look_up", side_effect=OSError("IRSA's dust service is down")):
+        app.look_up_reddening(app.color_name_entry, app.color_ebv_entry)
+        _wait_for_task(app)
+    assert "Error: IRSA's dust service is down" in app.log_area.get("1.0", "end")
+    assert app._entry_value(app.color_ebv_entry) in ("", "0")
+
+
+def test_reddening_found_after_leaving_the_panel_doesnt_crash(app):
+    from EclipsingBinaries import extinction, star_file
+    app.open_panel("color")
+    app._set_entry_text(app.color_name_entry, "SW Lac")
+    old_entry = app.color_ebv_entry
+    result = extinction.Reddening(0.1234, extinction.TOTAL_2D, 16.0, total=0.1234, total_error=0.01)
+
+    def slow_look_up(*args, **kwargs):
+        # The panel is switched away from while the lookup is running
+        app.call_in_ui(app.open_panel, "oc")
+        time.sleep(0.3)
+        return result
+    with patch("EclipsingBinaries.menu.extinction.look_up", side_effect=slow_look_up):
+        app.look_up_reddening(app.color_name_entry, old_entry)
+        _wait_for_task(app)
+        _pump(app, 0.3)
+    assert not old_entry.winfo_exists()
+    assert "it's filled in when you open Color Light Curve" in app.log_area.get("1.0", "end")
+    assert star_file.known("SW Lac")["ebv"] == 0.1234
+
+    # Opening the panel again and the lookup finishing there puts it in the new field
+    app.open_panel("color")
+    app._put_reddening(old_entry, "0.1234", "SW Lac")
+    assert app._entry_value(app.color_ebv_entry) == "0.1234"
+
+
+def test_period_search_resolution_sets_the_trial_spacing(app, tmp_path):
+    window = _open_period(app, tmp_path, count=1)
+    coarse = window.result.step
+    window.min_var.set("0.31")
+    window.max_var.set("0.325")
+    window.resolution_var.set("500")
+    window.start_search()
+    _finish_search(window)
+    assert window.result.settings["oversample"] == 500
+    assert window.result.step < coarse / 10
+    window.resolution_var.set("0")
+    window.start_search()
+    assert "Resolution has to be a number from 1 to 1000" in window.status_var.get()
